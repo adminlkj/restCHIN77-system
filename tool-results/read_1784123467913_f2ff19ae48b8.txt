@@ -1,0 +1,510 @@
+     1→
+     2→---
+     3→Task ID: branch-settings-restore
+     4→Agent: main (Z.ai Code)
+     5→Task: إصلاح اختفاء إعدادات الفروع + حذف mock backend نهائياً + النشر على Render
+     6→
+     7→Work Log:
+     8→- فحص النظام المنشور فعلياً على Render (https://binaa-system-1.onrender.com) عبر API
+     9→- اكتشاف جوهري: النسخة المنشورة على Render هي نظام المقاولات القديم (title="بِنَاء - نظام إدارة المقاولات"، bundle=index-DENhrDKz.js)
+    10→- اكتشاف جوهري: force-push إلى origin/main (commit edf6605 "Clean repo") حذف BranchSettingsCard.jsx ورجّع Settings.jsx + branchSettings.js لنسخ قديمة
+    11→- استعادة package.json (كان مكسوراً — لا scripts ولا deps)
+    12→- إنشاء base44/entities/BranchSetting.jsonc (كان مفقوداً)
+    13→- حذف تعليق mock backend من AuthContext.jsx
+    14→- استعادة 4 ملفات من فرع backup-diverged: BranchSettingsCard.jsx, Settings.jsx, branchSettings.js, Branches.jsx
+    15→- إعادة بناء dist: التحقق من الـ bundle (BranchSetting ×6, إعدادات الفروع ×3, طاولات ×23, mockBackend ×0)
+    16→- تحديث .gitignore لاستبعاد restaurant-system/, skills/, .zscripts/, next-env.d.ts
+    17→- lint: 0 أخطاء
+    18→- commit: ff93a8a
+    19→- push إلى origin/main: ناجح (تحقق عبر ls-remote)
+    20→- اختبار API على Render: إنشاء فرع اختبار + BranchSetting ناجح (الخادم يدعم الكيان)
+    21→- Render frontend لم يُعد البناء بعد (~9 دقائق) — auto-deploy قد يكون معطّلاً
+    22→
+    23→Stage Summary:
+    24→- الكود على GitHub (origin/main @ ff93a8a) صحيح وكامل
+    25→- الـ API على Render يدعم BranchSetting (متحقق بالاختبار)
+    26→- المتبقي: إعادة بناء Render للواجهة (يتطلب تدخل المستخدم في Render dashboard لتفعيل auto-deploy أو trigger manual deploy)
+    27→- mock backend محذوف نهائياً من الكود
+    28→- جميع إصلاحات إعدادات الفروع مستعادة وملتزمة ومدفوعة
+    29→
+    30→---
+    31→Task ID: prod-audit-1
+    32→Agent: main (Z.ai Code)
+    33→Task: التدقيق النهائي لنظام المطعم المنشور على restchin77-system.onrender.com
+    34→
+    35→Work Log:
+    36→- تم تصحيح الرابط: https://restchin77-system.onrender.com (الصحيح، وليس binaa-system-1)
+    37→- فحص الواجهة المنشورة فعلياً: title="نظام إدارة المطاعم - إيصالات حرارية"، bundle=index-BMHOx-6X.js
+    38→- التحقق من الـ bundle: BranchSetting ×6، إعدادات الفروع ×3، mockBackend ×0 (نظام مطعم نظيف)
+    39→- تسجيل الدخول بحساب المالك (fysl71443@gmail.com) ناجح
+    40→- الواجهة الرئيسية تعرض: إدارة الفروع مع فرع "الفرع الرئيسي" (BR-0001، الرياض، هاتف 0133300199)
+    41→- التنقل يعمل: لوحة المبيعات، نقطة البيع، الطلبات، معدات المطعم، المشتريات، المصروفات، الموارد البشرية، المالية، الخدمات، التقارير، الزبائن، المستخدمون، المخازن، الإعدادات
+    42→
+    43→Stage Summary:
+    44→- النظام المنشور فعلياً هو نظام المطعم المُحدّث (النشر سليم على الرابط الصحيح)
+    45→- فرع واحد موجود (الفرع الرئيسي) لكن طاولاته = 0 (مشكلة: يجب أن تُنشأ طاولات افتراضية)
+    46→- سأتابع التدقيق الكامل عبر agent-browser
+    47→
+    48→
+    49→---
+    50→Task ID: prod-audit-2
+    51→Agent: main (Z.ai Code)
+    52→Task: إصلاح الأخطاء المكتشفة في التدقيق النهائي للـ POS
+    53→
+    54→Work Log:
+    55→- فحص فعلي للنظام المنشور على restchin77-system.onrender.com (الرابط الصحيح)
+    56→- تسجيل الدخول ناجح، النشر محدّث (bundle=index-BMHOx-6X.js، نظام مطعم)
+    57→- تنفيذ دورة POS كاملة: طاولة → أصناف → دفع → طباعة (نجحت)
+    58→- اكتشاف BUG #1 (محاسبي جسيم): buildSalesInvoiceJE يستخدم ذمم العملاء (1121) دائماً حتى للنقدي
+    59→  - السبب: force-push إلى origin/main رجّع نسخة قديمة من postOperation/entry.ts
+    60→  - الفاتورة INV-2026-7135 النقدية أنشأت قيداً: 1121 Dr=120.75 (خطأ)
+    61→- إصلاح BUG #1: إعادة كتابة buildSalesInvoiceJE لتكون payment-method-aware:
+    62→  - نقدي: مدين = الصندوق/البنك/البطاقة حسب طريقة الدفع
+    63→  - منصة: مدين = مستحقات المنصات (1115) مع partyType=PLATFORM
+    64→  - آجل: مدين = ذمم العملاء (1121)
+    65→  - دفع متعدد: دمج نفس الطريقة في سطر واحد
+    66→  - تحقق توازن: throw إذا المدين ≠ الإجمالي
+    67→- إصلاح approveSalesInvoice: استخراج payments/isPlatformSale من invoice.notes
+    68→- اكتشاف BUG #2: الإيصال يكرر طرق الدفع (نقداً 105 + نقداً 15.75 كسطرين)
+    69→- إصلاح BUG #2: ThermalReceiptDocument يدمج طرق الدفع المتكررة
+    70→- اكتشاف BUG #3: POS يستخدم Select بدون بحث ذكي
+    71→- إصلاح BUG #3: استبدال Select بـ searchable combobox (اسم/جوال/خصم)
+    72→- اكتشاف BUG #4: لا يمكن إضافة عميل نقدي جديد من POS
+    73→- إصلاح BUG #4: إضافة QuickAddCashCustomerDialog (اسم/جوال/خصم ثابت)
+    74→- اكتشاف BUG #5: بحث Clients.jsx لا يشمل الهاتف
+    75→- إصلاح BUG #5: بحث ذكي بالاسم/الكود/الهاتف مع tail-match
+    76→- التحقق المنطقي: 5 اختبارات لـ buildSalesInvoiceJE (كلها نجحت)
+    77→- lint: 0 أخطاء، build: نجح (bundle=index-BlFBbeQ9.js)
+    78→- commit: 9daecdb
+    79→
+    80→Stage Summary:
+    81→- جميع الإصلاحات محلياً ومُلتزمة
+    82→- BLOCKER: مفتاح SSH الأصلي ضاع (session reset حذف /home/z/.ssh/)
+    83→- توليد مفتاح جديد ممكن لكن يحتاج إضافته لـ GitHub (يتطلب تدخل المستخدم)
+    84→- الإصلاحات غير منشورة على Render بعد
+    85→
+    86→
+    87→---
+    88→Task ID: platform-settlements
+    89→Agent: main (Z.ai Code)
+    90→Task: نظام كشف حساب المنصات التلقائي + التسوية المحاسبية
+    91→
+    92→Work Log:
+    93→- استخدمت مفتاح SSH المقدّم من المستخدم للدفع لـ GitHub
+    94→- أنشأت base44/entities/DeliveryPlatform.jsonc (كان مفقوداً): commissionRate, commissionVatRate, commissionMethod, vatOnCommissionEnabled, settlementAccountCode
+    95→- أنشأت base44/entities/PlatformSettlement.jsonc: settlementNo, platformId, periodFrom/To, totalSales, totalCommission, commissionVat, netPayable, settledAmount, paymentMethod, referenceNo, invoiceIds
+    96→- أضفت حقول المنصة لـ SalesInvoice.jsonc: platformId, platformName, platformCommission, platformCommissionVat, isPlatformSale, manualDiscount, deliveryFee
+    97→- عدّلت buildSalesInvoiceJE في postOperation/entry.ts لمبيعات المنصات:
+    98→  * مدين: ذمم المنصة (1115) بالصافي = total - commission - commissionVat
+    99→  * مدين: مصروف العمولة (5231)
+   100→  * مدين: ضريبة العمولة المدفوعة (1140)
+   101→  * دائن: إيرادات المبيعات (4100/4300) + ضريبة المبيعات (2160)
+   102→- أضفت operation PLATFORM_SETTLEMENT في postOperation:
+   103→  * مدين: البنك/الصندوق (settledAmount)
+   104→  * دائن: ذمم المنصة (1115) — يخفّض الذمة
+   105→- أضفت createPlatformSettlement + Validation rules
+   106→- أضفت OperationEngine.createPlatformSettlement في businessEngine.js
+   107→- أعدت كتابة DeliveryPlatforms.jsx:
+   108→  * تحميل التسويات مع المنصات والفواتير
+   109→  * كشف حساب تلقائي: revenue/commission/commissionVat/net/paid/pending (لا إدخال يدوي)
+   110→  * نافذة تسوية حقيقية تعرض ملخص الكشف + نموذج (تاريخ/مبلغ/طريقة/حساب/مرجع)
+   111→  * التسوية تنشئ PlatformSettlement + قيد JE عبر OperationEngine
+   112→- التحقق المنطقي: قيد المنصة متوازن (115 = 95.16 + 17.25 + 2.59 = 100 + 15)
+   113→- lint: 0 أخطاء، build: نجح (bundle=index-CieP5Ha7.js)
+   114→- commit: 4d1ba04، push: ناجح
+   115→- Render auto-deploy: نشر index-CieP5Ha7.js
+   116→
+   117→التحقق الفعلي على Render (عبر API):
+   118→- إنشاء منصة هنقرستيشن (PL-0001, commission 15%): نجح
+   119→- إنشاء فاتورة منصة (INV-PLAT-TEST-1, 100+15 VAT=115, commission=17.25, commissionVat=2.59): نجح
+   120→- اعتماد الفاتورة → قيد JE مُرحّل:
+   121→  * 1115 Dr=95.16 (ذمم المنصة, partyType=PLATFORM) ✓
+   122→  * 5231 Dr=17.25 (مصروف عمولة) ✓
+   123→  * 1140 Dr=2.59 (ضريبة عمولة مدفوعة) ✓
+   124→  * 4300 Cr=100 (إيرادات الخدمات) ✓
+   125→  * 2160 Cr=15 (ضريبة مبيعات) ✓
+   126→  * متوازن: 115 = 115 ✓
+   127→- إنشاء تسوية (SET-PL-16103847, 95.16, BANK_TRANSFER): نجح → قيد JE:
+   128→  * 1112 Dr=95.16 (البنك) ✓
+   129→  * 1115 Cr=95.16 (إخفاض ذمة المنصة) ✓
+   130→  * متوازن: 95.16 = 95.16 ✓
+   131→- رصيد ذمم المنصة (1115) بعد التسوية = 0.00 (مغلق بالكامل) ✓
+   132→
+   133→التحقق في الواجهة (agent-browser):
+   134→- صفحة المنصات → تبويب "كشوفات المنصات" تعرض:
+   135→  * هنقرستيشن: 1 طلب | إيرادات 115 | عمولة 17.25 | صافي 95.16 | مسدّد 95.16 | معلّق 0.00 ✓
+   136→- زر "تسوية" disabled عند المعلّق=0 (لا تسوية زائدة) ✓
+   137→
+   138→Stage Summary:
+   139→- نظام كشف حساب المنصات يعمل بكامله على Render (مُتحقق فعلياً)
+   140→- الفاتورة هي المصدر، الكشف يُبنى تلقائياً، التسوية تخفّض الذمة تدريجياً
+   141→- العمولة وضريبتها تُسجّلان محاسبياً عند البيع (لا انتظار للتحصيل)
+   142→- التسوية تنشئ قيداً حقيقياً (لا patch مباشر)
+   143→
+   144→---
+   145→Task ID: platform-settlement-methods
+   146→Agent: main (Z.ai Code)
+   147→Task: مرونة طرق التسوية (NET/GROSS) + عرض محاسبي صحيح للكشف
+   148→
+   149→Work Log:
+   150→- أضفت settlementMethod (NET/GROSS) لمخطط DeliveryPlatform
+   151→- NET (افتراضي): المنصة تخصم العمولة قبل التحويل
+   152→  * قيد الفاتورة: مدين 1115 (الصافي) + 5231 (عمولة) + 1140 (ض.عمولة)
+   153→  * قيد التسوية: مدين بنك / دائن 1115 (نقدي فقط)
+   154→- GROSS: المنصة تحوّل بالإجمالي ثم تصدر فاتورة عمولة
+   155→  * قيد الفاتورة: مدين 1115 (الإجمالي كاملاً)، لا عمولة بعد
+   156→  * قيد التسوية: مدين بنك (الصافي) + 5231 (عمولة) + 1140 (ض.عمولة) / دائن 1115 (الإجمالي)
+   157→- approveSalesInvoice يحمل settlementMethod من سجل المنصة
+   158→- createPlatformSettlement يبني القيد حسب الطريقة
+   159→- عرض الكشف محاسبياً صحيح:
+   160→  * salesPreTax (الإيراد قبل الضريبة) — وليس الإجمالي
+   161→  * salesVat (ضريبة المبيعات) منفصلة
+   162→  * salesTotal (الإجمالي شامل الضريبة)
+   163→  * commission + commissionRate% (النسبة مع المبلغ)
+   164→  * commissionVat (ضريبة العمولة)
+   165→  * net (الصافي = إجمالي - عمولة - ض.عمولة)
+   166→  * paid (المحصل من التسويات)
+   167→  * pending (المتبقي = صافي - محصل)
+   168→- بطاقات ملخص: 8 بطاقات (طلبات/قبل الضريبة/ض.مبيعات/إجمالي/عمولات/ض.عمولات/صافي/متبقي)
+   169→- جدول الكشوفات: 11 عمود بشارة طريقة التسوية
+   170→- نموذج المنصة: حقول commissionVatRate, commissionMethod, settlementMethod, settlementAccountCode
+   171→- إصلاح: استيراد Select المفقود (كان يكسر الصفحة)
+   172→- lint: 0، build: نجح، commit: 6e9ead9، push: ناجح
+   173→- Render نشر index-C-plOqWC.js
+   174→
+   175→التحقق الفعلي على Render:
+   176→- إنشاء منصة جاهز (GROSS, 15% عمولة): نجح
+   177→- فاتورة GROSS (200+30=230, عمولة 34.5, ض.عمولة 5.18):
+   178→  * قيد الفاتورة: 1115 Dr=230 / 4300 Cr=200 + 2160 Cr=30 (متوازن، لا عمولة) ✓
+   179→- تسوية GROSS (cash 190.32):
+   180→  * قيد التسوية: 1112 Dr=190.32 + 5231 Dr=34.5 + 1140 Dr=5.18 / 1115 Cr=230 (متوازن) ✓
+   181→  * رصيد 1115 (جاهز) = 0.00 بعد التسوية ✓
+   182→- الواجهة تعرض:
+   183→  * جاهز GROSS: 3 طلبات | مبيعات قبل الضريبة 505 | ض.مبيعات 75.75 | إجمالي 580.75 | عمولة 89.70 (15%) | ض.عمولة 13.47 | صافي 477.59 | محصل 190.32 | متبقي 287.27 ✓
+   184→  * هنقرستيشن NET: 1 طلب | مبيعات قبل الضريبة 100 | ض.مبيعات 15 | إجمالي 115 | عمولة 17.25 (15%) | ض.عمولة 2.59 | صافي 95.16 | محصل 95.16 | متبقي 0.00 ✓
+   185→- بطاقات الملخص: طلبات 4 | قبل الضريبة 605 | ض.مبيعات 90.75 | إجمالي 695.75 | عمولات 106.95 | ض.عمولات 16.06 | صافي 572.75 | متبقي 287.27 ✓
+   186→
+   187→Stage Summary:
+   188→- كل الملاحظات المحاسبية المُقدّمة نُفّذت:
+   189→  1. مرونة طرق التسوية (NET/GROSS) في اتفاقية المنصة ✓
+   190→  2. عرض الإيراد قبل الضريبة + الضريبة + الإجمالي ✓
+   191→  3. عرض نسبة العمولة بجانب المبلغ ✓
+   192→  4. ملخص شامل في رأس الكشف ✓
+   193→  5. المجاميع تُحسب دائماً من الفواتير والتسويات (لا تخزين) ✓
+   194→- كلتا الطريقتين متوازنتان ومُتحقق منهما على Render
+   195→
+   196→---
+   197→Task ID: pos-cycles-separation
+   198→Agent: main (Z.ai Code)
+   199→Task: فصل دورات البيع الثلاث + الخصومات + إصلاح الحالة + إكمال الإيصال
+   200→
+   201→Work Log:
+   202→- أضفت فرض تفرّد رقم الفاتورة في createSalesInvoice (منع التكرار)
+   203→- أعدت كتابة approveSalesInvoice لتحديد الحالة تلقائياً:
+   204→  * نقدي (payments تغطي الإجمالي): PAID + paidAmount=الإجمالي
+   205→  * منصة/آجل (لا دفع): APPROVED + paidAmount=0
+   206→- أزلت تحديث الحالة المباشر من POS (كان ممنوعاً من الخادم)
+   207→- أضفت منع اجتماع "زبون نقدي" + "منصة" في handlePrintReceipt
+   208→- في بيع المنصة: clientName = اسم المنصة (لا "زبون نقدي")
+   209→- أضفت تتبع cashReceived (النقد المستلم) منفصلاً عن paidAmount
+   210→- paidAmount = min(total, cashReceived) — لا يُخزّن > الإجمالي
+   211→- change = cashReceived - total (يظهر في POS + الإيصال)
+   212→- أضفت نظام الخصومات الثلاثي:
+   213→  * خصم على الصنف (item.discount لكل وحدة) — UI في سلة POS
+   214→  * خصم العميل (%) — تلقائي من customer.discountPercentage
+   215→  * خصم يدوي على الفاتورة (مبلغ/نسبة) — UI مع toggle
+   216→  * الترتيب: خصم الأصناف → خصم العميل → خصم يدوي → الضريبة على الصافي
+   217→- أضفت saleType (DINE_IN/TAKEAWAY/DIRECT_DELIVERY/PLATFORM/CREDIT)
+   218→- أضفت شارات نوع البيع في شاشة الإيصالات (عمود جديد "النوع")
+   219→- أعدت كتابة الإيصال الحراري:
+   220→  * المجموع قبل الخصومات
+   221→  * خصومات الأصناف / خصم العميل / خصم إضافي (أسطر منفصلة)
+   222→  * القاعدة الخاضعة للضريبة
+   223→  * طرق الدفع المدمجة
+   224→  * المستلم من الزبون + الباقي للزبون (للنقدي)
+   225→  * شارة نوع البيع في الترويسة والتذييل
+   226→  * اسم المنصة + العمولة (للمنصة)
+   227→- lint: 0، build: نجح (index-D1jey2VV.js)
+   228→- commit: 6dad947، push: ناجح
+   229→- Render نشر index-D1jey2VV.js
+   230→
+   231→التحقق الفعلي على Render:
+   232→- فاتورة نقدية INV-CASH-1784119062:
+   233→  * status=PAID ✓ (ليس APPROVED)
+   234→  * paidAmount=115 ✓ (= الإجمالي)
+   235→  * JE: 1111 Dr=115 (صندوق) / 4100 Cr=100 / 2160 Cr=15 — متوازن ✓
+   236→- فاتورة منصة INV-PLAT-TEST-1:
+   237→  * status=APPROVED ✓ (ليس PAID — ذمة)
+   238→  * paidAmount=0 ✓ (آجلة)
+   239→- فاتورة مكررة INV-CASH-TEST-001: رُفضت ("مستخدم بالفعل") ✓
+   240→- شاشة الإيصالات تعرض شارات: صالة / منصة (جاهز) ✓
+   241→- الإيصال يعرض: النوع (صالة)، طرق الدفع (نقداً 115)، المستلم (120)، الباقي (5) ✓
+   242→
+   243→Stage Summary:
+   244→- كل الـ 12 ملاحظة نُفّذت:
+   245→  1. فصل زبون نقدي عن منصة ✓
+   246→  2. النقدي = PAID (ليس APPROVED) ✓
+   247→  3. الحالة تتطابق مع المدفوع ✓
+   248→  4. المدفوع لا يتجاوز الإجمالي (cashReceived منفصل) ✓
+   249→  5. تفرّد رقم الفاتورة ✓
+   250→  6. شارات نوع البيع ✓
+   251→  7. الخصومات (صنف/عميل/يدوي) ✓
+   252→  8. طرق الدفع في الإيصال ✓
+   253→  9. المستلم والباقي ✓
+   254→  10. منصة = APPROVED (ذمة) وليس PAID ✓
+   255→  11. فصل العميل النقدي عن المسجل عن المنصة ✓
+   256→  12. إكمال الإيصال (كل البيانات) ✓
+   257→
+   258→
+   259→---
+   260→Task ID: clean-equipment
+   261→Agent: general-purpose
+   262→Task: Clean Equipment.jsx for restaurant equipment
+   263→
+   264→Work Log:
+   265→- أزلت من emptyForm حقول البناء الثقيل: plateNumber (رقم اللوحة)، dailyRate/monthlyRate/hourlyRate (أسعار التأجير). أضفت بدلاً منها حقل location (مكان المعدة داخل المطعم).
+   266→- أعدت كتابة save() لإزالة parseFloat على dailyRate/monthlyRate/hourlyRate، مع الإبقاء على purchaseCost و currentValue و year.
+   267→- أعدت كتابة remove(): استبدلت الفحوصات الثلاثة لـ RentalContract + RentalInvoice + OperatingHours بفحص واحد لـ MaintenanceRecord (base44.entities.MaintenanceRecord.filter({ equipmentId })) — مع رسالة "لا يمكن حذف معدة لها سجلات صيانة". هذا يحافظ على مرجع الصيانة فقط.
+   268→- عرّفت ثابتاً محلياً RESTAURANT_EQUIPMENT_STATUS يُنشأ بتصفية EQUIPMENT_STATUS (المستورد من src/lib دون تعديله) لحذف حالة RENTED من كل واجهات الاختيار/العرض. السجلات القديمة ذات status=RENTED (إن وُجدت) تُعرض كـ IN_USE عبر fallback.
+   269→- حدّثت عناوين الواجهة: العنوان "المعدات" → "معدات المطعم" / "Restaurant Equipment"، والعنوان الفرعي "إدارة أسطول المعدات والآليات" → "إدارة معدات المطعم وأجهزته (كاشير، طابعات حرارية، ثلاجات، فريزر، فرن، خلاطات، ماكينة قهوة)".
+   270→- حدّثت عنوان TableToolbar إلى "معدات المطعم" / "Restaurant Equipment".
+   271→- نظّفت أعمدة الجدول: حذفت عمود "رقم اللوحة" وعمود "سعر يومي"، وأضفت عمود "الموقع" / "Location". أصبح عدد الأعمدة 7 (كان 8)، مع تحديث colSpan والـ skeleton rows.
+   272→- نظّفت exportColumns: حذفت plateNumber و dailyRate، أضفت location و serialNumber.
+   273→- نظّفت حقول النموذج: حذفت plateNumber/dailyRate/monthlyRate/hourlyRate، أضفت location. غيّرت تسمية "السنة" → "سنة الصنع" / "Year".
+   274→- وسّعت محرّك البحث ليشمل serialNumber و location (بالإضافة إلى code و name).
+   275→- أزلت زر "مركز العمل" (Workspace) ورابط الاسم القابل للنقر ودالة openWorkspace واستيراد ArrowUpRight — لأن equipment-workspace مُصنّف ضمن مجموعة rental في permissions.js ويرتبط بمفاهيم التأجير.
+   276→- أزلت setEquipmentContext و setActiveItem من تفكيك useStore (لم تعُد تُستخدم بعد حذف openWorkspace).
+   277→- أزلت استيراد formatCurrency غير المستخدم بعد حذف عمود السعر اليومي.
+   278→- حافظت على: اسم الكيان base44.entities.Equipment، جميع عمليات CRUD (list/create/update/delete/filter)، دالة nextCodeFromList مع البادئة 'EQP'، الحقول المتوافقة مع مطعم (code, name, nameAr, type, brand, model, year, serialNumber, purchaseDate, purchaseCost, currentValue, notes, status)، الـ ConfirmDialog، التوفّر ثنائي اللغة عبر t().
+   279→- لم ألمس أي ملف في src/lib/ (EQUIPMENT_STATUS يبقى كما هو؛ التصفية تتم محلياً في الصفحة فقط).
+   280→- لم ألمس Equipment.jsonc ولا أي ملف كيان آخر.
+   281→- لم ألمس EquipmentMaintenance.jsx ولا أي صفحة أخرى.
+   282→- lint: 0 أخطاء و 0 تحذيرات على src/pages/Equipment.jsx (eslint exit 0).
+   283→
+   284→Stage Summary:
+   285→- Equipment.jsx أصبحت سجلّاً نقياً لمعدات المطعم: كاشير، طابعات حرارية، ثلاجات، فريزر، فرن، خلاطات، ماكينة قهوة... لا توجد أي إشارة لأسطول المعدات/الآليات أو رقم لوحة أو سعر تأجير أو ساعات تشغيل أو موقع بناء.
+   286→- جميع عمليات CRUD تعمل دون تغيير في اسم الكيان أو واجهة API.
+   287→- حذف معدة يُحجب فقط عند وجود سجلات صيانة (MaintenanceRecord) — لا فحوصات لعقود الإيجار أو الفواتير أو ساعات التشغيل.
+   288→- حالة RENTED محذوفة من كل واجهات الاختيار والعرض، مع fallback آمن إلى IN_USE للسجلات القديمة.
+   289→- حقل location جديد لتسجيل مكان المعدة داخل المطعم (المطبخ/الكاشير/الصالة...).
+   290→- الكود ثنائي اللغة بالكامل عبر t()، ومرّر eslint بنجاح.
+   291→
+   292→
+   293→---
+   294→Task ID: clean-expenses
+   295→Agent: general-purpose
+   296→Task: تنظيف صفحة المصروفات من مفاهيم البناء (مشروع/معدات/عقد/موقع)
+   297→
+   298→Work Log:
+   299→- قرأت worklog.md وملفّي src/pages/Expenses.jsx و src/components/expenses/ExpenseDialog.jsx، وفحصت src/lib/utils-binaa.js (للقراءة فقط — لم أُعدّله) للتأكد من EXPENSE_TYPES و EXPENSE_CATEGORIES وقيم accountRole (EXPENSE_PROJECT, EXPENSE_EQUIPMENT, EXPENSE_EMPLOYEE, EXPENSE_GOVERNMENT, EXPENSE_ADMIN, EXPENSE_GENERAL) المتوافقة مع businessEngine.js و postOperation/entry.ts.
+   300→
+   301→التغييرات على src/components/expenses/ExpenseTypePicker.jsx (تعديل طفيف لدعم التصفية):
+   302→- أضفت prop اختياري `types = EXPENSE_TYPES` (افتراضي لكامل القائمة للحفاظ على التوافق مع أي مستدعٍ آخر)، واستبدلت `EXPENSE_TYPES.map` بـ `types.map` داخل العرض. وثّقت السبب في تعليق عربي. لم أحذف أيقونات Building2/Truck من الـ ICONS map كي يبقى المكون متوافقاً مع أي مستدعٍ قديم.
+   303→
+   304→التغييرات على src/components/expenses/ExpenseDialog.jsx:
+   305→- أضفت ثابتين محليّين:
+   306→  * `HIDDEN_EXPENSE_TYPES = ['PROJECT', 'EQUIPMENT']` — الأنواع الخاصة بالبناء المحجوبة عن الواجهة.
+   307→  * `RESTAURANT_EXPENSE_TYPES = EXPENSE_TYPES.filter(t => !HIDDEN_EXPENSE_TYPES.includes(t.key))` — قائمة مُصدَّرة تضم فقط: EMPLOYEE, GOVERNMENT, ADMIN, COMPANY.
+   308→- أضفت `LEGACY_TYPE_DISPLAY_FALLBACK = { PROJECT: 'COMPANY', EQUIPMENT: 'ADMIN' }` ودالة مُصدَّرة `getRestaurantExpenseType(key)` تُسقط أي نوع بناء قديم إلى نوع مطعمي للعرض فقط (دون تغيير القيمة المخزّنة). هذا يحافظ على التوافق مع قيم accountRole في src/lib (EXPENSE_PROJECT/EXPENSE_EQUIPMENT تبقى كما هي في البيانات).
+   309→- مرّرت `types={RESTAURANT_EXPENSE_TYPES}` إلى ExpenseTypePicker لإخفاء PROJECT/EQUIPMENT من شاشة اختيار النوع.
+   310→- حذفت تماماً الكتلتين الديناميكيتين لـ `project` و `equipment` (كانتا تعرضان اختيار المشروع واختيار المعدات). أبقيت الكتلتين الديناميكيتين `employee` (لمصروف الموظف) و `govEntity` (لمصروف الجهة الحكومية) لأنهما مطعميتان (الرواتب تُدار في HR، والرسوم الحكومية مطعمية: الزكاة والبلدية والغذاء والدواء). أصبح الفحص يعتمد على `originalTypeDef.fields` (تعريف النوع الأصلي) لكي تظل السجلات القديمة قابلة للتحرير دون فقد فئاتها.
+   311→- حدّثت placeholder لـ govEntity من "مثل: البلدية، الجوازات..." إلى "مثل: الزكاة والضريبة، البلدية، الغذاء والدواء...".
+   312→- حذفت `projects`, `equipment`, `subcontractors` من props الدالة. أبقيت `employees` فقط (تُستخدم في الكتلة الديناميكية لموظف).
+   313→- عرض النوع (شارة typeDef ولقب النافذة) أصبح يستخدم `getRestaurantExpenseType` بحيث يُعرض السجل القديم من نوع PROJECT كـ "مصروف شركة / Company Expense" ونوع EQUIPMENT كـ "مصروف إداري / Administrative Expense".
+   314→- تعليق عام مُوضِّح أنواع البناء المحجوبة وعلاقتها بـ postOperation/entry.ts.
+   315→
+   316→التغييرات على src/pages/Expenses.jsx:
+   317→- حذفت استيراد `EXPENSE_TYPES, getExpenseType` من utils-binaa (لم يعُد يُستخدم). أبقيت `EXPENSE_CATEGORIES, formatCurrency, formatDate, t`.
+   318→- استوردت `RESTAURANT_EXPENSE_TYPES, getRestaurantExpenseType` من ExpenseDialog.
+   319→- حذفت من `empty`: projectId, projectName, equipmentId, equipmentName, subcontractorId, subcontractorName. أبقيت: employeeId, employeeName, govEntity.
+   320→- حذفت من تفكيك useStore: `activeProjectId, activeProjectName` (لم يعُد يُستخدم).
+   321→- حذفت state وloading لـ: projects, equipment, subcontractors. أبقيت: items, employees, accounts.
+   322→- ضيّقت `Promise.all` في `load()` من 6 نداءات إلى 3: Expense.list + Employee.list + ChartAccount.list. لا نداء لـ Project/Equipment/Subcontractor بعد الآن.
+   323→- بسّطت `buildDefaultForm` إلى `{ ...empty }` (كانت تضبط expenseType=PROJECT عند وجود activeProjectId — مفهوم بناء).
+   324→- ضيّقت `refs` من `{ projects, equipment, employees, subcontractors }` إلى `{ employees }` فقط. التحققت أن businessEngine._buildExpensePayload يتحمّل غياب المفاتيح برجوع nameOf إلى القيمة المخزّنة (فارغة) دون أخطاء — مرّت eslint والبناء.
+   325→- في `exportColumns`: عمود "مرتبط بـ" أصبح `r.employeeName || r.govEntity || ''` (كان `r.projectName || r.equipmentName || r.employeeName || r.subcontractorName || r.govEntity`).
+   326→- عمود "النوع" في exportColumns والجدول أصبح يستخدم `getRestaurantExpenseType(...)` بدل `getExpenseType(...)` لعرض السجلات القديمة بالأنواع المطعمية المعاد تعيينها.
+   327→- في الجدول: `linked = item.employeeName || item.govEntity || '—'` (كان يشمل projectName/equipmentName/subcontractorName).
+   328→- فلتر "النوع" في شريط الأدوات أصبح يعتمد على `RESTAURANT_EXPENSE_TYPES.map(...)` بدل `EXPENSE_TYPES.map(...)` — فلا تظهر خيارات PROJECT/EQUIPMENT.
+   329→- حدّثت عنوان الصفحة من "المصروفات العامة / General Expenses" إلى "المصروفات / Expenses"، والعنوان الفرعي من "تسجيل ومتابعة المصروفات التشغيلية / Track operational expenses" إلى "تسجيل ومتابعة مصروفات المطعم / Track restaurant expenses"، واسم ملف التصدير في TableToolbar إلى "المصروفات / Expenses".
+   330→- حذفت props غير المستخدمة من `<ExpenseDialog>`: projects, equipment, subcontractors. أبقيت: employees, expenseAccounts, cashAccounts.
+   331→
+   332→القواعد الملتزَم بها:
+   333→- لم ألمس src/lib/ إطلاقاً (utils-binaa.js, businessEngine.js, postingEngine.js, standardChart.js كما هي).
+   334→- لم أغيّر اسم الكيان ولا واجهات API: `base44.entities.Expense` (list/create/update/delete/filter) و`base44.entities.JournalEntry` و`base44.entities.Employee` و`base44.entities.ChartAccount` كما هي.
+   335→- أبقيت نداءات OperationEngine.createExpense / updateExpense (مع refs مختصرة)، ودالة العكس reverse()، ودالة الحذف remove()، وConfirmDialog، والـ search/filterType/filterCat.
+   336→- أبقيت ثنائية اللغة عبر t() في كل النصوص الجديدة والمعدَّلة.
+   337→- قيم accountRole في src/lib (EXPENSE_PROJECT, EXPENSE_EQUIPMENT, EXPENSE_GENERAL, EXPENSE_ADMIN, EXPENSE_EMPLOYEE, EXPENSE_GOVERNMENT) تبقى دون تغيير — فقط لم تعُد تُختار من الواجهة للأنواع المحجوبة. السجلات القديمة بالأنواع PROJECT/EQUIPMENT تُعرض بـ COMPANY/ADMIN للقراءة فقط وتُحفظ قيمها الأصلية عند التحديث.
+   338→
+   339→التحقق:
+   340→- eslint على الملفات الثلاثة (Expenses.jsx, ExpenseDialog.jsx, ExpenseTypePicker.jsx): exit 0 (0 أخطاء، 0 تحذيرات).
+   341→- vite build: نجح (bundle index-S73srD7F.js، 2723 modules، 10.56s).
+   342→- فحص bundle: مصطلحات البناء "مصروف مشروع/مصروف عقد/مصروف موقع" غائبة كلياً. "مصروف معدة" و "مصروف طلب" لا تزال موجودة كقيم حرفية في utils-binaa.js (محظور تعديلها) لكنها محجوبة عن كل واجهات الاختيار والعرض بفضل RESTAURANT_EXPENSE_TYPES وgetRestaurantExpenseType.
+   343→
+   344→Stage Summary:
+   345→- صفحة المصروفات أصبحت مطعمية بالكامل في الواجهة: لا اختيار مشروع/معدات/عقد/موقع/BOQ، لا تحميل لكيانات Project/Equipment/Subcontractor.
+   346→- أنواع المصروفات الظاهرة للإنشاء الجديد: مصروف موظف، مصروف حكومي، مصروف إداري، مصروف شركة (عمومي) — مع فئات مطعمية متاحة لكل نوع (إيجار/كهرباء/مياه/صيانة/مستهلكات/خدمات/مكتبية/ضيافة/سفر/رواتب/رسوم حكومية/تراخيص/تأمين/أخرى).
+   347→- السجلات القديمة بالأنواع PROJECT/EQUIPMENT تُعرض بأمان كـ "مصروف شركة"/"مصروف إداري" ولا تنكسر عند التحرير (يُحترم originalTypeDef للفئات والحقول الديناميكية المتبقية).
+   348→- العمليات الحسابية والقيد المحاسبي (OperationEngine → postOperation) تعمل دون تغيير في العقد.
+   349→- لم يُلمس أي ملف في src/lib/.
+   350→
+   351→
+   352→---
+   353→Task ID: clean-projects-dashboard
+   354→Agent: general-purpose
+   355→Task: تنظيف صفحات الطلبات (Projects.jsx) ولوحة المبيعات (Dashboard.jsx) ومراكز التكلفة (CostCenters.jsx) من بقايا مفاهيم البناء
+   356→
+   357→Work Log:
+   358→- قرأت worklog.md لفهم العمل السابق (تنظيف Equipment.jsx و Expenses.jsx بنفس النمط: إزالة المفاهيم البنائية مع الإبقاء على الكيان/CRUD/OperationEngine).
+   359→
+   360→التغييرات على src/pages/Projects.jsx:
+   361→- emptyForm: حذفت حقول البناء الثلاثة: location (موقع الإنشاء)، contractValue (قيمة العقد)، projectType (نوع مشروع البناء). أبقيت: code, name, nameAr, clientId, clientName, startDate, endDate, status, description.
+   362→- حذفت ثابت PROJECT_TYPES بالكامل (كان: CONSTRUCTION/RENTAL/BOTH مع تسميات مخفّفة "Restaurant/Rental/Both" — العنصر CONSTRUCTION بنفسه بقايا بناء).
+   363→- openEdit: بسّطته إلى `{ ...emptyForm, ...item }` (كان يضيف `contractValue: item.contractValue || ''`).
+   364→- save: حذفت `contractValue: parseFloat(form.contractValue) || 0` من حمولة البيانات المرسَلة للكيان. أبقيت منطق nextCodeFromList + clientName من الزبون المختار.
+   365→- remove: حذفت 6 فحوصات كيانات بنائية من Promise.all: Contract, BOQItem, ProgressBilling, ChangeOrder, ProjectDocument, ContractItem. أبقيت 5 فحوصات مطعمية: SalesInvoice (إيصالات)، PurchaseOrder (مشتريات)، Expense (مصروفات)، WorkOrder، DailyReport. هذا يمنع أخطاء "entity not found" عند الحذف ويُبقي الحماية على المعاملات المرتبطة بالطلب.
+   366→- exportColumns: حذفت عمودي "النوع/Type" و"قيمة العقد/Contract Value". أبقيت: الكود، اسم الطلب، الزبون، الحالة، تاريخ البدء (5 أعمدة بدل 7).
+   367→- رأس الجدول: حذفت عمودي "النوع" و"قيمة العقد" (من 8 أعمدة إلى 6).
+   368→- جسم الجدول: حذفت خلية شارة النوع (pt) وخلية قيمة العقد (formatCurrency). حذفت متغير `pt` المحلي. حدّثت skeleton rows من length:8 إلى length:6، وcolSpan من 8 إلى 6 لحالة "لا توجد طلبات".
+   369→- التذييل: حذفت سطر "إجمالي قيمة العقود / Total contract value" مع reduce على contractValue. أبقيت عدّاد الطلبات فقط.
+   370→- بانر المعلومات: حدّثت النص من "لعرض العقود والإيصالات والمصروفات والمستندات" إلى "لعرض الإيصالات والمصروفات والمستندات" (إزالة كلمة "العقود/contracts").
+   371→- نموذج الحوار: حذفت 3 حقول إدخال: "الموقع/Location"، "قيمة العقد/Contract Value"، "نوع الطلب/Order Type" (مع Select الخاص به). النموذج الآن: كود، اسم، اسم عربي، زبون، تاريخ بدء، تاريخ انتهاء، حالة، وصف.
+   372→- حدّثت العنوان الفرعي من "إدارة طلبات المطاعم والتنفيذ / Manage restaurant and execution orders" إلى "إدارة طلبات المطعم والفروع / Manage restaurant orders and branches" (إزالة كلمة "التنفيذ/execution" البنائية).
+   373→- أضفت تعليقين توضيحيين عربيين فوق emptyForm وفوق checks في remove() لتوثيق ما حُذف ولماذا.
+   374→- حذفت استيراد formatCurrency غير المستخدم بعد إزالة جميع استدعاءاته. أبقيت: t, formatDate, PROJECT_STATUS, nextCodeFromList.
+   375→- حافظت على: الكيان base44.entities.Project (list/create/update/delete/filter)، validate('PROJECT', form)، canTransition('PROJECT', ...) من workflowEngine، openWorkspace → setActiveItem('project-workspace') (فتح الطلب → مركز العمل → POS/Tables)، nextCodeFromList(items, 'PRJ')، Project.filter في load()، Client.list، الـ ConfirmDialog، TableToolbar، البحث وفلتر الحالة، توفّر ثنائي اللغة عبر t()، صلاحيات usePermissions('projects').
+   376→- حالة 'PLANNING' الافتراضية في emptyForm تُترجم تلقائياً عبر PROJECT_STATUS في utils-binaa.js إلى "قيد التحضير/Preparing" — ليست مصطلحاً بنائياً ظاهراً للمستخدم.
+   377→
+   378→التغييرات على src/pages/Dashboard.jsx:
+   379→- فحص كامل: اللوحة كانت بالفعل مطعمية بالكامل (لا KPIs/widget بنائية). تتضمن: مبيعات اليوم، عدد الإيصالات، متوسط الإيصال، طاولات نشطة، إجمالي الإيرادات، طاولات مشغولة، أصناف القائمة، الأكثر مبيعاً، طرق الدفع، مبيعات الفروع، أحدث الإيصالات، إجراءات سريعة (POS/Tables/Branches/Receipts/Customers/Reports).
+   380→- تنظيف: حذفت `activeProjectName` من تفكيك useStore (كانت مُستوردة بلا استخدام — بقايا التخطيط البنائي القديم الذي كان يعرض اسم المشروع النشط).
+   381→- تنظيف: حذفت استيراد useAuth و `const { user } = useAuth()` (كانت user غير مستخدمة — تحذير lint سابق).
+   382→- حافظت على: activeProjectId (يُستخدم في getBranchTableStats و useEffect dependency)، load() مع SalesInvoice.list + InventoryItem.filter + Project.filter({ status: 'ACTIVE' }) (Project = Branch هنا)، branchRevenue المبني على inv.projectName (اسم الفرع من الفاتورة)، جميع KPIs/Widgets المطعمية.
+   383→
+   384→التغييرات على src/pages/CostCenters.jsx:
+   385→- فحص كامل: كل التسميات الظاهرة للمستخدم كانت بالفعل مطعمية: العنوان "تحليل أقسام المطعم / Restaurant Section Analysis"، العنوان الفرعي "الإيراد والتكلفة والهامش لكل قسم مطعم (طلب)"، رأس الجدول "قسم المطعم / Restaurant Section"، exportColumns "قسم المطعم / Restaurant Section"، رسالة الفراغ "لا توجد بيانات أقسام مطاعم".
+   386→- التغيير الوحيد: حدّثت التعليق البرمجي على رأس الدالة من "// تحليل مراكز التكلفة: إيراد وتكلفة وهامش لكل مركز (مشروع)." إلى "// تحليل أقسام المطعم: إيراد وتكلفة وهامش لكل قسم (طلب/فرع). الكيان Project يُستخدم كقسم مطعم." — لإزالة كلمة "مشروع" من التعليق ومواءمته مع التسميات الظاهرة.
+   387→- حافظت على: الكيان base44.entities.Project.list (يُستخدم كقسم/فرع)، buildCostCenterAnalysis من src/lib/ledgerEngine (لم يُلمس)، JournalEntry.list و ChartAccount.list، KPIs (إجمالي الإيرادات/التكاليف/الهامش)، فلتر الفترة (from/to)، exportColumns الـ9 أعمدة، الجدول بـ7 أعمدة + صف الإجمالي.
+   388→
+   389→القواعد الملتزَم بها:
+   390→- لم ألمس src/lib/ إطلاقاً (utils-binaa.js, validationEngine.js, workflowEngine.js, ledgerEngine.js, store.js, AuthContext.jsx كما هي).
+   391→- validationEngine.js لـ PROJECT: يتحقق فقط من code + name + (endDate >= startDate). إزالة contractValue/projectType/location لا تُسقط أي تحقق.
+   392→- لم أُغيّر اسم الكيان ولا واجهات API: base44.entities.Project (list/create/update/delete/filter) و base44.entities.Client.list و base44.entities.SalesInvoice/PurchaseOrder/Expense/WorkOrder/DailyReport.filter (في remove) كما هي.
+   393→- لم ألمس أي ملف كيان في base44/entities/ (Project.jsonc وغيرها كما هي).
+   394→- أبقيت OperationEngine يعمل: لا نداءات OperationEngine في Projects.jsx أصلاً (الحفظ مباشر عبر base44.entities.Project). Dashboard لا يستخدم OperationEngine. CostCenters يستخدم buildCostCenterAnalysis (دالة تحليل قراءة فقط).
+   395→- أبقيت تدفق "فتح الطلب → مركز العمل → POS/Tables": openWorkspace(item) → setProjectContext + setClientContext + setActiveItem('project-workspace').
+   396→- أبقيت ثنائية اللغة عبر t() في كل النصوص الجديدة والمعدَّلة (تعليقات التوثيق عربية فقط لأنها داخلية).
+   397→- أبقيت canTransition من workflowEngine لمنع انتقالات الحالة غير المسموحة.
+   398→- أبقيت usePermissions('projects') لصلاحيات canCreate/canEdit/canDelete.
+   399→
+   400→التحقق:
+   401→- eslint على الملفات الثلاثة (Projects.jsx, Dashboard.jsx, CostCenters.jsx): exit 0 (0 أخطاء، 0 تحذيرات).
+   402→- vite build: نجح (bundle index-t2JYikAo.js، 2723 modules، 9.75s).
+   403→- فحص bundle: "قيمة العقد" ×0، "Contract Value" ×0، "PROJECT_TYPES"/"projectType" ×0، "إجمالي قيمة العقود"/"Total contract value" ×0، "مدير مشروع"/"project manager" ×0.
+   404→- فحص شفرة Projects.jsx: لا أي استدعاء لـ formatCurrency، ولا أي مرجع لـ contractValue/projectType/PROJECT_TYPES/BOQItem/ProgressBilling/ChangeOrder/ContractItem/ProjectDocument خارج تعليقات التوثيق.
+   405→
+   406→Stage Summary:
+   407→- صفحة الطلبات (Projects.jsx) أصبحت نقية مطعمية: لا موقع بناء، لا قيمة عقد، لا نوع مشروع بناء، لا فحوصات كيانات بنائية عند الحذف، لا عمود نوع/قيمة عقد في الجدول أو التصدير، لا حقل إدخال لقيمة العقد/الموقع/النوع في النموذج، لا تذييل "إجمالي قيمة العقود". الكيان Project يبقى كـ "طلب/فرع" مع CRUD كامل وتدفق فتح مركز العمل.
+   408→- لوحة المبيعات (Dashboard.jsx) كانت بالفعل مطعمية بالكامل — نظّفت فقط بقايا التخطيط البنائي القديم (activeProjectName غير المستخدم) واستيراد useAuth/user غير المستخدم.
+   409→- صفحة أقسام المطعم (CostCenters.jsx) كانت بالفعل معاد تسميتها بالكامل في الواجهة — نظّفت فقط التعليق البرمجي الذي كان لا يزال يشير إلى "مشروع".
+   410→- جميع القيود احتُرمت: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، CRUD و OperationEngine يعملان، ثنائية اللغة محفوظة.
+   411→
+   412→
+   413→---
+   414→Task ID: clean-sales-clients-stockmovements
+   415→Agent: general-purpose
+   416→Task: تنظيف صفحات إيصالات البيع (SalesInvoices.jsx) والعملاء (Clients.jsx) والحركات المخزنية (StockMovements.jsx) من بقايا مفاهيم البناء
+   417→
+   418→Work Log:
+   419→- قرأت worklog.md لفهم النمط المتّبع في التنظيف السابق (clean-equipment، clean-expenses، clean-projects-dashboard): إزالة المفاهيم البنائية مع الإبقاء على الكيان/CRUD/OperationEngine/ثنائية اللغة.
+   420→
+   421→التغييرات على src/pages/SalesInvoices.jsx:
+   422→- empty: حذفت حقلي `progressBillingId` و `certificateNo` (مفاهيم البناء: المستخلصات ورقم الشهادة). أبقيت: invoiceNo, invoiceType, projectId, projectName, clientId, clientName, date, dueDate, subtotal, vatRate, paidAmount, status, description, notes.
+   423→- حذفت state وloading لـ: `certificates` (المستخلصات) و `contracts` (العقود). أبقيت: items, projects, clients, printInvoice.
+   424→- ضيّقت `Promise.all` في `load()` من 5 نداءات إلى 3: SalesInvoice.list + Project.list + Client.list. لا نداء لـ ProgressBilling أو Contract بعد الآن — كانا كيانات بنائية محذوفة.
+   425→- أعدت كتابة `openPrint(item)` لتعيين الفاتورة مباشرة (كانت تبحث عن العقد المرتبط بالمشروع وتضيف contractNo قبل الطباعة — منطق بنائي للعقود لم يعُد له معنى).
+   426→- حذفت كامل حساب `approvedCerts = certificates.filter(...)` (المستخلصات المعتمدة للمشروع المختار).
+   427→- حذفت كتلة التحقق من المستخلصات في `save()`: كانت تتطلب (1) اختيار طلب لإيصال الصالة، (2) وجود مستخلص معتمد لهذا الطلب، (3) ربط الإيصال بمستخلص معتمد عبر progressBillingId. كل هذا المنطق البنائي محذوف. أبقيت فقط التحققين العامّين: وجود invoiceNo + clientId، و dueDate >= date.
+   428→- حدّثت `onValueChange` لحقل اختيار الطلب (Project) لإزالة إعادة ضبط `progressBillingId: '', certificateNo: ''` عند تغيير الطلب. أبقيت ضبط projectId/projectName وانتقال clientId/clientName من بيانات الطلب.
+   429→- حذفت كامل كتلة واجهة اختيار المستخلص المعتمد (Select مع approvedCerts + رسالتا "اختر الطلب أولاً" و"لا يوجد مستخلص معتمد" + حقل subtotal المُعبأ من المستخلص). كانت تظهر فقط عند `invoiceType === 'CONSTRUCTION'` (= صالة).
+   430→- حذفت علامة النجمة الشرطية من عنوان حقل الطلب (`{form.invoiceType === 'CONSTRUCTION' ? ' *' : ''}`) — لم تعُد الضرورة إلزامية بعد إزالة فحص المستخلص. أصبح العنوان مجرد "الطلب / Order".
+   431→- حدّثت تعليق `buildDefaultForm` من "تطبيق سياق المشروع/العميل..." إلى "تطبيق سياق الطلب/الزبون..." (إزالة كلمة "المشروع" البنائية من التعليق).
+   432→- حدّثت تعليق `openPrint` من "إثراء الفاتورة برقم العقد المرتبط بمشروعها قبل الطباعة." إلى "معاينة وطباعة الإيصال.".
+   433→- حافظت على: شارة نوع البيع (saleType badge column) بكامل منطقها (DINE_IN/TAKEAWAY/DIRECT_DELIVERY/PLATFORM/CREDIT) مع قراءة JSON من notes وعرض شارة ملوّنة لكل نوع، الكيان base44.entities.SalesInvoice (list/create/update/delete + filter في reverse)، base44.entities.Project.list (كسياق فرع/طلب)، base44.entities.Client.list، نداءات OperationEngine (createSalesInvoice, updateSalesInvoice, approveSalesInvoice)، دالة reverse() مع JournalEntry، الثابت TYPES (CONSTRUCTION=صالة، SERVICE=توصيل، RENTAL=حجز — مطعمي)، TableToolbar، ConfirmDialog، ReceiptPrintDialog، بحث وفلتر الحالة، KPIs (محصل/معلق)، ثنائية اللغة عبر t()، صلاحيات usePermissions.
+   434→
+   435→التغييرات على src/pages/Clients.jsx:
+   436→- حذفت `base44.entities.Contract.filter({ clientId: deleteId })` من Promise.all في `remove()`. الكيان Contract محذوف من النظام (مفهوم بنائي).
+   437→- أضفت تعليقاً توثيقياً "// الكيانات البنائية (Contract, RentalContract) محذوفة — لا فحص لها هنا." لتوضيح سبب عدم وجود الفحوصات.
+   438→- حدّثت رسالة الخطأ من "لا يمكن حذف عميل له فواتير أو تحصيلات أو عقود / Cannot delete a client with invoices, payments or contracts" إلى "لا يمكن حذف عميل له فواتير أو تحصيلات / Cannot delete a client with invoices or payments" (إزالة كلمة "عقود / contracts").
+   439→- أبقيت فحصَي SalesInvoice و ClientPayment فقط (كيانات مطعمية موجودة).
+   440→- ملاحظة: RentalContract لم يكن موجوداً أصلاً في الفحوصات (كان Contract فقط) — لكن وثّقت المحذوفين معاً في التعليق.
+   441→- حافظت على: الكيان base44.entities.Client (list/create/update/delete)، البحث الذكي (الاسم/الكود/رقم الجوال مع مطابقة آخر الأرقام)، PartyStatementSection لعرض الكشوفات والتحصيل، SmartEntityCard، TableToolbar، ConfirmDialog، ثنائية اللغة، تبويب "بيانات العملاء / الكشوفات والتحصيل".
+   442→
+   443→التغييرات على src/pages/StockMovements.jsx:
+   444→- فحص كامل: لم أجد أي مصطلح بنائي ظاهر للمستخدم. كل المراجع لـ "Project" هي:
+   445→  * اسم الكيان `base44.entities.Project.list` (يُستخدم كسياق فرع/طلب — مُبقّى حسب القواعد).
+   446→  * متغير state `projects` (مصفوفة عرض).
+   447→  * حقل الكيان `projectName` (يُعرض كلون من بيانات الحركة بدون تسمية بنائية).
+   448→- الواجهة تستخدم "الطلب" / "Order" لكل السياقات المتعلقة بالمشروع (مثلاً: "الطلب (يُحمّل عليه المصروف) / Order (charged)" في نموذج صرف المخزون). هذا متوافق مع القاعدة "Project = branch context — keep as الطلب/Order".
+   449→- لا تغييرات مطلوبة. الملف نظيف بالفعل.
+   450→
+   451→القواعد الملتزَم بها:
+   452→- لم ألمس src/lib/ إطلاقاً (businessEngine.js, postingEngine.js, utils-binaa.js كما هي).
+   453→- لم أُغيّر اسم أي كيان ولا واجهات API: base44.entities.SalesInvoice / Project / Client / ClientPayment / JournalEntry (في reverse) — كلها كما هي.
+   454→- أبقيت نداءات OperationEngine (createSalesInvoice, updateSalesInvoice, approveSalesInvoice) تعمل دون تغيير في العقد.
+   455→- أبقيت شارة نوع البيع (saleType badge) بكاملها كما أُضيفت في المهمة السابقة (6dad947).
+   456→- أبقيت ثنائية اللغة عبر t() في كل النصوص (تعليقات التوثيق عربية فقط).
+   457→- لم ألمس أي ملف كيان في base44/entities/.
+   458→
+   459→التحقق:
+   460→- eslint على الملفات الثلاثة (SalesInvoices.jsx, Clients.jsx, StockMovements.jsx): exit 0 (0 أخطاء، 0 تحذيرات).
+   461→- vite build: نجح (bundle index-DDO1OiBe.js، 2723 modules، 10.70s).
+   462→- فحص شفرة SalesInvoices.jsx: لا أي مرجع لـ progressBillingId / certificateNo / approvedCerts / Contract.list / ProgressBilling.list / contractNo / certificate / مستخلص خارج التعليقات.
+   463→- فحص شفرة Clients.jsx: لا أي نداء لـ base44.entities.Contract (فقط إشارة تعليق توثيقي للمحذوف).
+   464→- فحص bundle: "المستخلص المعتمد" ×0، "progressBillingId" ×0، "approvedCerts" ×0.
+   465→
+   466→Stage Summary:
+   467→- صفحة إيصالات البيع (SalesInvoices.jsx) أصبحت نقية مطعمية: لا ربط بمستخلصات، لا بحث عن عقود، لا واجهة اختيار شهادة معتمدة، لا تحقق إلزامي بوجود طلب للصالة. النموذج يحتوي فقط على: رقم الإيصال، نوع الإيصال (صالة/توصيل/حجز)، الزبون، الطلب (اختياري كسياق فرع)، التاريخ، تاريخ الاستحقاق، المبلغ قبل الضريبة، نسبة الضريبة، مبلغ الضريبة (محسوب)، الإجمالي (محسوب)، المبلغ المدفوع، الحالة، الوصف، الملاحظات. شارة نوع البيع (saleType) محفوظة بالكامل في عمود الجدول.
+   468→- صفحة العملاء (Clients.jsx): حذف عميل يُحجب فقط عند وجود فواتير بيع أو تحصيلات — لا فحص للعقود (Contract) المحذوفة. رسالة الخطأ محدّثة لتعكس الفحوصات الفعلية.
+   469→- صفحة الحركات المخزنية (StockMovements.jsx): كانت نظيفة بالفعل — لا تغييرات. حقل projectId مُبقّى كسياق فرع/طلب مع تسمية "الطلب" مطعمية في كل الواجهة.
+   470→- جميع القيود احتُرمت: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، CRUD و OperationEngine يعملان، شارة saleType محفوظة، ثنائية اللغة محفوظة.
+   471→
+   472→---
+   473→Task ID: construction-cleanup-final
+   474→Agent: main (Z.ai Code)
+   475→Task: تنظيف شامل للنظام من بقايا المقاولات
+   476→
+   477→Work Log:
+   478→- حذف 20 ملف مقاولات بالكامل (BOQ, Contracts, ProjectWorkspace, Subcontractors, RentalContracts, Timesheets, FuelConsumption, EquipmentWorkspace, 15 workspace tab, ContractDocument, SubAggregateList)
+   479→- تنظيف cycles.js: إزالة subcontractors-cycle كاملاً، إزالة تبويبات rental-contracts/timesheets/fuel
+   480→- تنظيف App.jsx: إزالة استيرادات الصفحات المحذوفة من STANDALONE
+   481→- تنظيف CycleScreen.jsx: إزالة كل إدخالات TAB_CONTENT للمقاولات
+   482→- تنظيف permissions.js: إزالة 15+ وحدة مقاولات، إعادة تسمية PROJECT_MANAGER→BRANCH_MANAGER، OPERATOR→KITCHEN_STAFF
+   483→- تنظيف Equipment.jsx: إزالة plateNumber/dailyRate/hourlyRate/RENTED، إضافة location، إعادة تسمية لمعدات المطعم
+   484→- تنظيف Expenses.jsx + ExpenseDialog.jsx: إزالة أنواع PROJECT/EQUIPMENT
+   485→- تنظيف Projects.jsx: إزالة contractValue/projectType/location
+   486→- تنظيف SalesInvoices.jsx: إزالة progressBilling/certificate/Contract
+   487→- تنظيف Clients.jsx: إزالة Contract delete-guard
+   488→- تنظيف GlobalSearch.jsx: إزالة Subcontractor source
+   489→- تنظيف NotificationCenter.jsx: إزالة إشعارات rental/contract/changeorder/progressbilling
+   490→- تنظيف PermissionMatrix.jsx: إعادة تسمية المجموعات
+   491→- lint: 0 أخطاء، build: نجح
+   492→- commit: 28c4f74، push: ناجح
+   493→- Render نشر index-Dy3DqLgb.js
+   494→
+   495→التحقق الفعلي على Render (agent-browser):
+   496→- النظام يحمّل بدون أخطاء (0 errors في console بعد reload)
+   497→- الشريط الجانبي يعرض 13 دورة مطاعم فقط:
+   498→  لوحة المبيعات، نقطة البيع، الطلبات والمبيعات، معدات المطعم، المشتريات،
+   499→  المصروفات التشغيلية، الموارد البشرية، المالية والمحاسبة، التقارير،
+   500→  الزبائن والموردون، المستخدمون والصلاحيات، المخازن والمكوّنات، الإعدادات
+   501→- تم التحقق من اختفاء كل مصطلحات المقاولات من الواجهة:
+   502→  الخدمات الخارجية: NO ✓، مقاولات: NO ✓، معدات ثقيلة: NO ✓،
+   503→  وقود: NO ✓، تأجير: NO ✓، مستخلصات: NO ✓، عقود: NO ✓
+   504→
+   505→Stage Summary:
+   506→- النظام أصبح نظام مطاعم خالص بدون أي بقايا مقاولات
+   507→- 20 ملف حُذف، 15+ ملف نُظف
+   508→- كل الدورات المتبقية تخص المطاعم فقط
+   509→- المحركات المحاسبية لم تُمَس (businessEngine لا يزال يحتوي createRentalContract للتوافق مع البيانات القديمة، لكن لا يُستدعى من أي واجهة)
+   510→

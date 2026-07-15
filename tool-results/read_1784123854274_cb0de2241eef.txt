@@ -1,0 +1,979 @@
+     1→     1→import React, { useState, useEffect, useMemo, useCallback } from 'react';
+     2→     2→import {
+     3→     3→  Plus, Pencil, Trash2, RefreshCw, Bike, FileText, DollarSign,
+     4→     4→  TrendingUp, Calculator, Eye, Search, Landmark,
+     5→     5→} from 'lucide-react';
+     6→     6→import { Card, CardContent } from '@/components/ui/card';
+     7→     7→import { Button } from '@/components/ui/button';
+     8→     8→import { Input } from '@/components/ui/input';
+     9→     9→import { Label } from '@/components/ui/label';
+    10→    10→import { Textarea } from '@/components/ui/textarea';
+    11→    11→import {
+    12→    12→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    13→    13→} from '@/components/ui/dialog';
+    14→    14→import {
+    15→    15→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    16→    16→} from '@/components/ui/table';
+    17→    17→import { Badge } from '@/components/ui/badge';
+    18→    18→import { Switch } from '@/components/ui/switch';
+    19→    19→import {
+    20→    20→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    21→    21→} from '@/components/ui/select';
+    22→    22→import { base44 } from '@/api/base44Client';
+    23→    23→import { useStore } from '@/lib/store';
+    24→    24→import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
+    25→    25→import { OperationEngine } from '@/lib/businessEngine';
+    26→    26→import ModuleLayout from '@/components/shared/ModuleLayout';
+    27→    27→import ConfirmDialog from '@/components/shared/ConfirmDialog';
+    28→    28→import TableToolbar from '@/components/shared/TableToolbar';
+    29→    29→import { toast } from 'sonner';
+    30→    30→
+    31→    31→// ═══════════════════════════════════════════════════════════════════════
+    32→    32→// شاشة منصات التوصيل — إدارة المنصات (هنقرستيشن، كيتا، جاهز…) + كشوفاتها.
+    33→    33→// ═══════════════════════════════════════════════════════════════════════
+    34→    34→
+    35→    35→const errorMessage = (err, fallback) => err?.data?.error || err?.message || fallback;
+    36→    36→
+    37→    37→const EMPTY_FORM = {
+    38→    38→  code: '', name: '', nameEn: '', commissionRate: 0,
+    39→    39→  commissionVatRate: 0.15, commissionMethod: 'GROSS', settlementMethod: 'NET',
+    40→    40→  vatOnCommissionEnabled: true, settlementAccountCode: '1112',
+    41→    41→  phone: '', isActive: true, notes: '',
+    42→    42→};
+    43→    43→
+    44→    44→export default function DeliveryPlatforms() {
+    45→    45→  const { lang } = useStore();
+    46→    46→
+    47→    47→  const [view, setView] = useState('platforms'); // 'platforms' | 'statements' | 'settlements'
+    48→    48→  const [items, setItems] = useState([]);
+    49→    49→  const [invoices, setInvoices] = useState([]);
+    50→    50→  const [settlements, setSettlements] = useState([]);
+    51→    51→  const [loading, setLoading] = useState(true);
+    52→    52→  const [search, setSearch] = useState('');
+    53→    53→
+    54→    54→  const [dialogOpen, setDialogOpen] = useState(false);
+    55→    55→  const [confirmOpen, setConfirmOpen] = useState(false);
+    56→    56→  const [deleteId, setDeleteId] = useState(null);
+    57→    57→  const [editing, setEditing] = useState(null);
+    58→    58→  const [form, setForm] = useState(EMPTY_FORM);
+    59→    59→  const [saving, setSaving] = useState(false);
+    60→    60→
+    61→    61→  // كشوفات: فلتر نطاق التاريخ + المنصة المختارة لكشف تفصيلي
+    62→    62→  const [dateFrom, setDateFrom] = useState('');
+    63→    63→  const [dateTo, setDateTo] = useState('');
+    64→    64→  const [detailPlatform, setDetailPlatform] = useState(null); // { ...platform }
+    65→    65→  const [detailOpen, setDetailOpen] = useState(false);
+    66→    66→  const [settling, setSettling] = useState(false);
+    67→    67→
+    68→    68→  // نافذة التسوية الحقيقية (تنشئ قيداً محاسبياً)
+    69→    69→  const [settleDialogOpen, setSettleDialogOpen] = useState(false);
+    70→    70→  const [settleTarget, setSettleTarget] = useState(null); // platform statement object
+    71→    71→  const [settleForm, setSettleForm] = useState({
+    72→    72→    date: new Date().toISOString().slice(0, 10),
+    73→    73→    settledAmount: '',
+    74→    74→    paymentMethod: 'BANK_TRANSFER',
+    75→    75→    settlementAccountCode: '1112',
+    76→    76→    referenceNo: '',
+    77→    77→    notes: '',
+    78→    78→  });
+    79→    79→
+    80→    80→  // ─── تحميل المنصات + الإيصالات + التسويات ─────────────────────────
+    81→    81→  const load = useCallback(async () => {
+    82→    82→    setLoading(true);
+    83→    83→    try {
+    84→    84→      const [plats, invs, setts] = await Promise.all([
+    85→    85→        base44.entities.DeliveryPlatform.list('-created_date', 500),
+    86→    86→        base44.entities.SalesInvoice.list('-created_date', 1000),
+    87→    87→        base44.entities.PlatformSettlement.list('-created_date', 500),
+    88→    88→      ]);
+    89→    89→      setItems(plats || []);
+    90→    90→      setInvoices(invs || []);
+    91→    91→      setSettlements(setts || []);
+    92→    92→    } catch (err) {
+    93→    93→      console.warn('DeliveryPlatform load failed:', err);
+    94→    94→      setItems([]);
+    95→    95→      setInvoices([]);
+    96→    96→      setSettlements([]);
+    97→    97→      toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang)));
+    98→    98→    } finally {
+    99→    99→      setLoading(false);
+   100→   100→    }
+   101→   101→  }, [lang]);
+   102→   102→
+   103→   103→  useEffect(() => { load(); }, [load]);
+   104→   104→
+   105→   105→  // ─── فلترة المنصات بالبحث ──────────────────────────────────────────
+   106→   106→  const filtered = useMemo(() => {
+   107→   107→    if (!search) return items;
+   108→   108→    const q = search.toLowerCase();
+   109→   109→    return items.filter(p =>
+   110→   110→      (p.name || '').toLowerCase().includes(q) ||
+   111→   111→      (p.nameEn || '').toLowerCase().includes(q) ||
+   112→   112→      (p.code || '').toLowerCase().includes(q)
+   113→   113→    );
+   114→   114→  }, [items, search]);
+   115→   115→
+   116→   116→  // ─── إجراءات CRUD ──────────────────────────────────────────────────
+   117→   117→  const openNew = () => {
+   118→   118→    setEditing(null);
+   119→   119→    setForm({
+   120→   120→      ...EMPTY_FORM,
+   121→   121→      code: nextCodeFromList(items, 'PL'),
+   122→   122→      isActive: true,
+   123→   123→    });
+   124→   124→    setDialogOpen(true);
+   125→   125→  };
+   126→   126→
+   127→   127→  const openEdit = (item) => {
+   128→   128→    setEditing(item);
+   129→   129→    setForm({ ...EMPTY_FORM, ...item });
+   130→   130→    setDialogOpen(true);
+   131→   131→  };
+   132→   132→
+   133→   133→  const askDelete = (id) => { setDeleteId(id); setConfirmOpen(true); };
+   134→   134→
+   135→   135→  const save = async () => {
+   136→   136→    if (!form.name || !form.name.trim()) {
+   137→   137→      toast.error(t('الرجاء إدخال اسم المنصة', 'Please enter platform name', lang));
+   138→   138→      return;
+   139→   139→    }
+   140→   140→    setSaving(true);
+   141→   141→    try {
+   142→   142→      const data = {
+   143→   143→        code: form.code || nextCodeFromList(items, 'PL'),
+   144→   144→        name: form.name.trim(),
+   145→   145→        nameEn: (form.nameEn || '').trim(),
+   146→   146→        commissionRate: Number(form.commissionRate) || 0,
+   147→   147→        commissionVatRate: Number(form.commissionVatRate) || 0.15,
+   148→   148→        commissionMethod: form.commissionMethod || 'GROSS',
+   149→   149→        settlementMethod: form.settlementMethod || 'NET',
+   150→   150→        vatOnCommissionEnabled: form.vatOnCommissionEnabled !== false,
+   151→   151→        settlementAccountCode: form.settlementAccountCode || '1112',
+   152→   152→        phone: form.phone || '',
+   153→   153→        isActive: form.isActive !== false,
+   154→   154→        notes: form.notes || '',
+   155→   155→      };
+   156→   156→      if (editing) {
+   157→   157→        await base44.entities.DeliveryPlatform.update(editing.id, data);
+   158→   158→        toast.success(t('تم تحديث المنصة', 'Platform updated', lang));
+   159→   159→      } else {
+   160→   160→        await base44.entities.DeliveryPlatform.create(data);
+   161→   161→        toast.success(t('تمت إضافة المنصة', 'Platform added', lang));
+   162→   162→      }
+   163→   163→      setDialogOpen(false);
+   164→   164→      load();
+   165→   165→    } catch (err) {
+   166→   166→      toast.error(errorMessage(err, t('فشل الحفظ', 'Save failed', lang)));
+   167→   167→    } finally {
+   168→   168→      setSaving(false);
+   169→   169→    }
+   170→   170→  };
+   171→   171→
+   172→   172→  const remove = async () => {
+   173→   173→    try {
+   174→   174→      await base44.entities.DeliveryPlatform.delete(deleteId);
+   175→   175→      toast.success(t('تم حذف المنصة', 'Platform deleted', lang));
+   176→   176→      load();
+   177→   177→    } catch (err) {
+   178→   178→      toast.error(errorMessage(err, t('فشل الحذف', 'Delete failed', lang)));
+   179→   179→    }
+   180→   180→  };
+   181→   181→
+   182→   182→  // ─── حسابات كشف المنصة ─────────────────────────────────────────────
+   183→   183→  // تطبيق فلتر نطاق التاريخ على الإيصالات (إن وُجد).
+   184→   184→  const filterByDate = useCallback((list) => {
+   185→   185→    if (!dateFrom && !dateTo) return list;
+   186→   186→    return list.filter(inv => {
+   187→   187→      const d = inv.date || inv.created_date || '';
+   188→   188→      const day = String(d).slice(0, 10);
+   189→   189→      if (!day) return false;
+   190→   190→      if (dateFrom && day < dateFrom) return false;
+   191→   191→      if (dateTo && day > dateTo) return false;
+   192→   192→      return true;
+   193→   193→    });
+   194→   194→  }, [dateFrom, dateTo]);
+   195→   195→
+   196→   196→  // ملخّص كل منصة: يُبنى تلقائياً من الفواتير المعتمدة + التسويات المرحّلة.
+   197→   197→  // لا تُخزّن المجاميع في قاعدة البيانات — تُحسب دائماً من المصادر.
+   198→   198→  //   salesPreTax  = Σ subtotal (الإيراد قبل الضريبة)
+   199→   199→  //   salesVat     = Σ vatAmount (ضريبة المبيعات)
+   200→   200→  //   salesTotal   = Σ totalAmount (الإجمالي شامل الضريبة)
+   201→   201→  //   commission   = Σ platformCommission
+   202→   202→  //   commissionVat = Σ platformCommissionVat (أو 15% إن لم يُسجّل)
+   203→   203→  //   net          = salesTotal - commission - commissionVat (صافي المستحق)
+   204→   204→  //   paid         = Σ settledAmount من التسويات المرحّلة
+   205→   205→  //   pending      = net - paid
+   206→   206→  const statements = useMemo(() => {
+   207→   207→    return items.map(p => {
+   208→   208→      const list = filterByDate(
+   209→   209→        invoices.filter(i => i.platformId === p.id || i.platformName === p.name)
+   210→   210→      );
+   211→   211→      const salesPreTax = list.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+   212→   212→      const salesVat = list.reduce((s, i) => s + (Number(i.vatAmount) || 0), 0);
+   213→   213→      const salesTotal = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
+   214→   214→      const commission = list.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0);
+   215→   215→      // ضريبة العمولة: من حقل platformCommissionVat إن وُجد، وإلا تُحسب 15% من العمولة
+   216→   216→      const commissionVat = list.reduce((s, i) => {
+   217→   217→        const v = Number(i.platformCommissionVat);
+   218→   218→        if (!isNaN(v) && v > 0) return s + v;
+   219→   219→        return s + (Number(i.platformCommission) || 0) * 0.15;
+   220→   220→      }, 0);
+   221→   221→      const net = salesTotal - commission - commissionVat;
+   222→   222→      // المسدّد = مجموع التسويات المرحّلة لهذه المنصة
+   223→   223→      const platformSettlements = settlements.filter(s => s.platformId === p.id && s.status === 'POSTED');
+   224→   224→      const paid = platformSettlements.reduce((s, st) => s + (Number(st.settledAmount) || 0), 0);
+   225→   225→      const pending = Math.max(0, net - paid);
+   226→   226→      const commissionRate = Number(p.commissionRate) || 0;
+   227→   227→      return {
+   228→   228→        platform: p,
+   229→   229→        invoices: list,
+   230→   230→        settlements: platformSettlements,
+   231→   231→        orders: list.length,
+   232→   232→        salesPreTax,
+   233→   233→        salesVat,
+   234→   234→        salesTotal,
+   235→   235→        commissionRate,
+   236→   236→        commission,
+   237→   237→        commissionVat,
+   238→   238→        net,
+   239→   239→        paid,
+   240→   240→        pending,
+   241→   241→        settlementMethod: p.settlementMethod || 'NET',
+   242→   242→      };
+   243→   243→    });
+   244→   244→  }, [items, invoices, settlements, filterByDate]);
+   245→   245→
+   246→   246→  // ملخّص شامل لكل المنصات
+   247→   247→  const totals = useMemo(() => {
+   248→   248→    return statements.reduce((acc, s) => ({
+   249→   249→      orders: acc.orders + s.orders,
+   250→   250→      salesPreTax: acc.salesPreTax + s.salesPreTax,
+   251→   251→      salesVat: acc.salesVat + s.salesVat,
+   252→   252→      salesTotal: acc.salesTotal + s.salesTotal,
+   253→   253→      commission: acc.commission + s.commission,
+   254→   254→      commissionVat: acc.commissionVat + s.commissionVat,
+   255→   255→      net: acc.net + s.net,
+   256→   256→      paid: acc.paid + s.paid,
+   257→   257→      pending: acc.pending + s.pending,
+   258→   258→    }), { orders: 0, salesPreTax: 0, salesVat: 0, salesTotal: 0, commission: 0, commissionVat: 0, net: 0, paid: 0, pending: 0 });
+   259→   259→  }, [statements]);
+   260→   260→
+   261→   261→  // ─── كشف تفصيلي للمنصة ─────────────────────────────────────────────
+   262→   262→  const openDetail = (platform) => {
+   263→   263→    setDetailPlatform(platform);
+   264→   264→    setDetailOpen(true);
+   265→   265→  };
+   266→   266→
+   267→   267→  const detailRows = useMemo(() => {
+   268→   268→    if (!detailPlatform) return [];
+   269→   269→    return filterByDate(
+   270→   270→      invoices.filter(i => i.platformId === detailPlatform.id || i.platformName === detailPlatform.name)
+   271→   271→    );
+   272→   272→  }, [detailPlatform, invoices, filterByDate]);
+   273→   273→
+   274→   274→  // ─── فتح نافذة التسوية الحقيقية لمنصة ──────────────────────────────
+   275→   275→  // التسوية تنشئ قيداً محاسبياً: مدين بنك/صندوق، دائن ذمم المنصة.
+   276→   276→  // تُخفّض الذمة تدريجياً حتى الإغلاق الكامل.
+   277→   277→  const openSettleDialog = (statement) => {
+   278→   278→    setSettleTarget(statement);
+   279→   279→    // اقتراح: تسوية كامل المعلّق دفعة واحدة
+   280→   280→    setSettleForm({
+   281→   281→      date: new Date().toISOString().slice(0, 10),
+   282→   282→      settledAmount: statement.pending > 0 ? statement.pending.toFixed(2) : '',
+   283→   283→      paymentMethod: 'BANK_TRANSFER',
+   284→   284→      settlementAccountCode: statement.platform.settlementAccountCode || '1112',
+   285→   285→      referenceNo: '',
+   286→   286→      notes: '',
+   287→   287→    });
+   288→   288→    setSettleDialogOpen(true);
+   289→   289→  };
+   290→   290→
+   291→   291→  // تنفيذ التسوية عبر OperationEngine (ينشئ سجل PlatformSettlement + قيد JE)
+   292→   292→  const submitSettlement = async () => {
+   293→   293→    if (!settleTarget) return;
+   294→   294→    const amount = Number(settleForm.settledAmount);
+   295→   295→    if (!amount || amount <= 0) {
+   296→   296→      toast.error(t('أدخل مبلغ تسوية صحيح', 'Enter a valid settlement amount', lang));
+   297→   297→      return;
+   298→   298→    }
+   299→   299→    if (amount > settleTarget.pending + 0.01) {
+   300→   300→      toast.error(t('مبلغ التسوية يتجاوز المعلّق', 'Settlement exceeds pending', lang));
+   301→   301→      return;
+   302→   302→    }
+   303→   303→    setSettling(true);
+   304→   304→    try {
+   305→   305→      // جمع معرّفات الفواتير المُسوّاة (للمتابعة)
+   306→   306→      const invoiceIds = settleTarget.invoices.map(inv => inv.id);
+   307→   307→      await OperationEngine.createPlatformSettlement({
+   308→   308→        platformId: settleTarget.platform.id,
+   309→   309→        date: settleForm.date,
+   310→   310→        periodFrom: dateFrom || '',
+   311→   311→        periodTo: dateTo || '',
+   312→   312→        totalSales: settleTarget.salesTotal,
+   313→   313→        totalCommission: settleTarget.commission,
+   314→   314→        commissionVat: settleTarget.commissionVat,
+   315→   315→        netPayable: settleTarget.net,
+   316→   316→        settledAmount: amount,
+   317→   317→        paymentMethod: settleForm.paymentMethod,
+   318→   318→        settlementAccountCode: settleForm.settlementAccountCode,
+   319→   319→        referenceNo: settleForm.referenceNo,
+   320→   320→        invoiceIds,
+   321→   321→        invoiceCount: invoiceIds.length,
+   322→   322→        notes: settleForm.notes,
+   323→   323→      });
+   324→   324→      toast.success(t('تمت التسوية وترحيل القيد', 'Settled & JE posted', lang));
+   325→   325→      setSettleDialogOpen(false);
+   326→   326→      setSettleTarget(null);
+   327→   327→      load();
+   328→   328→    } catch (err) {
+   329→   329→      toast.error(errorMessage(err, t('فشل التسوية', 'Settlement failed', lang)));
+   330→   330→    } finally {
+   331→   331→      setSettling(false);
+   332→   332→    }
+   333→   333→  };
+   334→   334→
+   335→   335→  // ─── أعمدة الطباعة/التصدير للكشوفات ─────────────────────────────────
+   336→   336→  const statementExportColumns = [
+   337→   337→    { header: { ar: 'المنصة', en: 'Platform' }, value: (r) => r.platform.name },
+   338→   338→    { header: { ar: 'الكود', en: 'Code' }, value: (r) => r.platform.code },
+   339→   339→    { header: { ar: 'طريقة التسوية', en: 'Settlement' }, value: (r) => r.settlementMethod },
+   340→   340→    { header: { ar: 'عدد الطلبات', en: 'Orders' }, value: (r) => r.orders },
+   341→   341→    { header: { ar: 'المبيعات قبل الضريبة', en: 'Sales (pre-tax)' }, value: (r) => Number(r.salesPreTax).toFixed(2) },
+   342→   342→    { header: { ar: 'ضريبة المبيعات', en: 'Sales VAT' }, value: (r) => Number(r.salesVat).toFixed(2) },
+   343→   343→    { header: { ar: 'إجمالي المبيعات', en: 'Total Sales' }, value: (r) => Number(r.salesTotal).toFixed(2) },
+   344→   344→    { header: { ar: 'نسبة العمولة %', en: 'Commission %' }, value: (r) => Number(r.commissionRate).toFixed(2) },
+   345→   345→    { header: { ar: 'العمولة', en: 'Commission' }, value: (r) => Number(r.commission).toFixed(2) },
+   346→   346→    { header: { ar: 'ضريبة العمولة', en: 'Commission VAT' }, value: (r) => Number(r.commissionVat).toFixed(2) },
+   347→   347→    { header: { ar: 'صافي المستحق', en: 'Net Payable' }, value: (r) => Number(r.net).toFixed(2) },
+   348→   348→    { header: { ar: 'المسدّد', en: 'Paid' }, value: (r) => Number(r.paid).toFixed(2) },
+   349→   349→    { header: { ar: 'المعلّق', en: 'Pending' }, value: (r) => Number(r.pending).toFixed(2) },
+   350→   350→  ];
+   351→   351→
+   352→   352→  return (
+   353→   353→    <ModuleLayout
+   354→   354→      title={t('منصات التوصيل', 'Delivery Platforms', lang)}
+   355→   355→      subtitle={t('إدارة منصات التوصيل وكشوفات العمولات', 'Manage delivery platforms and commission statements', lang)}
+   356→   356→      actions={
+   357→   357→        <div className="flex items-center gap-2">
+   358→   358→          {view === 'platforms' && (
+   359→   359→            <Button onClick={openNew} className="gap-2 bg-rose-600 hover:bg-rose-700">
+   360→   360→              <Plus className="size-4" /> {t('إضافة منصة', 'Add Platform', lang)}
+   361→   361→            </Button>
+   362→   362→          )}
+   363→   363→          <Button variant="outline" size="icon" onClick={load}>
+   364→   364→            <RefreshCw className="size-4" />
+   365→   365→          </Button>
+   366→   366→        </div>
+   367→   367→      }
+   368→   368→    >
+   369→   369→      {/* مبدّل العرض */}
+   370→   370→      <div className="inline-flex rounded-lg border bg-muted/40 p-1 gap-1">
+   371→   371→        <button
+   372→   372→          onClick={() => setView('platforms')}
+   373→   373→          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'platforms' ? 'bg-background shadow text-rose-700' : 'text-muted-foreground hover:text-foreground'}`}
+   374→   374→        >
+   375→   375→          <Bike className="size-4" /> {t('المنصات', 'Platforms', lang)}
+   376→   376→        </button>
+   377→   377→        <button
+   378→   378→          onClick={() => setView('statements')}
+   379→   379→          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'statements' ? 'bg-background shadow text-rose-700' : 'text-muted-foreground hover:text-foreground'}`}
+   380→   380→        >
+   381→   381→          <FileText className="size-4" /> {t('كشوفات المنصات', 'Platform Statements', lang)}
+   382→   382→        </button>
+   383→   383→      </div>
+   384→   384→
+   385→   385→      {/* ══════════════ القسم 1: المنصات (CRUD) ══════════════ */}
+   386→   386→      {view === 'platforms' && (
+   387→   387→        <>
+   388→   388→          <div className="flex gap-3">
+   389→   389→            <div className="relative flex-1">
+   390→   390→              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   391→   391→              <Input
+   392→   392→                value={search}
+   393→   393→                onChange={e => setSearch(e.target.value)}
+   394→   394→                placeholder={t('بحث باسم أو كود المنصة...', 'Search by name or code...', lang)}
+   395→   395→                className="ps-9"
+   396→   396→              />
+   397→   397→            </div>
+   398→   398→          </div>
+   399→   399→
+   400→   400→          {loading ? (
+   401→   401→            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+   402→   402→              {Array.from({ length: 6 }).map((_, i) => (
+   403→   403→                <Card key={i} className="h-44 bg-muted animate-pulse" />
+   404→   404→              ))}
+   405→   405→            </div>
+   406→   406→          ) : filtered.length === 0 ? (
+   407→   407→            <Card className="py-14 text-center text-muted-foreground">
+   408→   408→              <Bike className="size-10 mx-auto mb-3 opacity-40" />
+   409→   409→              {t('لا توجد منصات توصيل', 'No delivery platforms', lang)}
+   410→   410→            </Card>
+   411→   411→          ) : (
+   412→   412→            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+   413→   413→              {filtered.map(p => (
+   414→   414→                <Card key={p.id} className="overflow-hidden border-t-4 border-t-rose-500">
+   415→   415→                  <CardContent className="p-4 space-y-3">
+   416→   416→                    <div className="flex items-start justify-between gap-2">
+   417→   417→                      <div className="flex items-center gap-2 min-w-0">
+   418→   418→                        <div className="size-9 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+   419→   419→                          <Bike className="size-5 text-rose-600" />
+   420→   420→                        </div>
+   421→   421→                        <div className="min-w-0">
+   422→   422→                          <div className="font-bold text-foreground truncate">{p.name}</div>
+   423→   423→                          <div className="text-xs text-muted-foreground" dir="ltr">{p.nameEn || '—'}</div>
+   424→   424→                        </div>
+   425→   425→                      </div>
+   426→   426→                      <Badge variant={p.isActive === false ? 'secondary' : 'default'}
+   427→   427→                        className={p.isActive === false
+   428→   428→                          ? 'bg-slate-100 text-slate-600 border border-slate-200'
+   429→   429→                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}>
+   430→   430→                        {p.isActive === false
+   431→   431→                          ? t('معطّلة', 'Inactive', lang)
+   432→   432→                          : t('نشطة', 'Active', lang)}
+   433→   433→                      </Badge>
+   434→   434→                    </div>
+   435→   435→
+   436→   436→                    <div className="grid grid-cols-2 gap-2 text-xs">
+   437→   437→                      <div>
+   438→   438→                        <div className="text-muted-foreground">{t('الكود', 'Code', lang)}</div>
+   439→   439→                        <div className="font-mono font-semibold" dir="ltr">{p.code}</div>
+   440→   440→                      </div>
+   441→   441→                      <div>
+   442→   442→                        <div className="text-muted-foreground">{t('نسبة العمولة', 'Commission', lang)}</div>
+   443→   443→                        <div className="font-semibold text-rose-700">{Number(p.commissionRate || 0).toFixed(2)}%</div>
+   444→   444→                      </div>
+   445→   445→                      <div>
+   446→   446→                        <div className="text-muted-foreground">{t('الهاتف', 'Phone', lang)}</div>
+   447→   447→                        <div className="font-mono" dir="ltr">{p.phone || '—'}</div>
+   448→   448→                      </div>
+   449→   449→                    </div>
+   450→   450→
+   451→   451→                    {p.notes && (
+   452→   452→                      <p className="text-xs text-muted-foreground bg-muted/40 rounded p-2 line-clamp-2">{p.notes}</p>
+   453→   453→                    )}
+   454→   454→
+   455→   455→                    <div className="flex items-center justify-end gap-1 pt-1 border-t">
+   456→   456→                      <Button variant="ghost" size="sm" className="gap-1.5 text-xs" onClick={() => openDetail(p)}>
+   457→   457→                        <Eye className="size-3.5" /> {t('كشف', 'Statement', lang)}
+   458→   458→                      </Button>
+   459→   459→                      <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(p)}>
+   460→   460→                        <Pencil className="size-3.5" />
+   461→   461→                      </Button>
+   462→   462→                      <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => askDelete(p.id)}>
+   463→   463→                        <Trash2 className="size-3.5" />
+   464→   464→                      </Button>
+   465→   465→                    </div>
+   466→   466→                  </CardContent>
+   467→   467→                </Card>
+   468→   468→              ))}
+   469→   469→            </div>
+   470→   470→          )}
+   471→   471→          <p className="text-sm text-muted-foreground">
+   472→   472→            {filtered.length} {t('منصة', 'platforms', lang)}
+   473→   473→          </p>
+   474→   474→        </>
+   475→   475→      )}
+   476→   476→
+   477→   477→      {/* ══════════════ القسم 2: كشوفات المنصات ══════════════ */}
+   478→   478→      {view === 'statements' && (
+   479→   479→        <>
+   480→   480→          {/* فلتر نطاق التاريخ */}
+   481→   481→          <Card>
+   482→   482→            <CardContent className="p-3 flex flex-col sm:flex-row gap-3 sm:items-end">
+   483→   483→              <div className="space-y-1.5 flex-1">
+   484→   484→                <Label className="text-xs">{t('من تاريخ', 'From Date', lang)}</Label>
+   485→   485→                <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+   486→   486→              </div>
+   487→   487→              <div className="space-y-1.5 flex-1">
+   488→   488→                <Label className="text-xs">{t('إلى تاريخ', 'To Date', lang)}</Label>
+   489→   489→                <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+   490→   490→              </div>
+   491→   491→              <div className="flex items-center gap-2">
+   492→   492→                <Button variant="outline" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}>
+   493→   493→                  {t('مسح الفلتر', 'Clear', lang)}
+   494→   494→                </Button>
+   495→   495→                <TableToolbar
+   496→   496→                  columns={statementExportColumns}
+   497→   497→                  rows={statements}
+   498→   498→                  title={{ ar: 'كشوفات منصات التوصيل', en: 'Delivery Platform Statements' }}
+   499→   499→                  subheading={dateFrom || dateTo
+   500→   500→                    ? `${dateFrom || '…'} → ${dateTo || '…'}`
+   501→   501→                    : { ar: 'كل الفترات', en: 'All periods' }}
+   502→   502→                />
+   503→   503→              </div>
+   504→   504→            </CardContent>
+   505→   505→          </Card>
+   506→   506→
+   507→   507→          {/* بطاقات الملخّص الشامل — محاسبية صحيحة: إيراد قبل الضريبة / ضريبة / إجمالي / عمولة / ض.عمولة / صافي / محصل / متبقي */}
+   508→   508→          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+   509→   509→            <SummaryCard icon={<FileText className="size-4" />} label={t('الطلبات', 'Orders', lang)} value={totals.orders} tone="slate" />
+   510→   510→            <SummaryCard icon={<TrendingUp className="size-4" />} label={t('المبيعات (قبل الضريبة)', 'Sales (pre-tax)', lang)} value={formatCurrency(totals.salesPreTax, lang)} tone="emerald" />
+   511→   511→            <SummaryCard icon={<Calculator className="size-4" />} label={t('ضريبة المبيعات', 'Sales VAT', lang)} value={formatCurrency(totals.salesVat, lang)} tone="slate" />
+   512→   512→            <SummaryCard icon={<TrendingUp className="size-4" />} label={t('إجمالي المبيعات', 'Total Sales', lang)} value={formatCurrency(totals.salesTotal, lang)} tone="emerald" />
+   513→   513→            <SummaryCard icon={<Calculator className="size-4" />} label={t('العمولات', 'Commissions', lang)} value={formatCurrency(totals.commission, lang)} tone="rose" />
+   514→   514→            <SummaryCard icon={<Calculator className="size-4" />} label={t('ضريبة العمولات', 'Commission VAT', lang)} value={formatCurrency(totals.commissionVat, lang)} tone="rose" />
+   515→   515→            <SummaryCard icon={<DollarSign className="size-4" />} label={t('الصافي المستحق', 'Net Payable', lang)} value={formatCurrency(totals.net, lang)} tone="teal" />
+   516→   516→            <SummaryCard icon={<DollarSign className="size-4" />} label={t('المتبقي', 'Pending', lang)} value={formatCurrency(totals.pending, lang)} tone="amber" />
+   517→   517→          </div>
+   518→   518→
+   519→   519→          {/* جدول الكشوفات — تفصيل محاسبي كامل */}
+   520→   520→          <Card>
+   521→   521→            <Table>
+   522→   522→              <TableHeader>
+   523→   523→                <TableRow>
+   524→   524→                  <TableHead>{t('المنصة', 'Platform', lang)}</TableHead>
+   525→   525→                  <TableHead className="text-center">{t('الطلبات', 'Orders', lang)}</TableHead>
+   526→   526→                  <TableHead className="text-end">{t('المبيعات قبل الضريبة', 'Sales (pre-tax)', lang)}</TableHead>
+   527→   527→                  <TableHead className="text-end">{t('ض. المبيعات', 'Sales VAT', lang)}</TableHead>
+   528→   528→                  <TableHead className="text-end">{t('إجمالي المبيعات', 'Total Sales', lang)}</TableHead>
+   529→   529→                  <TableHead className="text-end">{t('العمولة', 'Commission', lang)}</TableHead>
+   530→   530→                  <TableHead className="text-end">{t('ض. العمولة', 'Comm. VAT', lang)}</TableHead>
+   531→   531→                  <TableHead className="text-end">{t('الصافي', 'Net', lang)}</TableHead>
+   532→   532→                  <TableHead className="text-end">{t('المحصل', 'Paid', lang)}</TableHead>
+   533→   533→                  <TableHead className="text-end">{t('المتبقي', 'Pending', lang)}</TableHead>
+   534→   534→                  <TableHead className="text-center">{t('إجراءات', 'Actions', lang)}</TableHead>
+   535→   535→                </TableRow>
+   536→   536→              </TableHeader>
+   537→   537→              <TableBody>
+   538→   538→                {loading ? (
+   539→   539→                  <TableRow>
+   540→   540→                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+   541→   541→                      {t('جاري التحميل...', 'Loading...', lang)}
+   542→   542→                    </TableCell>
+   543→   543→                  </TableRow>
+   544→   544→                ) : statements.length === 0 ? (
+   545→   545→                  <TableRow>
+   546→   546→                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+   547→   547→                      {t('لا توجد منصات', 'No platforms', lang)}
+   548→   548→                    </TableCell>
+   549→   549→                  </TableRow>
+   550→   550→                ) : (
+   551→   551→                  statements.map(s => (
+   552→   552→                    <TableRow key={s.platform.id}>
+   553→   553→                      <TableCell>
+   554→   554→                        <div className="font-medium">{s.platform.name}</div>
+   555→   555→                        <div className="text-[10px] text-muted-foreground font-mono" dir="ltr">{s.platform.code}</div>
+   556→   556→                        <Badge variant="outline" className="text-[10px] mt-0.5">{s.settlementMethod}</Badge>
+   557→   557→                      </TableCell>
+   558→   558→                      <TableCell className="text-center font-semibold">{s.orders}</TableCell>
+   559→   559→                      <TableCell className="text-end font-mono" dir="ltr">{formatCurrency(s.salesPreTax, lang)}</TableCell>
+   560→   560→                      <TableCell className="text-end font-mono text-muted-foreground" dir="ltr">{formatCurrency(s.salesVat, lang)}</TableCell>
+   561→   561→                      <TableCell className="text-end font-mono font-semibold" dir="ltr">{formatCurrency(s.salesTotal, lang)}</TableCell>
+   562→   562→                      <TableCell className="text-end font-mono text-rose-700" dir="ltr">
+   563→   563→                        <div>{formatCurrency(s.commission, lang)}</div>
+   564→   564→                        <div className="text-[10px] text-muted-foreground">{s.commissionRate.toFixed(2)}%</div>
+   565→   565→                      </TableCell>
+   566→   566→                      <TableCell className="text-end font-mono text-rose-600 text-xs" dir="ltr">{formatCurrency(s.commissionVat, lang)}</TableCell>
+   567→   567→                      <TableCell className="text-end font-mono font-semibold text-emerald-700" dir="ltr">{formatCurrency(s.net, lang)}</TableCell>
+   568→   568→                      <TableCell className="text-end font-mono text-blue-700" dir="ltr">{formatCurrency(s.paid, lang)}</TableCell>
+   569→   569→                      <TableCell className={`text-end font-mono ${s.pending > 0 ? 'text-amber-700 font-bold' : 'text-muted-foreground'}`} dir="ltr">
+   570→   570→                        {formatCurrency(s.pending, lang)}
+   571→   571→                      </TableCell>
+   572→   572→                      <TableCell className="text-center">
+   573→   573→                        <div className="flex items-center justify-center gap-1">
+   574→   574→                          <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => openDetail(s.platform)}>
+   575→   575→                            <Eye className="size-3.5" /> {t('كشف', 'Detail', lang)}
+   576→   576→                          </Button>
+   577→   577→                          <Button
+   578→   578→                            variant="outline"
+   579→   579→                            size="sm"
+   580→   580→                            className="gap-1 text-xs"
+   581→   581→                            disabled={settling || s.pending <= 0}
+   582→   582→                            onClick={() => openSettleDialog(s)}
+   583→   583→                          >
+   584→   584→                            <Landmark className="size-3.5" /> {t('تسوية', 'Settle', lang)}
+   585→   585→                          </Button>
+   586→   586→                        </div>
+   587→   587→                      </TableCell>
+   588→   588→                    </TableRow>
+   589→   589→                  ))
+   590→   590→                )}
+   591→   591→              </TableBody>
+   592→   592→            </Table>
+   593→   593→          </Card>
+   594→   594→        </>
+   595→   595→      )}
+   596→   596→
+   597→   597→      {/* ══════════════ نافذة إضافة/تعديل منصة ══════════════ */}
+   598→   598→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   599→   599→        <DialogContent className="max-w-xl">
+   600→   600→          <DialogHeader>
+   601→   601→            <DialogTitle>
+   602→   602→              {editing ? t('تعديل المنصة', 'Edit Platform', lang) : t('إضافة منصة توصيل', 'Add Delivery Platform', lang)}
+   603→   603→            </DialogTitle>
+   604→   604→          </DialogHeader>
+   605→   605→          <div className="grid grid-cols-2 gap-4 py-2">
+   606→   606→            <div className="space-y-1.5">
+   607→   607→              <Label>{t('الكود', 'Code', lang)}</Label>
+   608→   608→              <Input
+   609→   609→                value={form.code}
+   610→   610→                readOnly
+   611→   611→                className="bg-muted font-mono"
+   612→   612→                onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+   613→   613→              />
+   614→   614→            </div>
+   615→   615→            <div className="space-y-1.5">
+   616→   616→              <Label>{t('نسبة العمولة %', 'Commission Rate %', lang)}</Label>
+   617→   617→              <Input
+   618→   618→                type="number" min="0" max="100" step="0.01"
+   619→   619→                value={form.commissionRate}
+   620→   620→                onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))}
+   621→   621→              />
+   622→   622→            </div>
+   623→   623→            <div className="space-y-1.5">
+   624→   624→              <Label>{t('ضريبة العمولة %', 'Commission VAT %', lang)}</Label>
+   625→   625→              <Input
+   626→   626→                type="number" min="0" max="100" step="0.01"
+   627→   627→                value={form.commissionVatRate}
+   628→   628→                onChange={e => setForm(f => ({ ...f, commissionVatRate: e.target.value }))}
+   629→   629→              />
+   630→   630→            </div>
+   631→   631→            <div className="space-y-1.5">
+   632→   632→              <Label>{t('طريقة احتساب العمولة', 'Commission Calc Method', lang)}</Label>
+   633→   633→              <Select value={form.commissionMethod} onValueChange={v => setForm(f => ({ ...f, commissionMethod: v }))}>
+   634→   634→                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+   635→   635→                <SelectContent>
+   636→   636→                  <SelectItem value="GROSS">{t('على الإجمالي', 'On Gross', lang)}</SelectItem>
+   637→   637→                  <SelectItem value="NET">{t('على الصافي قبل الضريبة', 'On Net (pre-tax)', lang)}</SelectItem>
+   638→   638→                </SelectContent>
+   639→   639→              </Select>
+   640→   640→            </div>
+   641→   641→            <div className="space-y-1.5">
+   642→   642→              <Label>{t('طريقة التسوية', 'Settlement Method', lang)}</Label>
+   643→   643→              <Select value={form.settlementMethod} onValueChange={v => setForm(f => ({ ...f, settlementMethod: v }))}>
+   644→   644→                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+   645→   645→                <SelectContent>
+   646→   646→                  <SelectItem value="NET">{t('صافي (المنصة تخصم العمولة)', 'Net (platform deducts commission)', lang)}</SelectItem>
+   647→   647→                  <SelectItem value="GROSS">{t('إجمالي (تحويل بالإجمالي ثم فاتورة عمولة)', 'Gross (full transfer + commission invoice)', lang)}</SelectItem>
+   648→   648→                </SelectContent>
+   649→   649→              </Select>
+   650→   650→              <p className="text-[10px] text-muted-foreground">
+   651→   651→                {form.settlementMethod === 'GROSS'
+   652→   652→                  ? t('الذمة = الإجمالي، وتُسجّل العمولة عند التسوية', 'Receivable = full; commission recorded at settlement', lang)
+   653→   653→                  : t('الذمة = الصافي، وتُسجّل العمولة عند البيع', 'Receivable = net; commission recorded at sale', lang)}
+   654→   654→              </p>
+   655→   655→            </div>
+   656→   656→            <div className="space-y-1.5">
+   657→   657→              <Label>{t('حساب التسوية', 'Settlement Account', lang)}</Label>
+   658→   658→              <Select value={form.settlementAccountCode} onValueChange={v => setForm(f => ({ ...f, settlementAccountCode: v }))}>
+   659→   659→                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+   660→   660→                <SelectContent>
+   661→   661→                  <SelectItem value="1112">{t('البنك (1112)', 'Bank (1112)', lang)}</SelectItem>
+   662→   662→                  <SelectItem value="1111">{t('الصندوق (1111)', 'Cash (1111)', lang)}</SelectItem>
+   663→   663→                </SelectContent>
+   664→   664→              </Select>
+   665→   665→            </div>
+   666→   666→            <div className="space-y-1.5">
+   667→   667→              <Label>{t('الاسم (عربي)', 'Name (Arabic)', lang)} *</Label>
+   668→   668→              <Input
+   669→   669→                value={form.name}
+   670→   670→                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+   671→   671→                placeholder={t('مثال: هنقرستيشن', 'e.g. HungerStation', lang)}
+   672→   672→              />
+   673→   673→            </div>
+   674→   674→            <div className="space-y-1.5">
+   675→   675→              <Label>{t('الاسم (إنجليزي)', 'Name (English)', lang)}</Label>
+   676→   676→              <Input
+   677→   677→                value={form.nameEn}
+   678→   678→                onChange={e => setForm(f => ({ ...f, nameEn: e.target.value }))}
+   679→   679→                placeholder="HungerStation"
+   680→   680→                dir="ltr"
+   681→   681→              />
+   682→   682→            </div>
+   683→   683→            <div className="space-y-1.5">
+   684→   684→              <Label>{t('الهاتف', 'Phone', lang)}</Label>
+   685→   685→              <Input
+   686→   686→                value={form.phone}
+   687→   687→                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+   688→   688→                placeholder="920000001"
+   689→   689→                dir="ltr"
+   690→   690→              />
+   691→   691→            </div>
+   692→   692→            <div className="space-y-1.5">
+   693→   693→              <Label>{t('الحالة', 'Status', lang)}</Label>
+   694→   694→              <div className="flex items-center gap-2 h-9">
+   695→   695→                <Switch
+   696→   696→                  checked={form.isActive !== false}
+   697→   697→                  onCheckedChange={(checked) => setForm(f => ({ ...f, isActive: checked }))}
+   698→   698→                />
+   699→   699→                <span className="text-sm">
+   700→   700→                  {form.isActive !== false ? t('نشطة', 'Active', lang) : t('معطّلة', 'Inactive', lang)}
+   701→   701→                </span>
+   702→   702→              </div>
+   703→   703→            </div>
+   704→   704→            <div className="col-span-2 space-y-1.5">
+   705→   705→              <Label>{t('ملاحظات', 'Notes', lang)}</Label>
+   706→   706→              <Textarea
+   707→   707→                value={form.notes}
+   708→   708→                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+   709→   709→                rows={2}
+   710→   710→                placeholder={t('ملاحظات حول المنصة، شروط العمولة...', 'Platform notes, commission terms...', lang)}
+   711→   711→              />
+   712→   712→            </div>
+   713→   713→          </div>
+   714→   714→          <DialogFooter>
+   715→   715→            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+   716→   716→              {t('إلغاء', 'Cancel', lang)}
+   717→   717→            </Button>
+   718→   718→            <Button onClick={save} disabled={saving} className="bg-rose-600 hover:bg-rose-700">
+   719→   719→              {saving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
+   720→   720→            </Button>
+   721→   721→          </DialogFooter>
+   722→   722→        </DialogContent>
+   723→   723→      </Dialog>
+   724→   724→
+   725→   725→      {/* ══════════════ نافذة الكشف التفصيلي ══════════════ */}
+   726→   726→      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+   727→   727→        <DialogContent className="max-w-4xl">
+   728→   728→          <DialogHeader>
+   729→   729→            <DialogTitle className="flex items-center gap-2">
+   730→   730→              <Bike className="size-5 text-rose-600" />
+   731→   731→              {t('كشف تفصيلي', 'Detailed Statement', lang)}
+   732→   732→              {detailPlatform && (
+   733→   733→                <span className="text-muted-foreground font-normal">— {detailPlatform.name}</span>
+   734→   734→              )}
+   735→   735→            </DialogTitle>
+   736→   736→          </DialogHeader>
+   737→   737→
+   738→   738→          {detailPlatform && (
+   739→   739→            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+   740→   740→              <DetailStat label={t('عدد الطلبات', 'Orders', lang)} value={detailRows.length} />
+   741→   741→              <DetailStat label={t('الإيرادات', 'Revenue', lang)} value={formatCurrency(detailRows.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0), lang)} />
+   742→   742→              <DetailStat label={t('العمولة', 'Commission', lang)} value={formatCurrency(detailRows.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0), lang)} />
+   743→   743→              <DetailStat label={t('الصافي', 'Net', lang)} value={formatCurrency(detailRows.reduce((s, i) => s + (Number(i.totalAmount) || 0) - (Number(i.platformCommission) || 0), 0), lang)} />
+   744→   744→            </div>
+   745→   745→          )}
+   746→   746→
+   747→   747→          <div className="max-h-[55vh] overflow-auto border rounded-md">
+   748→   748→            <Table>
+   749→   749→              <TableHeader className="sticky top-0 bg-background">
+   750→   750→                <TableRow>
+   751→   751→                  <TableHead>{t('رقم الإيصال', 'Invoice No.', lang)}</TableHead>
+   752→   752→                  <TableHead>{t('التاريخ', 'Date', lang)}</TableHead>
+   753→   753→                  <TableHead>{t('الزبون', 'Customer', lang)}</TableHead>
+   754→   754→                  <TableHead className="text-end">{t('الإجمالي', 'Total', lang)}</TableHead>
+   755→   755→                  <TableHead className="text-end">{t('العمولة', 'Commission', lang)}</TableHead>
+   756→   756→                  <TableHead className="text-center">{t('الحالة', 'Status', lang)}</TableHead>
+   757→   757→                </TableRow>
+   758→   758→              </TableHeader>
+   759→   759→              <TableBody>
+   760→   760→                {detailRows.length === 0 ? (
+   761→   761→                  <TableRow>
+   762→   762→                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+   763→   763→                      {t('لا توجد إيصالات لهذه المنصة', 'No invoices for this platform', lang)}
+   764→   764→                    </TableCell>
+   765→   765→                  </TableRow>
+   766→   766→                ) : (
+   767→   767→                  detailRows.map(inv => (
+   768→   768→                    <TableRow key={inv.id}>
+   769→   769→                      <TableCell className="font-mono text-xs" dir="ltr">{inv.invoiceNo || '—'}</TableCell>
+   770→   770→                      <TableCell className="text-xs">{formatDate(inv.date || inv.created_date, lang)}</TableCell>
+   771→   771→                      <TableCell className="text-xs">{inv.clientName || '—'}</TableCell>
+   772→   772→                      <TableCell className="text-end font-mono text-xs" dir="ltr">{formatCurrency(Number(inv.totalAmount) || 0, lang)}</TableCell>
+   773→   773→                      <TableCell className="text-end font-mono text-xs text-rose-700" dir="ltr">{formatCurrency(Number(inv.platformCommission) || 0, lang)}</TableCell>
+   774→   774→                      <TableCell className="text-center">
+   775→   775→                        <Badge variant="secondary"
+   776→   776→                          className={inv.status === 'PAID'
+   777→   777→                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+   778→   778→                            : inv.status === 'PARTIALLY_PAID'
+   779→   779→                              ? 'bg-amber-100 text-amber-700 border border-amber-200'
+   780→   780→                              : 'bg-slate-100 text-slate-600 border border-slate-200'}>
+   781→   781→                          {inv.status === 'PAID' ? t('مدفوع', 'Paid', lang)
+   782→   782→                            : inv.status === 'PARTIALLY_PAID' ? t('جزئي', 'Partial', lang)
+   783→   783→                            : inv.status || '—'}
+   784→   784→                        </Badge>
+   785→   785→                      </TableCell>
+   786→   786→                    </TableRow>
+   787→   787→                  ))
+   788→   788→                )}
+   789→   789→              </TableBody>
+   790→   790→            </Table>
+   791→   791→          </div>
+   792→   792→
+   793→   793→          <DialogFooter>
+   794→   794→            <Button variant="outline" onClick={() => setDetailOpen(false)}>
+   795→   795→              {t('إغلاق', 'Close', lang)}
+   796→   796→            </Button>
+   797→   797→            {detailPlatform && (
+   798→   798→              <Button
+   799→   799→                onClick={() => settlePlatform(detailPlatform)}
+   800→   800→                disabled={settling}
+   801→   801→                className="gap-2 bg-rose-600 hover:bg-rose-700"
+   802→   802→              >
+   803→   803→                <DollarSign className="size-4" />
+   804→   804→                {settling ? t('جاري التسوية...', 'Settling...', lang) : t('تسوية الإيصالات المعلّقة', 'Settle Pending', lang)}
+   805→   805→              </Button>
+   806→   806→            )}
+   807→   807→          </DialogFooter>
+   808→   808→        </DialogContent>
+   809→   809→      </Dialog>
+   810→   810→
+   811→   811→      <ConfirmDialog
+   812→   812→        open={confirmOpen}
+   813→   813→        onOpenChange={setConfirmOpen}
+   814→   814→        title={t('حذف المنصة', 'Delete Platform', lang)}
+   815→   815→        description={t(
+   816→   816→          'سيتم حذف المنصة نهائياً. لن تُحذف الإيصالات المرتبطة بها. هل أنت متأكد؟',
+   817→   817→          'This platform will be permanently deleted. Linked invoices will not be deleted. Are you sure?',
+   818→   818→          lang
+   819→   819→        )}
+   820→   820→        onConfirm={remove}
+   821→   821→        confirmLabel={t('حذف', 'Delete', lang)}
+   822→   822→      />
+   823→   823→
+   824→   824→      {/* ══════════════ نافذة التسوية الحقيقية ══════════════ */}
+   825→   825→      <Dialog open={settleDialogOpen} onOpenChange={setSettleDialogOpen}>
+   826→   826→        <DialogContent className="max-w-lg">
+   827→   827→          <DialogHeader>
+   828→   828→            <DialogTitle className="flex items-center gap-2">
+   829→   829→              <Landmark className="size-5 text-emerald-600" />
+   830→   830→              {t('تسوية منصة', 'Platform Settlement', lang)}
+   831→   831→              {settleTarget?.platform && (
+   832→   832→                <span className="text-muted-foreground font-normal">— {settleTarget.platform.name}</span>
+   833→   833→              )}
+   834→   834→            </DialogTitle>
+   835→   835→          </DialogHeader>
+   836→   836→
+   837→   837→          {settleTarget && (
+   838→   838→            <>
+   839→   839→              {/* ملخّص كشف المنصة — تفصيل محاسبي كامل (تلقائي من الفواتير) */}
+   840→   840→              <div className="grid grid-cols-2 gap-1.5 text-xs bg-muted/40 rounded-lg p-3 mb-2">
+   841→   841→                <div className="flex justify-between">
+   842→   842→                  <span className="text-muted-foreground">{t('عدد الطلبات', 'Orders', lang)}</span>
+   843→   843→                  <span className="font-semibold">{settleTarget.orders}</span>
+   844→   844→                </div>
+   845→   845→                <div className="flex justify-between">
+   846→   846→                  <span className="text-muted-foreground">{t('طريقة التسوية', 'Settlement', lang)}</span>
+   847→   847→                  <Badge variant="outline" className="text-[10px] h-5">{settleTarget.settlementMethod}</Badge>
+   848→   848→                </div>
+   849→   849→                <div className="flex justify-between">
+   850→   850→                  <span className="text-muted-foreground">{t('المبيعات قبل الضريبة', 'Sales (pre-tax)', lang)}</span>
+   851→   851→                  <span className="font-mono" dir="ltr">{formatCurrency(settleTarget.salesPreTax, lang)}</span>
+   852→   852→                </div>
+   853→   853→                <div className="flex justify-between">
+   854→   854→                  <span className="text-muted-foreground">{t('ضريبة المبيعات', 'Sales VAT', lang)}</span>
+   855→   855→                  <span className="font-mono text-muted-foreground" dir="ltr">{formatCurrency(settleTarget.salesVat, lang)}</span>
+   856→   856→                </div>
+   857→   857→                <div className="flex justify-between border-b pb-1">
+   858→   858→                  <span className="font-medium">{t('إجمالي المبيعات', 'Total Sales', lang)}</span>
+   859→   859→                  <span className="font-mono font-semibold" dir="ltr">{formatCurrency(settleTarget.salesTotal, lang)}</span>
+   860→   860→                </div>
+   861→   861→                <div className="flex justify-between">
+   862→   862→                  <span className="text-muted-foreground">{t('العمولة', 'Commission', lang)} ({settleTarget.commissionRate.toFixed(2)}%)</span>
+   863→   863→                  <span className="font-mono text-rose-700" dir="ltr">{formatCurrency(settleTarget.commission, lang)}</span>
+   864→   864→                </div>
+   865→   865→                <div className="flex justify-between">
+   866→   866→                  <span className="text-muted-foreground">{t('ضريبة العمولة', 'Commission VAT', lang)}</span>
+   867→   867→                  <span className="font-mono text-rose-600" dir="ltr">{formatCurrency(settleTarget.commissionVat, lang)}</span>
+   868→   868→                </div>
+   869→   869→                <div className="flex justify-between border-b pb-1">
+   870→   870→                  <span className="font-medium">{t('صافي المستحق', 'Net Payable', lang)}</span>
+   871→   871→                  <span className="font-mono font-semibold text-emerald-700" dir="ltr">{formatCurrency(settleTarget.net, lang)}</span>
+   872→   872→                </div>
+   873→   873→                <div className="flex justify-between">
+   874→   874→                  <span className="text-muted-foreground">{t('المحصل سابقاً', 'Already Paid', lang)}</span>
+   875→   875→                  <span className="font-mono text-blue-700" dir="ltr">{formatCurrency(settleTarget.paid, lang)}</span>
+   876→   876→                </div>
+   877→   877→                <div className="flex justify-between">
+   878→   878→                  <span className="font-semibold">{t('المتبقي', 'Pending', lang)}</span>
+   879→   879→                  <span className="font-mono font-bold text-amber-700" dir="ltr">{formatCurrency(settleTarget.pending, lang)}</span>
+   880→   880→                </div>
+   881→   881→              </div>
+   882→   882→
+   883→   883→              <div className="space-y-3">
+   884→   884→                <div className="grid grid-cols-2 gap-3">
+   885→   885→                  <div className="space-y-1.5">
+   886→   886→                    <Label className="text-xs">{t('تاريخ التسوية', 'Settlement Date', lang)} *</Label>
+   887→   887→                    <Input type="date" value={settleForm.date} onChange={e => setSettleForm(f => ({ ...f, date: e.target.value }))} />
+   888→   888→                  </div>
+   889→   889→                  <div className="space-y-1.5">
+   890→   890→                    <Label className="text-xs">{t('مبلغ التسوية', 'Settlement Amount', lang)} *</Label>
+   891→   891→                    <Input type="number" min="0" step="0.01" value={settleForm.settledAmount} onChange={e => setSettleForm(f => ({ ...f, settledAmount: e.target.value }))} dir="ltr" />
+   892→   892→                  </div>
+   893→   893→                </div>
+   894→   894→                <div className="grid grid-cols-2 gap-3">
+   895→   895→                  <div className="space-y-1.5">
+   896→   896→                    <Label className="text-xs">{t('طريقة الاستلام', 'Receipt Method', lang)}</Label>
+   897→   897→                    <Select value={settleForm.paymentMethod} onValueChange={v => setSettleForm(f => ({ ...f, paymentMethod: v }))}>
+   898→   898→                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+   899→   899→                      <SelectContent>
+   900→   900→                        <SelectItem value="BANK_TRANSFER">{t('تحويل بنكي', 'Bank Transfer', lang)}</SelectItem>
+   901→   901→                        <SelectItem value="CASH">{t('نقداً', 'Cash', lang)}</SelectItem>
+   902→   902→                        <SelectItem value="CARD">{t('بطاقة', 'Card', lang)}</SelectItem>
+   903→   903→                      </SelectContent>
+   904→   904→                    </Select>
+   905→   905→                  </div>
+   906→   906→                  <div className="space-y-1.5">
+   907→   907→                    <Label className="text-xs">{t('الحساب المستلم عليه', 'Receiving Account', lang)}</Label>
+   908→   908→                    <Select value={settleForm.settlementAccountCode} onValueChange={v => setSettleForm(f => ({ ...f, settlementAccountCode: v }))}>
+   909→   909→                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+   910→   910→                      <SelectContent>
+   911→   911→                        <SelectItem value="1112">{t('البنك (1112)', 'Bank (1112)', lang)}</SelectItem>
+   912→   912→                        <SelectItem value="1111">{t('الصندوق (1111)', 'Cash (1111)', lang)}</SelectItem>
+   913→   913→                      </SelectContent>
+   914→   914→                    </Select>
+   915→   915→                  </div>
+   916→   916→                </div>
+   917→   917→                <div className="space-y-1.5">
+   918→   918→                  <Label className="text-xs">{t('رقم مرجعي', 'Reference No.', lang)}</Label>
+   919→   919→                  <Input value={settleForm.referenceNo} onChange={e => setSettleForm(f => ({ ...f, referenceNo: e.target.value }))} placeholder={t('إشعار تحويل، رقم إيصال…', 'Transfer advice, receipt no…', lang)} dir="ltr" />
+   920→   920→                </div>
+   921→   921→                <div className="space-y-1.5">
+   922→   922→                  <Label className="text-xs">{t('ملاحظات', 'Notes', lang)}</Label>
+   923→   923→                  <Input value={settleForm.notes} onChange={e => setSettleForm(f => ({ ...f, notes: e.target.value }))} />
+   924→   924→                </div>
+   925→   925→                <p className="text-[11px] text-muted-foreground bg-emerald-50 border border-emerald-200 rounded p-2">
+   926→   926→                  {t('سيُنشأ قيد محاسبي: مدين الحساب المستلم عليه / دائن ذمم المنصة (1115). يُخفّض الذمة تدريجياً.',
+   927→   927→                     'Creates a journal entry: debit receiving account / credit platform receivable (1115). Reduces balance gradually.', lang)}
+   928→   928→                </p>
+   929→   929→              </div>
+   930→   930→
+   931→   931→              <DialogFooter className="gap-2">
+   932→   932→                <Button variant="outline" onClick={() => setSettleDialogOpen(false)}>
+   933→   933→                  {t('إلغاء', 'Cancel', lang)}
+   934→   934→                </Button>
+   935→   935→                <Button onClick={submitSettlement} disabled={settling} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+   936→   936→                  {settling ? <RefreshCw className="size-4 animate-spin" /> : <Landmark className="size-4" />}
+   937→   937→                  {t('تأكيد التسوية', 'Confirm Settlement', lang)}
+   938→   938→                </Button>
+   939→   939→              </DialogFooter>
+   940→   940→            </>
+   941→   941→          )}
+   942→   942→        </DialogContent>
+   943→   943→      </Dialog>
+   944→   944→    </ModuleLayout>
+   945→   945→  );
+   946→   946→}
+   947→   947→
+   948→   948→// ─── مكوّنات مساعدة محلية ──────────────────────────────────────────────
+   949→   949→function SummaryCard({ icon, label, value, tone = 'slate' }) {
+   950→   950→  const tones = {
+   951→   951→    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+   952→   952→    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+   953→   953→    rose: 'bg-rose-50 text-rose-700 border-rose-200',
+   954→   954→    teal: 'bg-teal-50 text-teal-700 border-teal-200',
+   955→   955→    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+   956→   956→    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+   957→   957→  };
+   958→   958→  return (
+   959→   959→    <Card className={`border ${tones[tone] || tones.slate}`}>
+   960→   960→      <CardContent className="p-3">
+   961→   961→        <div className="flex items-center gap-1.5 text-[11px] opacity-80 mb-1">
+   962→   962→          {icon}
+   963→   963→          <span>{label}</span>
+   964→   964→        </div>
+   965→   965→        <div className="text-base font-bold" dir="ltr">{value}</div>
+   966→   966→      </CardContent>
+   967→   967→    </Card>
+   968→   968→  );
+   969→   969→}
+   970→   970→
+   971→   971→function DetailStat({ label, value }) {
+   972→   972→  return (
+   973→   973→    <div className="rounded-md border bg-muted/30 p-2.5">
+   974→   974→      <div className="text-[10px] text-muted-foreground">{label}</div>
+   975→   975→      <div className="text-sm font-bold mt-0.5" dir="ltr">{value}</div>
+   976→   976→    </div>
+   977→   977→  );
+   978→   978→}
+   979→   979→

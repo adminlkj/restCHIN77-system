@@ -507,3 +507,226 @@ Stage Summary:
 - 20 ملف حُذف، 15+ ملف نُظف
 - كل الدورات المتبقية تخص المطاعم فقط
 - المحركات المحاسبية لم تُمَس (businessEngine لا يزال يحتوي createRentalContract للتوافق مع البيانات القديمة، لكن لا يُستدعى من أي واجهة)
+
+---
+Task ID: clients-credit-fields
+Agent: general-purpose
+Task: تحديث صفحة العملاء (Clients.jsx) لعرض وتحرير حقول الائتمان والتصنيف الجديدة على كيان العميل
+
+Work Log:
+- قرأت worklog.md لفهم النمط المتّبع في المهام السابقة (clean-sales-clients-stockmovements، construction-cleanup-final) والقيود: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، إبقاء CRUD والبحث الذكي وثنائية اللغة.
+- قرأت كيان العميل المُحدَّث base44/entities/Client.jsonc: الحقول الجديدة كلها موجودة (isCash, discountPercentage, creditLimit, creditDays, customerCategory, currentBalance). لم ألمس أي ملف في base44/entities أو src/lib.
+- قرأت SalesInvoice.jsonc و ClientPayment.jsonc لتأكيد أسماء الحقول المستخدمة في حساب الرصيد (clientId, totalAmount, status, amount).
+
+التغييرات على src/pages/Clients.jsx:
+- empty: أضفت الحقول الخمسة الجديدة كلها بقيم افتراضية مطابقة لـ schema: isCash=true, discountPercentage=0, creditLimit=0, creditDays=0, customerCategory='REGULAR'.
+- استيرادات جديدة: Switch (radix-ui)، Select + SelectContent + SelectItem + SelectTrigger + SelectValue، أيقونات Tag و Wallet من lucide-react، formatCurrency من utils-binaa (لعرض الأرصدة والحدود الائتمانية بصيغة الريال).
+- state جديد: invoices، payments (يُحمّلان مرة واحدة في load() عبر Promise.all مع Client.list). كلا النداءين ملفوفان بـ .catch(() => []) حتى لا تتعطّل شاشة العملاء لو تعطّل أحد الكيانين مؤقتاً.
+- balanceByClient (useMemo فوق invoices+payments): لكل عميل = Σ(invoice.totalAmount لغير الملغاة) − Σ(payment.amount). يتجاهل الفواتير بحالة CANCELLED. يُعرض للقراءة فقط (لا يُخزَّن على العميل — يتبع تعليق currentBalance في الـ schema).
+- save(): يُطعّم البيانات قبل الإرسال: isCash قيمة منطقية صريحة، discountPercentage/creditLimit/creditDays مُحوّلة لـ Number، customerCategory بقيمة افتراضية REGULAR. عند isCash=true يضمن أن creditLimit=0 و creditDays=0 (العملاء النقديون لا ذمة لهم).
+- البحث الذكي (الاسم/الكود/الهاتف مع tail-match) محفوظ كما هو تماماً — لا تغيير في منطق filtered. تم فقط توسيع نص placeholder لـ "بحث بالاسم/الكود/الجوال..." ليعكس القدرات الفعلية.
+- كل الـ CRUD (list/create/update/delete) ما زال يستخدم base44.entities.Client بنفس التوقيع — لا تغيير في اسم الكيان أو الـ API.
+- حذف العميل: ما زال يحجب عند وجود فواتير أو تحصيلات فقط (Contract/RentalContract محذوفان سابقاً). لا تغيير في هذا المنطق.
+- SmartEntityCard: أضفت شارات (badges) للتصنيف (REGULAR/VIP/WHOLESALE/EMPLOYEE/PLATFORM) بألوان مميزة لكل قيمة (slate/amber/violet/blue/fuchsia)، وشارة نوع العميل (نقدي/آجل)، وشارة "تجاوز الحد" (Over Limit) حمراء تظهر تلقائياً للعملاء الآجلين الذين يتجاوز رصيدهم حدّهم الائتماني.
+- meta على البطاقة: أضفت خصماً ثابتاً % (إن وُجد)، الحد الائتماني (أو "غير محدود" إذا 0)، مدة الائتمان بالأيام (أو "فوري" إذا 0)، والرصيد الحالي (يظهر دائماً للعملاء الآجلين، أو عند وجود رصيد ≠ 0 للنقديين).
+- قسم جديد في نموذج الحوار بعنوان "التصنيف والإعدادات الائتمانية / Classification & Credit" داخل إطار ذو حدود خضراء، يحتوي:
+  * Switch لنوع العميل (نقدي/آجل) — يعرض تسمية ديناميكية بجانبه.
+  * Select للتصنيف بالخمس قيم.
+  * Input رقمي لنسبة الخصم الثابتة %.
+  * عند isCash=false فقط: Input للحد الائتماني + Input لمدة الائتمان بالأيام.
+  * عند التحرير فقط (editing !== null) وفي وضع العميل الآجل: شريط للقراءة فقط يعرض الرصيد الحالي محسوباً من الفواتير − التحصيلات، مع شارة "يتجاوز الحد الائتماني" حمراء إن تجاوز.
+- حجم النموذج: رُفع من max-w-xl إلى max-w-2xl لاستيعاب القسم الجديد دون ازدحام.
+- exportColumns (لتصدير Excel/PDF عبر TableToolbar): أضفت 6 أعمدة جديدة — النوع، التصنيف، نسبة الخصم %، الحد الائتماني، مدة الائتمان بالأيام، الرصيد الحالي بصيغة الريال.
+- التبويبان الموجودان (بيانات العملاء / الكشوفات والتحصيل) محفوظان كما هما. PartyStatementSection محفوظ كما هو.
+
+القواعد الملتزَم بها:
+- لم ألمس أي ملف في src/lib/ (utils-binaa.js يُستخدم فقط عبر الاستيراد، لم يُعدَّل).
+- لم ألمس أي ملف في base44/entities/ (Client.jsonc كان مُحدَّثاً قبلي من المهمة الأم).
+- لم أُغيّر اسم الكيان Client ولا أي واجهة API (list/create/update/delete/filter كلها بنفس التوقيع الأصلي).
+- CRUD كامل يعمل مع base44.entities.Client كما كان.
+- البحث الذكي محفوظ حرفياً.
+- ثنائية اللغة محفوظة عبر t() لكل النصوص الجديدة (شارات، تسميات، شروط، شارة تجاوز الحد، شريط الرصيد، أعمدة التصدير، قسم النموذج).
+- الحقول الائتمانية تُخفى فعلياً للعملاء النقديين في النموذج (formIsAccount = form.isCash === false) وتُصفَّر قيمها عند الحفظ (creditLimit=0, creditDays=0).
+- لا توجد منطقة "detail view" منفصلة — الرصيد والحد الائتماني ومدة الائتمان تظهر مباشرة على بطاقة العميل في الشبكة وفي النموذج، وهذا يحقق متطلبات "Category badge column" و"Show credit limit and days in the table (or detail view)" و"current balance read-only stat" بدمج أنظف.
+
+التحقق:
+- bun run lint: 0 أخطاء، 0 تحذيرات (exit 0).
+- bun run build (vite build): نجح (bundle index-BDRJEjg0.js، 2723 modules، 10.34s).
+- فحص الـ bundle: الكلمات المفتاحية الجديدة كلها موجودة فعلياً في الـ bundle المبني:
+  isCash ✓، creditLimit ✓، creditDays ✓، discountPercentage ✓، customerCategory ✓، WHOLESALE ✓،
+  "Classification & Credit" ✓، "التصنيف والإعدادات الائتمانية" ✓، "Current balance" ✓، "الرصيد الحالي" ✓.
+
+Stage Summary:
+- صفحة العملاء تعرض الآن جميع حقول الائتمان والتصنيف الجديدة وتحرّرها مع منطق إخفاء ذكي للعملاء النقديين، وتعرض الرصيد الحالي المحسوب من الفواتير والتحصيلات كقراءة فقط على البطاقة وفي النموذج.
+- شارة التصنيف (Category badge) ملونة لكل قيمة من الخمس قيم، وشارة نوع العميل (نقدي/آجل)، وشارة تجاوز الحد الائتماني عند الحاجة.
+- التصدير يشمل 6 أعمدة جديدة (النوع/التصنيف/الخصم/الحد/المدة/الرصيد).
+- البحث الذكي والتبويبات والكشوفات وCRUD وثنائية اللغة كلها محفوظة.
+- lint و build ناجحان. لا تغييرات خارج src/pages/Clients.jsx.
+
+---
+Task ID: platforms-statement-print
+Agent: general-purpose
+Task: تعزيز صفحة منصات التوصيل (DeliveryPlatforms.jsx) بكشف قابل للطباعة + حقول فترة التسوية + تاريخ الاستحقاق + تبويب التسويات
+
+Work Log:
+- قرأت worklog.md لفهم النمط المتّبع في المهام السابقة (clean-sales-clients-stockmovements، clients-credit-fields، construction-cleanup-final) والقيود: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، إبقاء CRUD والبحث الذكي وثنائية اللغة.
+- قرأت PlatformSettlement.jsonc و DeliveryPlatform.jsonc لتأكيد أسماء الحقول الموجودة (periodFrom/periodTo/referenceNo موجودة مسبقاً؛ dueDate غير موجودة وتحتاج إضافة).
+- قرأت src/lib/printDocument.js للتأكد من توقيع printHtml(innerHtml, { title, lang }) وآلية عملها (نافذة مستقلة + انتظار الصور + طباعة تلقائية).
+- قرأت src/components/partners/PartyStatementReport.jsx كنمط مرجعي لبناء HTML احترافي قابل للطباعة (ترويسة شركة، ملخّص، جدول، تذييل).
+
+التغييرات على base44/entities/PlatformSettlement.jsonc:
+- أضفت حقل `dueDate` جديد (type=string, format=date) مع وصف ثنائي: "تاريخ استحقاق التحويل المتوقع من المنصة (للمتابعة فقط — التحويل الفعلي يُسجَّل بالتسوية نفسها)".
+- لم أُغيّر اسم الكيان ولا أي حقل موجود ولا واجهة API. الكيان PlatformSettlement كما هو، list/create/update/delete بنفس التوقيع.
+
+التغييرات على src/pages/DeliveryPlatforms.jsx:
+
+1) الاستيرادات الجديدة:
+   - أيقونتان من lucide-react: `Printer` و `Calendar`.
+   - `printHtml` من '@/lib/printDocument' (لا تعديل للملف، استيراد فقط).
+   - `useCompanySettings` من '@/hooks/useCompanySettings' لجلب ترويسة الشركة (logo, header image, primary color, contact bits) لكشف الطباعة.
+
+2) حالة المكوّن (state):
+   - `settleForm` موسّعة لتشمل: `periodFrom: ''`, `periodTo: ''`, `dueDate: ''` (إلى جانب date/settledAmount/paymentMethod/settlementAccountCode/referenceNo/notes الموجودة).
+   - `settlementSearch` جديدة لفلترة تبويب التسويات (بحث برقم التسوية / المنصة / الرقم المرجعي).
+   - جلبت `settings` عبر useCompanySettings() لاستخدامها في الطباعة.
+
+3) منطق التسوية (openSettleDialog / submitSettlement):
+   - openSettleDialog يعبّأ `periodFrom`/`periodTo` تلقائياً من فلتر التاريخ المعمول به في الكشوفات (dateFrom/dateTo) كقيمة افتراضية منطقية، لكنها قابلة للتحرير.
+   - submitSettlement يمرّر الآن `periodFrom`, `periodTo`, `dueDate` إلى OperationEngine.createPlatformSettlement (إلى جانب الحقول الموجودة). لا تغيير في توقيع الـ API.
+
+4) دالة جديدة `settleByPlatform(platform)`:
+   - بديل لـ openSettleDialog يبدأ من بيانات المنصة فقط (يصلح للنافذة التفصيلية).
+   - يبحث عن كشف المنصة في statements، وإن لم يجده يبني كشفاً مؤقتاً بأصفار.
+   - يُغلق النافذة التفصيلية ثم يفتح نافذة التسوية.
+   - يُصلح خللاً سابقاً: الزر في DialogFooter التفصيلي كان يستدعي `settlePlatform` غير المعرّفة → استُبدلت بـ settleByPlatform.
+
+5) دالة جديدة `printStatement(platform)` + مساعد `buildStatementPrintHtml`:
+   - printStatement تجد كشف المنصة في statements، تستدعي buildStatementPrintHtml لبناء HTML ثم تفتحه عبر printHtml في نافذة طباعة مستقلة.
+   - buildStatementPrintHtml (دالة مساعدة خارج المكوّن، ~155 سطر) تبني مستنداً رسمياً يتضمّن:
+     * ترويسة الشركة (logo, header image, primary color, contact bits: address/phone/VAT/CR).
+     * عنوان الكشف "كشف منصة توصيل / Delivery Platform Statement" + فترة الكشف.
+     * بيانات المنصة: الاسم عربي/إنجليزي، الكود، نسبة العمولة، طريقة التسوية (NET/GROSS مع تسمية مطولة)، الهاتف.
+     * بطاقة "المتبقي على المنصة" بارزة باللون الكهرماني + صافي مستحق + محصل.
+     * ملخّص محاسبي في 9 بطاقات: عدد الطلبات، المبيعات قبل الضريبة، ضريبة المبيعات، إجمالي المبيعات، العمولة، ضريبة العمولة، صافي المستحق، المحصل، المتبقي.
+     * جدول الإيصالات التفصيلي: التاريخ، رقم الإيصال، الزبون، الإجمالي، العمولة، الحالة (مع صف "لا توجد إيصالات" عند الفراغ).
+     * جدول التسويات المرحّلة: التاريخ، رقم التسوية، المبلغ، الرقم المرجعي، الطريقة (الرقم المرجعي ملوّن بالأزرق #1d4ed8 لبروزه).
+     * تذييل: اسم الشركة + "تم إصدار هذا الكشف آلياً بتاريخ ...".
+   - كل النصوص ثنائية اللغة عبر t()، RTL/LTR مضبوط عبر dir="ltr" على الأرقام والتواريخ.
+
+6) تبويب عرض ثالث "التسويات / Settlements":
+   - زر تبويب جديد في مبدّل العرض (بجانب المنصات وكشوفات المنصات) مع أيقونة Landmark.
+   - عند view==='settlements' يعرض:
+     * شريط بحث (settlementSearch) + TableToolbar للتصدير (settlementExportColumns: 10 أعمدة).
+     * جدول PlatformSettlement كامل بـ 9 أعمدة: رقم التسوية، التاريخ، المنصة (اسم + كود)، الفترة (periodFrom → periodTo)، الاستحقاق (dueDate)، المبلغ، الطريقة، الرقم المرجعي، الحالة.
+     * الرقم المرجعي يُعرض كبadge ملوّن أزرق بارز (bg-blue-50/border-blue-200/text-blue-700/font-mono) لبروزه — تلبية لمتطلب "prominently displayed".
+     * الحالة كـ Badge ملوّن (POSTED=أخضر، DRAFT=كهرماني، CANCELLED=أحمر).
+     * الطريقة كنص عربي/إنجليزي (تحويل بنكي/نقداً/بطاقة).
+   - useMemo جديدة: `filteredSettlements` (بحث نصي في settlementNo/platformName/referenceNo) و `platformById` (خريطة معرّف→منصة للوصول السريع).
+
+7) أزرار "طباعة الكشف / Print Statement":
+   - على بطاقة المنصة في تبويب المنصات (بين زر "كشف" وأيقونات التحرير/الحذف) — لون وردي خفيف.
+   - في عمود الإجراءات بجدول الكشوفات (بين زر "كشف" وزر "تسوية") — لون وردي خفيف.
+   - في DialogFooter للنافذة التفصيلية (بجانب زر "تسوية الإيصالات المعلّقة") — زر outline بحدّ وردي.
+   - كلها تستدعي printStatement(platform).
+
+8) نافذة التسوية (settleDialog) موسّعة:
+   - رفعت max-w-lg إلى max-w-2xl لاستيعاب الحقول الجديدة.
+   - أضفت صفّاً جديداً بثلاثة أعمدة: فترة من (periodFrom) + فترة إلى (periodTo) + تاريخ الاستحقاق (dueDate) — كلها Input type="date" مع أيقونة Calendar في الـ Label.
+   - حقل الرقم المرجعي أصبح بارزاً: Label مع أيقونة Landmark، Input بخط monospace، + سطر شرح صغير "سيظهر بوضوح في كشف التسوية وقائمة التسويات / Will be shown prominently in the settlement statement and list".
+
+9) إصلاح خلل سابق:
+   - الزر "تسوية الإيصالات المعلّقة" في النافذة التفصيلية كان يستدعي `settlePlatform(detailPlatform)` غير المعرّفة (الزر معطّل فعلياً عند الضغط). استُبدلت بـ settleByPlatform(detailPlatform) المعرّفة حديثاً.
+
+القواعد الملتزَم بها:
+- لم ألمس أي ملف في src/lib/ (printDocument.js يُستخدم عبر الاستيراد فقط، لم يُعدَّل).
+- لم أُغيّر اسم أي كيان ولا أي واجهة API: base44.entities.DeliveryPlatform / SalesInvoice / PlatformSettlement كلها كما هي (list/create/update/delete). OperationEngine.createPlatformSettlement يُستدعى بنفس التوقيع، فقط أضفت 3 حقول جديدة على البيانات الممرّرة (periodFrom/periodTo/dueDate) — الباكند سيتجاهل أي حقل غير معروف في الـ schema لو لم يُحدَّث.
+- أضفت حقل dueDate إلى base44/entities/PlatformSettlement.jsonc فقط (حقول periodFrom/periodTo/referenceNo كانت موجودة مسبقاً في الـ schema).
+- CRUD كامل يعمل كما كان.
+- البحث الذكي في تبويب المنصات محفوظ حرفياً.
+- ثنائية اللغة محفوظة عبر t() لكل النصوص الجديدة (تبويب التسويات، عناوين الأعمدة، أزرار الطباعة، حقول النموذج، نص الطباعة الكامل).
+- استخدمت مكوّنات UI الموجودة فقط: Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Button, Input, Label, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Card, CardContent, ModuleLayout, ConfirmDialog, TableToolbar.
+- لم أضف أي dependency خارجي جديد.
+
+التحقق:
+- bun run lint: exit 0 (0 أخطاء، 0 تحذيرات).
+- bun run build (vite build): نجح (bundle index-cKtzJ04C.js، 2723 modules، 10.10s).
+- فحص bundle: الكلمات المفتاحية الجديدة كلها موجودة فعلياً في الـ bundle المبني:
+  * "Print Statement" ✓، "طباعة الكشف" ✓
+  * "Platform Statement" ✓، "كشف منصة توصيل" ✓، "Delivery Platform Statement" ✓
+  * "Due Date" ✓، "تاريخ الاستحقاق" ✓
+  * "التسويات" ✓، "رقم التسوية" ✓
+  * buildStatementPrintHtml ✓، printStatement ✓، settleByPlatform ✓، filteredSettlements ✓، periodFrom/periodTo/dueDate ✓ (6 مطابقات).
+- التحقق من إصلاح الخلل: grep settlePlatform لم يعد يطابق أي استدعاء — settleByPlatform(printStatement(detailPlatform فقط.
+- التحقق من صحة JSONC: parse ناجح، حقل dueDate (type=string, format=date) موجود.
+
+Stage Summary:
+- صفحة منصات التوصيل أصبحت تدعم:
+  1. طباعة كشف رسمي لكل منصة عبر printHtml (ترويسة شركة + بيانات المنصة + ملخّص محاسبي 9 بطاقات + جدول إيصالات تفصيلي + جدول تسويات مرحّلة + تذييل).
+  2. تحرير فترة التسوية (periodFrom/periodTo) في نافذة التسوية (تُعبّأ تلقائياً من فلتر الكشوفات لكنها قابلة للتحرير).
+  3. تاريخ استحقاق التحويل (dueDate) كحقل جديد في schema ونموذج التسوية (للمتابعة فقط).
+  4. الرقم المرجعي (referenceNo) بارزاً في: قائمة التسويات (badge أزرق)، نافذة التسوية (Label بأيقونة + خط monospace + سطر شرح)، كشف الطباعة (عمود ملوّن بالأزرق).
+  5. تبويب ثالث "التسويات / Settlements" يعرض كل PlatformSettlement في جدول 9 أعمدة مع بحث وتصدير Excel/PDF.
+- إصلاح خلل سابق: زر تسوية في النافذة التفصيلية كان يستدعي دالة غير معرّفة (settlePlatform) — استُبدلت بـ settleByPlatform.
+- جميع القيود احتُرمت: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، CRUD والبحث الذكي وثنائية اللغة محفوظة، مكوّنات UI موجودة فقط.
+- lint و build ناجحان. التغييرات محصورة في src/pages/DeliveryPlatforms.jsx + إضافة حقل dueDate إلى base44/entities/PlatformSettlement.jsonc.
+
+---
+Task ID: polishing-phase
+Agent: main (Z.ai Code)
+Task: مرحلة الصقل — معالجة 8 نقاط
+
+Work Log:
+#7 أسماء الحسابات المحاسبية:
+- أصلحت ACCOUNTS map في postOperation/entry.ts لتطابق شجرة المطاعم
+- 4100: "إيرادات مبيعات الصالة" (كانت "إيرادات المبيعات")
+- 4300: "إيرادات مبيعات التوصيل" (كانت "إيرادات الخدمات")
+- 5110: "تكلفة المواد الغذائية" (كانت "مواد ومشتريات المشاريع")
+- 1131: "مخزون المواد الغذائية" (كانت "مخزون مواد البناء")
+- أصلحت EXPENSE_GENERAL: 5220 "مصروفات التشغيل" (كانت 5250 رسوم حكومية)
+- التحقق الفعلي: JE جديد يظهر "إيرادات مبيعات الصالة" ✓
+
+#3 أنواع المصروفات:
+- أعدت تسمية كل الأنواع لتوضيح الأثر المحاسبي:
+  * مصروفات تجهيز طلبات (5150) — تكلفة مباشرة
+  * صيانة وتشغيل المعدات (5224)
+  * مصروفات موظفين (5215)
+  * رسوم حكومية (5250)
+  * مصروفات إدارية (5240)
+  * مصروفات تشغيلية (5220) — إيجار/كهرباء/ماء
+- أضفت حقل impact يوضح الحساب المحاسبي لكل نوع
+
+#4 العملاء (حقول ائتمانية):
+- أضفت للـ schema: isCash, discountPercentage, creditLimit, creditDays, customerCategory
+- Clients.jsx: واجهة كاملة لإدارة الائتمان + badge للتصنيف + رصيد محسوب
+
+#5 المنصات (كشف قابل للطباعة):
+- كشف منصة قابل للطباعة (printHtml) مع ملخص محاسبي كامل
+- فترة تسوية (periodFrom/To) قابلة للتحرير
+- رقم تحويل بنكي بارز
+- تاريخ استحقاق التحويل (dueDate)
+- تبويب "التسويات" لعرض كل التسويات
+
+#6 الإيصال الحراري:
+- أضفت السجل التجاري (crNumber)
+- أضفت الهاتف الإضافي (phone2)
+- كل حقول الترويسة مكتملة: لوقو، اسم الشركة، اسم فرع، رقم ضريبي، سجل تجاري، هاتف، عنوان
+
+#8 التقارير:
+- أضفت تبويب "المنصات" لمتابعة الشركاء (كشف مستقل لكل منصة)
+- التقارير المالية تعتمد على القيود المرحّلة فقط
+- الإيراد لا يشمل الضريبة (VAT في حساب خصم 2160، ليس إيراد 4100)
+- النقدي → 1111 (صندوق)، الآجل → 1121 (ذمم زبائن)، المنصات → 1115 (ذمم منصات)
+
+التحقق الفعلي على Render:
+- فاتورة INV-VERIFY-1784124829:
+  * status=PAID, paid=230 ✓
+  * JE: 1111 صندوق الكاشير Dr=230 / 4100 إيرادات مبيعات الصالة Cr=200 / 2160 ض.ق.م Cr=30 ✓
+  * كل الأسماء مطابقة للمطاعم ✓
+- lint: 0 أخطاء، build: نجح
+- commit: 943fda9، push: ناجح
+- Render نشر index-IFRy0-eg.js
+
+Stage Summary:
+- 7 من 8 نقاط مُعالجة بالكامل
+- النقطة #1 (POS) و #2 (المشتريات) تمت معالجتها في الجولات السابقة
+- النقطة #8 (التقارير) مُتحقق منها — التقارير تعتمد على القيود المرحّلة وتفصل الإيراد عن الضريبة
