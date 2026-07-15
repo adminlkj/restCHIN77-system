@@ -1672,12 +1672,23 @@ function nextYearBounds(fy) {
 async function openNextFiscalYear(base44, closedFy, accounts) {
   const b = nextYearBounds(closedFy);
 
-  // لا تُنشئ سنة مكررة إن كانت موجودة مسبقاً.
+  // لا تُنشئ سنة مكررة إن كانت موجودة مسبقاً. لكن حدّث تواريخها إن كانت خاطئة.
   const existing = (await base44.asServiceRole.entities.FiscalYear.filter({ year: b.year }))?.[0];
-  const newFy = existing || await base44.asServiceRole.entities.FiscalYear.create({
-    name: `السنة المالية ${b.year}`, year: b.year,
-    startDate: b.startDate, endDate: b.endDate, status: 'OPEN', isCurrent: true,
-  });
+  let newFy;
+  if (existing) {
+    // تحقق من أن التواريخ صحيحة — إن لم تكن، حدّثها.
+    if (existing.startDate !== b.startDate || existing.endDate !== b.endDate) {
+      await base44.asServiceRole.entities.FiscalYear.update(existing.id, {
+        startDate: b.startDate, endDate: b.endDate, status: 'OPEN',
+      });
+    }
+    newFy = { ...existing, startDate: b.startDate, endDate: b.endDate, status: 'OPEN' };
+  } else {
+    newFy = await base44.asServiceRole.entities.FiscalYear.create({
+      name: `السنة المالية ${b.year}`, year: b.year,
+      startDate: b.startDate, endDate: b.endDate, status: 'OPEN', isCurrent: true,
+    });
+  }
 
   // اجعلها السنة الجارية وأزِل العلم عن الباقي.
   const allYears = await base44.asServiceRole.entities.FiscalYear.filter({ isCurrent: true });
