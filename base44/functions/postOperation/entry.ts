@@ -344,16 +344,24 @@ function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, 
   } else if (Array.isArray(payments) && payments.length > 0) {
     // بيع نقدي بطرق دفع واحدة أو أكثر: سطر مدين لكل طريقة دفع.
     // ندمج نفس الطريقة (مثلاً دفعتين نقداً) في سطر واحد لتجنب تكرار السطور.
+    // ملاحظة حرجة: المدين يجب أن يساوي الإجمالي (totalAmount)، وليس المبلغ المستلم.
+    // إن دفع الزبون أكثر من الإجمالي (cashReceived > total)، الباقي للزبون لا يُسجّل
+    // كذمة بل يُعطى نقداً للزبون — لذلك نقصر المدين على totalAmount مع توزيع النسبة.
     const merged = {};
+    let totalPaidRaw = 0;
     for (const p of payments) {
       const m = p.method || p.type || 'CASH';
       merged[m] = (merged[m] || 0) + num(p.amount);
+      totalPaidRaw += num(p.amount);
     }
+    // إن كان المستلم > الإجمالي، اضبط النسب لتتطابق مع totalAmount
+    const adjustmentFactor = totalPaidRaw > num(totalAmount) ? num(totalAmount) / totalPaidRaw : 1;
     for (const [method, amount] of Object.entries(merged)) {
       const acc = PAYMENT_METHOD_ACCOUNTS[method] || ACCOUNTS.CASH;
+      const adjustedAmount = +(amount * adjustmentFactor).toFixed(2);
       debitLines.push({
         accountCode: acc.code, accountName: acc.name,
-        debit: +amount.toFixed(2), credit: 0,
+        debit: adjustedAmount, credit: 0,
         description: `تحصيل ${invoiceNo} — ${acc.name}`,
         costCenter,
       });
