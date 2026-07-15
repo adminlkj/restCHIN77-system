@@ -45,3 +45,41 @@ Stage Summary:
 - فرع واحد موجود (الفرع الرئيسي) لكن طاولاته = 0 (مشكلة: يجب أن تُنشأ طاولات افتراضية)
 - سأتابع التدقيق الكامل عبر agent-browser
 
+
+---
+Task ID: prod-audit-2
+Agent: main (Z.ai Code)
+Task: إصلاح الأخطاء المكتشفة في التدقيق النهائي للـ POS
+
+Work Log:
+- فحص فعلي للنظام المنشور على restchin77-system.onrender.com (الرابط الصحيح)
+- تسجيل الدخول ناجح، النشر محدّث (bundle=index-BMHOx-6X.js، نظام مطعم)
+- تنفيذ دورة POS كاملة: طاولة → أصناف → دفع → طباعة (نجحت)
+- اكتشاف BUG #1 (محاسبي جسيم): buildSalesInvoiceJE يستخدم ذمم العملاء (1121) دائماً حتى للنقدي
+  - السبب: force-push إلى origin/main رجّع نسخة قديمة من postOperation/entry.ts
+  - الفاتورة INV-2026-7135 النقدية أنشأت قيداً: 1121 Dr=120.75 (خطأ)
+- إصلاح BUG #1: إعادة كتابة buildSalesInvoiceJE لتكون payment-method-aware:
+  - نقدي: مدين = الصندوق/البنك/البطاقة حسب طريقة الدفع
+  - منصة: مدين = مستحقات المنصات (1115) مع partyType=PLATFORM
+  - آجل: مدين = ذمم العملاء (1121)
+  - دفع متعدد: دمج نفس الطريقة في سطر واحد
+  - تحقق توازن: throw إذا المدين ≠ الإجمالي
+- إصلاح approveSalesInvoice: استخراج payments/isPlatformSale من invoice.notes
+- اكتشاف BUG #2: الإيصال يكرر طرق الدفع (نقداً 105 + نقداً 15.75 كسطرين)
+- إصلاح BUG #2: ThermalReceiptDocument يدمج طرق الدفع المتكررة
+- اكتشاف BUG #3: POS يستخدم Select بدون بحث ذكي
+- إصلاح BUG #3: استبدال Select بـ searchable combobox (اسم/جوال/خصم)
+- اكتشاف BUG #4: لا يمكن إضافة عميل نقدي جديد من POS
+- إصلاح BUG #4: إضافة QuickAddCashCustomerDialog (اسم/جوال/خصم ثابت)
+- اكتشاف BUG #5: بحث Clients.jsx لا يشمل الهاتف
+- إصلاح BUG #5: بحث ذكي بالاسم/الكود/الهاتف مع tail-match
+- التحقق المنطقي: 5 اختبارات لـ buildSalesInvoiceJE (كلها نجحت)
+- lint: 0 أخطاء، build: نجح (bundle=index-BlFBbeQ9.js)
+- commit: 9daecdb
+
+Stage Summary:
+- جميع الإصلاحات محلياً ومُلتزمة
+- BLOCKER: مفتاح SSH الأصلي ضاع (session reset حذف /home/z/.ssh/)
+- توليد مفتاح جديد ممكن لكن يحتاج إضافته لـ GitHub (يتطلب تدخل المستخدم)
+- الإصلاحات غير منشورة على Render بعد
+
