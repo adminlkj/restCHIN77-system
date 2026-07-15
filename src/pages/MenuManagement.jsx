@@ -3,6 +3,7 @@ import {
   Plus, Pencil, Trash2, Upload, Download, FileSpreadsheet, UtensilsCrossed,
   FolderPlus, Search, RefreshCw, ArrowUp, ArrowDown, AlertCircle,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,12 +50,44 @@ const EMPTY_ITEM = {
 const CSV_HEADERS = ['code', 'name', 'nameEn', 'categoryId', 'costPrice', 'salePrice', 'unit'];
 
 // تحويل CSV نصي إلى مصفوفة كائنات (يدعم الفواصل فقط — بسيط وسريع)
+// تحليل CSV يدعم: الفواصل (,) والفواصل المنقوطة (؛)، النصوص بين علامات اقتباس،
+// وBOM في بداية الملف (Excel يضيفه أحياناً).
 const parseCSV = (text) => {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  // إزالة BOM إن وُجد
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = clean.split('\n').filter(l => l.trim().length > 0);
   if (!lines.length) return [];
-  const headers = lines[0].split(',').map(h => h.trim());
+
+  // اكتشاف الفاصل: إن احتوى السطر الأول على ؛ أكثر من ، فالفاصل هو ؛
+  const firstLine = lines[0];
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+  // تحليل سطر يدعم النصوص بين علامات اقتباس
+  const parseLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (ch === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const headers = parseLine(lines[0]);
   return lines.slice(1).map((line) => {
-    const values = line.split(',').map(v => v.trim());
+    const values = parseLine(line);
     const obj = {};
     headers.forEach((h, i) => { obj[h] = values[i] ?? ''; });
     return obj;
@@ -362,17 +395,30 @@ export default function MenuManagement() {
   const handleFileImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isExcel = file.name.match(/\.xlsx?$/i);
     const reader = new FileReader();
+
     reader.onload = (event) => {
       try {
-        const rows = parseCSV(String(event.target.result || ''));
+        let rows = [];
+        if (isExcel) {
+          // قراءة ملف Excel (.xlsx / .xls)
+          const data = new Uint8Array(event.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        } else {
+          // قراءة ملف CSV
+          rows = parseCSV(String(event.target.result || ''));
+        }
+
         if (!rows.length) {
           toast.error(t('الملف فارغ أو غير صالح', 'File is empty or invalid', lang));
           return;
         }
         // تطبيع الحقول: تحويل categoryId النصي إلى id مطابق (إن أمكن)
         const normalized = rows.map((r) => {
-          const rawCat = r.categoryId || r.category || '';
+          const rawCat = r.categoryId || r.category || r.categoryName || '';
           // اقبل الـ id مباشرة أو اسم القسم بالعربي/الإنجليزي
           const matchedCat = catById.get(rawCat) ||
             categories.find((c) => c.name === rawCat || c.nameEn === rawCat || c.code === rawCat);
@@ -385,13 +431,17 @@ export default function MenuManagement() {
         });
         setImportPreview(normalized);
       } catch (err) {
-        console.warn('CSV parse failed:', err);
+        console.warn('Import parse failed:', err);
         toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
       }
     };
     reader.onerror = () => toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
-    reader.readAsText(file, 'UTF-8');
-    // إعادة ضبط حقل الملف ليُسمح بإعادة اختيار نفس الملف لاحقاً
+    // Excel يُقرأ كـ ArrayBuffer، CSV كـ Text
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file, 'UTF-8');
+    }
     e.target.value = '';
   };
 
@@ -660,7 +710,7 @@ export default function MenuManagement() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,text/csv,.json,application/json"
+              accept=".csv,text/csv,.xlsx,.xls,application/json"
               onChange={handleFileImport}
               className="hidden"
             />

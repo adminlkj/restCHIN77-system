@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Plus, Search, Pencil, Trash2, RefreshCw, AlertTriangle,
+  Upload, Download, FileSpreadsheet, AlertCircle,
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, nextCodeFromList } from '@/lib/utils-binaa';
@@ -24,6 +29,72 @@ const CATEGORIES = {
 };
 const empty = { code: '', name: '', nameEn: '', category: 'MATERIAL', unit: '', quantity: '', reorderLevel: '', unitCost: '', warehouseId: '', location: '', isActive: true, notes: '' };
 
+// رؤوس أعمدة ملف CSV للاستيراد/التصدير والقالب
+const CSV_HEADERS = ['code', 'name', 'nameEn', 'categoryName', 'unit', 'costPrice', 'salePrice', 'quantity', 'reorderLevel'];
+
+// تحليل CSV نصي إلى مصفوفة كائنات (يدعم الفواصل والفواصل المنقوطة، النصوص بين علامات اقتباس، وBOM)
+const parseCSV = (text) => {
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = clean.split('\n').filter(l => l.trim().length > 0);
+  if (!lines.length) return [];
+
+  const firstLine = lines[0];
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+  const parseLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (ch === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).map((line) => {
+    const values = parseLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = values[i] ?? ''; });
+    return obj;
+  });
+};
+
+// توليد سلسلة CSV من قائمة أصناف المخزون
+const itemsToCSV = (rows) => {
+  const esc = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const header = CSV_HEADERS.map(esc).join(',');
+  const body = rows.map((r) => CSV_HEADERS.map((h) => {
+    if (h === 'costPrice') return esc(r.costPrice ?? r.unitCost ?? '');
+    if (h === 'salePrice') return esc(r.salePrice ?? r.unitCost ?? '');
+    if (h === 'categoryName') return esc(r.categoryName || r.warehouseName || '');
+    return esc(r[h]);
+  }).join(',')).join('\n');
+  return `${header}\n${body}`;
+};
+
+const downloadTextFile = (filename, text, mime = 'text/csv;charset=utf-8;') => {
+  const blob = new Blob(['\uFEFF' + text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 export default function Inventory() {
   const { lang } = useStore();
   const [items, setItems] = useState([]);
@@ -37,6 +108,11 @@ export default function Inventory() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+
+  // ─── استيراد CSV/Excel ─────────────────────────────────────────────
+  const fileInputRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null); // مصفوفة الصفوف المحلّلة
+  const [importing, setImporting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -93,6 +169,136 @@ export default function Inventory() {
     } catch { toast.error(t('فشل الحذف', 'Delete failed', lang)); }
   };
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // استيراد CSV/Excel (مع معاينة) + تصدير + نموذج
+  // ═══════════════════════════════════════════════════════════════════════
+  const triggerFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isExcel = file.name.match(/\.xlsx?$/i);
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        let rows = [];
+        if (isExcel) {
+          // قراءة ملف Excel (.xlsx / .xls)
+          const data = new Uint8Array(event.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        } else {
+          // قراءة ملف CSV
+          rows = parseCSV(String(event.target.result || ''));
+        }
+
+        if (!rows.length) {
+          toast.error(t('الملف فارغ أو غير صالح', 'File is empty or invalid', lang));
+          return;
+        }
+        // تطبيع الحقول الرقمية
+        const normalized = rows.map((r) => ({
+          ...r,
+          costPrice: parseFloat(r.costPrice) || 0,
+          salePrice: parseFloat(r.salePrice) || parseFloat(r.costPrice) || 0,
+          quantity: parseFloat(r.quantity) || 0,
+          reorderLevel: parseFloat(r.reorderLevel) || 0,
+        }));
+        setImportPreview(normalized);
+      } catch (err) {
+        console.warn('Import parse failed:', err);
+        toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
+      }
+    };
+    reader.onerror = () => toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
+    // Excel يُقرأ كـ ArrayBuffer، CSV كـ Text
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file, 'UTF-8');
+    }
+    e.target.value = '';
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview || !importPreview.length) return;
+    setImporting(true);
+    let okCount = 0;
+    let failCount = 0;
+    try {
+      const payload = importPreview.map((r, idx) => {
+        const cost = parseFloat(r.costPrice) || 0;
+        const sale = parseFloat(r.salePrice) || cost || 0;
+        return {
+          code: r.code || `INV-${String(idx + 1).padStart(4, '0')}`,
+          name: r.name || '',
+          nameEn: r.nameEn || '',
+          categoryName: r.categoryName || '',
+          unit: r.unit || 'قطعة',
+          costPrice: cost,
+          salePrice: sale,
+          unitCost: parseFloat(r.unitCost ?? cost) || 0,
+          quantity: parseFloat(r.quantity) || 0,
+          reorderLevel: parseFloat(r.reorderLevel) || 0,
+          isActive: true,
+          notes: '',
+          warehouseId: r.warehouseId || '',
+        };
+      }).filter((p) => p.name);
+
+      // bulkCreate على دفعات صغيرة (50) لتفادي أي حدود
+      const CHUNK = 50;
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const slice = payload.slice(i, i + CHUNK);
+        try {
+          await base44.entities.InventoryItem.bulkCreate(slice);
+          okCount += slice.length;
+        } catch (err) {
+          console.warn('bulkCreate slice failed:', err);
+          failCount += slice.length;
+        }
+      }
+      if (okCount > 0) {
+        toast.success(t(
+          `تم استيراد ${okCount} صنف${failCount ? ` — فشل ${failCount}` : ''}`,
+          `Imported ${okCount} item(s)${failCount ? ` — ${failCount} failed` : ''}`,
+          lang
+        ));
+      } else {
+        toast.error(t('لم يتم استيراد أي صنف', 'No items imported', lang));
+      }
+      setImportPreview(null);
+      await load();
+    } catch (err) {
+      console.warn('Import failed:', err);
+      toast.error(t('فشل الاستيراد', 'Import failed', lang));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const exportItemsCSV = () => {
+    if (!filtered.length) {
+      toast.error(t('لا توجد أصناف للتصدير', 'No items to export', lang));
+      return;
+    }
+    downloadTextFile('inventory-items.csv', itemsToCSV(filtered));
+    toast.success(t('تم تصدير القائمة', 'Inventory exported', lang));
+  };
+
+  const downloadTemplate = () => {
+    const sample = [
+      { code: 'INV-1001', name: 'دقيق فاخر', nameEn: 'Premium Flour', categoryName: 'مواد', unit: 'كجم', costPrice: 3.5, salePrice: 4, quantity: 120, reorderLevel: 20 },
+      { code: 'INV-1002', name: 'زيت ذرة', nameEn: 'Corn Oil', categoryName: 'مواد', unit: 'لتر', costPrice: 8, salePrice: 9, quantity: 40, reorderLevel: 10 },
+    ];
+    downloadTextFile('inventory-template.csv', itemsToCSV(sample));
+    toast.success(t('تم تنزيل النموذج', 'Template downloaded', lang));
+  };
+
   const totalValue = filtered.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0);
   const lowStock = filtered.filter(i => i.reorderLevel > 0 && i.quantity <= i.reorderLevel).length;
 
@@ -112,9 +318,28 @@ export default function Inventory() {
       title={t('المخزون والأصول', 'Inventory & Assets', lang)}
       subtitle={t('إدارة أصناف المخزون والأصول الثابتة', 'Manage stock items and fixed assets', lang)}
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <TableToolbar columns={exportColumns} rows={filtered} title={{ ar: 'المخزون', en: 'Inventory' }} />
+          <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5">
+            <FileSpreadsheet className="size-4" />
+            {t('نموذج CSV', 'CSV Template', lang)}
+          </Button>
+          <Button variant="outline" size="sm" onClick={triggerFilePicker} className="gap-1.5">
+            <Upload className="size-4" />
+            {t('استيراد', 'Import', lang)}
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportItemsCSV} className="gap-1.5" disabled={!filtered.length}>
+            <Download className="size-4" />
+            {t('تصدير', 'Export', lang)}
+          </Button>
           <Button onClick={openNew} className="gap-2 bg-slate-700 hover:bg-slate-800"><Plus className="size-4" />{t('صنف جديد', 'New Item', lang)}</Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={handleFileImport}
+            className="hidden"
+          />
         </div>
       }
     >
@@ -225,6 +450,100 @@ export default function Inventory() {
         title={t('حذف الصنف', 'Delete Item', lang)}
         description={t('سيتم حذف الصنف نهائياً.', 'This item will be permanently deleted.', lang)}
         onConfirm={remove} confirmLabel={t('حذف', 'Delete', lang)} />
+
+      {/* ════════════ حوار معاينة الاستيراد ════════════ */}
+      <Dialog open={!!importPreview} onOpenChange={(o) => { if (!importing) setImportPreview(o ? importPreview : null); }}>
+        <DialogContent className="max-w-3xl" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="size-5 text-slate-700" />
+              {t('معاينة الاستيراد', 'Import Preview', lang)}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            <p className="text-sm text-muted-foreground">
+              {importPreview?.length || 0} {t('صف سيتم استيرادها. راجعها قبل التأكيد.', 'rows will be imported. Review before confirming.', lang)}
+            </p>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>code</TableHead>
+                    <TableHead>name</TableHead>
+                    <TableHead>nameEn</TableHead>
+                    <TableHead>categoryName</TableHead>
+                    <TableHead>unit</TableHead>
+                    <TableHead className="text-end">costPrice</TableHead>
+                    <TableHead className="text-end">salePrice</TableHead>
+                    <TableHead className="text-end">qty</TableHead>
+                    <TableHead className="text-end">reorder</TableHead>
+                    <TableHead className="text-center">{t('الحالة', 'Status', lang)}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importPreview?.map((r, idx) => {
+                    const valid = !!r.name;
+                    return (
+                      <TableRow key={idx} className={valid ? '' : 'bg-rose-50'}>
+                        <TableCell className="text-xs text-muted-foreground">{idx + 1}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.code || '—'}</TableCell>
+                        <TableCell className="text-sm">{r.name || <span className="text-rose-600">—</span>}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground" dir="ltr">{r.nameEn || ''}</TableCell>
+                        <TableCell className="text-xs">{r.categoryName || '—'}</TableCell>
+                        <TableCell className="text-xs">{r.unit || '—'}</TableCell>
+                        <TableCell className="text-end text-xs">{r.costPrice || 0}</TableCell>
+                        <TableCell className="text-end text-xs font-semibold">{r.salePrice || 0}</TableCell>
+                        <TableCell className="text-end text-xs">{r.quantity || 0}</TableCell>
+                        <TableCell className="text-end text-xs">{r.reorderLevel || 0}</TableCell>
+                        <TableCell className="text-center">
+                          {valid ? (
+                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              {t('صالح', 'OK', lang)}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-rose-100 text-rose-700 border border-rose-200">
+                              {t('متخطّى', 'Skipped', lang)}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+              <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <span>
+                {t(
+                  'الصفوف التي لا تحتوي على اسم سيتم تخطّيها تلقائياً. سيتم إنشاء رمز تلقائي للصفوف بدون رمز.',
+                  'Rows missing a name will be skipped automatically. An auto code is generated for rows without one.',
+                  lang
+                )}
+              </span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportPreview(null)} disabled={importing}>
+              {t('إلغاء', 'Cancel', lang)}
+            </Button>
+            <Button onClick={confirmImport} disabled={importing} className="bg-slate-700 hover:bg-slate-800 gap-1.5">
+              {importing ? (
+                <>
+                  <RefreshCw className="size-4 animate-spin" />
+                  {t('جاري الاستيراد...', 'Importing...', lang)}
+                </>
+              ) : (
+                <>
+                  <Upload className="size-4" />
+                  {t('تأكيد الاستيراد', 'Confirm Import', lang)}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ModuleLayout>
   );
 }
