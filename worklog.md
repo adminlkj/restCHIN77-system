@@ -83,3 +83,60 @@ Stage Summary:
 - توليد مفتاح جديد ممكن لكن يحتاج إضافته لـ GitHub (يتطلب تدخل المستخدم)
 - الإصلاحات غير منشورة على Render بعد
 
+
+---
+Task ID: platform-settlements
+Agent: main (Z.ai Code)
+Task: نظام كشف حساب المنصات التلقائي + التسوية المحاسبية
+
+Work Log:
+- استخدمت مفتاح SSH المقدّم من المستخدم للدفع لـ GitHub
+- أنشأت base44/entities/DeliveryPlatform.jsonc (كان مفقوداً): commissionRate, commissionVatRate, commissionMethod, vatOnCommissionEnabled, settlementAccountCode
+- أنشأت base44/entities/PlatformSettlement.jsonc: settlementNo, platformId, periodFrom/To, totalSales, totalCommission, commissionVat, netPayable, settledAmount, paymentMethod, referenceNo, invoiceIds
+- أضفت حقول المنصة لـ SalesInvoice.jsonc: platformId, platformName, platformCommission, platformCommissionVat, isPlatformSale, manualDiscount, deliveryFee
+- عدّلت buildSalesInvoiceJE في postOperation/entry.ts لمبيعات المنصات:
+  * مدين: ذمم المنصة (1115) بالصافي = total - commission - commissionVat
+  * مدين: مصروف العمولة (5231)
+  * مدين: ضريبة العمولة المدفوعة (1140)
+  * دائن: إيرادات المبيعات (4100/4300) + ضريبة المبيعات (2160)
+- أضفت operation PLATFORM_SETTLEMENT في postOperation:
+  * مدين: البنك/الصندوق (settledAmount)
+  * دائن: ذمم المنصة (1115) — يخفّض الذمة
+- أضفت createPlatformSettlement + Validation rules
+- أضفت OperationEngine.createPlatformSettlement في businessEngine.js
+- أعدت كتابة DeliveryPlatforms.jsx:
+  * تحميل التسويات مع المنصات والفواتير
+  * كشف حساب تلقائي: revenue/commission/commissionVat/net/paid/pending (لا إدخال يدوي)
+  * نافذة تسوية حقيقية تعرض ملخص الكشف + نموذج (تاريخ/مبلغ/طريقة/حساب/مرجع)
+  * التسوية تنشئ PlatformSettlement + قيد JE عبر OperationEngine
+- التحقق المنطقي: قيد المنصة متوازن (115 = 95.16 + 17.25 + 2.59 = 100 + 15)
+- lint: 0 أخطاء، build: نجح (bundle=index-CieP5Ha7.js)
+- commit: 4d1ba04، push: ناجح
+- Render auto-deploy: نشر index-CieP5Ha7.js
+
+التحقق الفعلي على Render (عبر API):
+- إنشاء منصة هنقرستيشن (PL-0001, commission 15%): نجح
+- إنشاء فاتورة منصة (INV-PLAT-TEST-1, 100+15 VAT=115, commission=17.25, commissionVat=2.59): نجح
+- اعتماد الفاتورة → قيد JE مُرحّل:
+  * 1115 Dr=95.16 (ذمم المنصة, partyType=PLATFORM) ✓
+  * 5231 Dr=17.25 (مصروف عمولة) ✓
+  * 1140 Dr=2.59 (ضريبة عمولة مدفوعة) ✓
+  * 4300 Cr=100 (إيرادات الخدمات) ✓
+  * 2160 Cr=15 (ضريبة مبيعات) ✓
+  * متوازن: 115 = 115 ✓
+- إنشاء تسوية (SET-PL-16103847, 95.16, BANK_TRANSFER): نجح → قيد JE:
+  * 1112 Dr=95.16 (البنك) ✓
+  * 1115 Cr=95.16 (إخفاض ذمة المنصة) ✓
+  * متوازن: 95.16 = 95.16 ✓
+- رصيد ذمم المنصة (1115) بعد التسوية = 0.00 (مغلق بالكامل) ✓
+
+التحقق في الواجهة (agent-browser):
+- صفحة المنصات → تبويب "كشوفات المنصات" تعرض:
+  * هنقرستيشن: 1 طلب | إيرادات 115 | عمولة 17.25 | صافي 95.16 | مسدّد 95.16 | معلّق 0.00 ✓
+- زر "تسوية" disabled عند المعلّق=0 (لا تسوية زائدة) ✓
+
+Stage Summary:
+- نظام كشف حساب المنصات يعمل بكامله على Render (مُتحقق فعلياً)
+- الفاتورة هي المصدر، الكشف يُبنى تلقائياً، التسوية تخفّض الذمة تدريجياً
+- العمولة وضريبتها تُسجّلان محاسبياً عند البيع (لا انتظار للتحصيل)
+- التسوية تنشئ قيداً حقيقياً (لا patch مباشر)
