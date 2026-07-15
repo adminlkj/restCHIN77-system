@@ -1,0 +1,64 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "System-level role",
+      "enum": [
+        "admin",
+        "user"
+      ],
+      "default": "user"
+    },
+    "jobTitle": {
+      "type": "string",
+      "description": "Job title / position"
+    },
+    "department": {
+      "type": "string",
+      "description": "Department the user belongs to"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "appRole": {
+      "type": "string",
+      "description": "Business role controlling permissions",
+      "enum": [
+        "OWNER",
+        "ACCOUNTANT",
+        "PROJECT_MANAGER",
+        "PROCUREMENT",
+        "HR",
+        "OPERATOR",
+        "VIEWER"
+      ],
+      "default": "VIEWER"
+    },
+    "allowedModules": {
+      "type": "array",
+      "description": "Explicit module keys the user can access (overrides role defaults when set)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "modulePermissions": {
+      "type": "object",
+      "description": "Per-module in-screen action grants, e.g. { \"projects\": [\"create\",\"edit\",\"delete\"] }. Only applies when allowedModules is set.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "role"
+  ]
+}

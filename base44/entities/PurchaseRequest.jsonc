@@ -1,0 +1,107 @@
+{
+  "name": "PurchaseRequest",
+  "type": "object",
+  "properties": {
+    "requestNo": {
+      "type": "string",
+      "description": "\u0631\u0642\u0645 \u0637\u0644\u0628 \u0627\u0644\u0634\u0631\u0627\u0621"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "projectId": {
+      "type": "string",
+      "description": "\u0627\u0644\u0645\u0634\u0631\u0648\u0639 \u0627\u0644\u0645\u0631\u062a\u0628\u0637 (\u0627\u062e\u062a\u064a\u0627\u0631\u064a)"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "requestedBy": {
+      "type": "string",
+      "description": "\u0627\u0644\u062c\u0647\u0629/\u0627\u0644\u0645\u0648\u0638\u0641 \u0637\u0627\u0644\u0628 \u0627\u0644\u0634\u0631\u0627\u0621"
+    },
+    "description": {
+      "type": "string",
+      "description": "\u0648\u0635\u0641 \u0627\u0644\u0645\u0648\u0627\u062f \u0623\u0648 \u0627\u0644\u0623\u0635\u0646\u0627\u0641 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629"
+    },
+    "estimatedAmount": {
+      "type": "number",
+      "default": 0,
+      "description": "\u0627\u0644\u0642\u064a\u0645\u0629 \u0627\u0644\u062a\u0642\u062f\u064a\u0631\u064a\u0629"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "APPROVED",
+        "CONVERTED",
+        "REJECTED"
+      ],
+      "default": "DRAFT",
+      "description": "\u0645\u0633\u0648\u062f\u0629 / \u0645\u0642\u062f\u0651\u0645 / \u0645\u0639\u062a\u0645\u062f / \u0645\u062d\u0648\u0651\u0644 \u0644\u0623\u0645\u0631 \u0634\u0631\u0627\u0621 / \u0645\u0631\u0641\u0648\u0636"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestNo",
+    "date"
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

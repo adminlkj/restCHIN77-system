@@ -1,0 +1,139 @@
+{
+  "type": "object",
+  "properties": {
+    "contractNo": {
+      "type": "string"
+    },
+    "equipmentId": {
+      "type": "string"
+    },
+    "equipmentName": {
+      "type": "string"
+    },
+    "clientId": {
+      "type": "string"
+    },
+    "clientName": {
+      "type": "string"
+    },
+    "startDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "endDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "rateType": {
+      "type": "string",
+      "enum": [
+        "DAILY",
+        "WEEKLY",
+        "MONTHLY",
+        "HOURLY"
+      ],
+      "default": "DAILY"
+    },
+    "rate": {
+      "type": "number",
+      "default": 0
+    },
+    "deliveryFees": {
+      "type": "number",
+      "default": 0
+    },
+    "paymentTermDays": {
+      "type": "number",
+      "enum": [
+        30,
+        45,
+        60,
+        90
+      ],
+      "default": 30,
+      "description": "\u0645\u062f\u0629 \u0627\u0633\u062a\u062d\u0642\u0627\u0642 \u0627\u0644\u0633\u062f\u0627\u062f \u0628\u0627\u0644\u0623\u064a\u0627\u0645 \u062d\u0633\u0628 \u0634\u0631\u0648\u0637 \u0627\u0644\u0639\u0642\u062f \u2014 \u062a\u064f\u062d\u0633\u0628 \u0645\u0646\u0647\u0627 \u062a\u0648\u0627\u0631\u064a\u062e \u0627\u0633\u062a\u062d\u0642\u0627\u0642 \u0627\u0644\u0641\u0648\u0627\u062a\u064a\u0631"
+    },
+    "totalAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "vatAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "COMPLETED",
+        "CANCELLED"
+      ],
+      "default": "DRAFT"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractNo",
+    "equipmentId",
+    "clientId",
+    "status"
+  ],
+  "name": "RentalContract",
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

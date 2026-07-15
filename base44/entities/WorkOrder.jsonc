@@ -1,0 +1,52 @@
+{
+  "name": "WorkOrder",
+  "type": "object",
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "description": "\u0645\u0639\u0631\u0651\u0641 \u0627\u0644\u0645\u0634\u0631\u0648\u0639"
+    },
+    "orderNo": {
+      "type": "string",
+      "description": "\u0631\u0642\u0645 \u0623\u0645\u0631 \u0627\u0644\u0639\u0645\u0644"
+    },
+    "title": {
+      "type": "string",
+      "description": "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0639\u0645\u0644"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "assignedTo": {
+      "type": "string",
+      "description": "\u0627\u0644\u062c\u0647\u0629/\u0627\u0644\u0641\u0631\u064a\u0642 \u0627\u0644\u0645\u0646\u0641\u0651\u0630"
+    },
+    "description": {
+      "type": "string"
+    },
+    "progressPercent": {
+      "type": "number",
+      "default": 0,
+      "description": "\u0646\u0633\u0628\u0629 \u0625\u0646\u062c\u0627\u0632 \u0623\u0645\u0631 \u0627\u0644\u0639\u0645\u0644 %"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "CANCELLED"
+      ],
+      "default": "OPEN"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "projectId",
+    "title",
+    "date"
+  ]
+}

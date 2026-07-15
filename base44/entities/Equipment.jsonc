@@ -1,0 +1,134 @@
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "nameAr": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "brand": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "year": {
+      "type": "number"
+    },
+    "serialNumber": {
+      "type": "string"
+    },
+    "plateNumber": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "AVAILABLE",
+        "IN_USE",
+        "RENTED",
+        "MAINTENANCE",
+        "OUT_OF_SERVICE"
+      ],
+      "default": "AVAILABLE"
+    },
+    "dailyRate": {
+      "type": "number",
+      "default": 0
+    },
+    "monthlyRate": {
+      "type": "number",
+      "default": 0
+    },
+    "hourlyRate": {
+      "type": "number",
+      "default": 0
+    },
+    "purchaseDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "purchaseCost": {
+      "type": "number",
+      "default": 0
+    },
+    "currentValue": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "code",
+    "name",
+    "status"
+  ],
+  "name": "Equipment",
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
