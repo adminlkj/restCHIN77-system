@@ -1,0 +1,1149 @@
+     1→     1→import React, { useState, useEffect, useMemo, useRef } from 'react';
+     2→     2→import {
+     3→     3→  Plus, Pencil, Trash2, Upload, Download, FileSpreadsheet, UtensilsCrossed,
+     4→     4→  FolderPlus, Search, RefreshCw, ArrowUp, ArrowDown, AlertCircle,
+     5→     5→} from 'lucide-react';
+     6→     6→import * as XLSX from 'xlsx';
+     7→     7→import { Card, CardContent } from '@/components/ui/card';
+     8→     8→import { Button } from '@/components/ui/button';
+     9→     9→import { Input } from '@/components/ui/input';
+    10→    10→import { Label } from '@/components/ui/label';
+    11→    11→import {
+    12→    12→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    13→    13→} from '@/components/ui/select';
+    14→    14→import { Switch } from '@/components/ui/switch';
+    15→    15→import {
+    16→    16→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    17→    17→} from '@/components/ui/dialog';
+    18→    18→import {
+    19→    19→  Tabs, TabsList, TabsTrigger, TabsContent,
+    20→    20→} from '@/components/ui/tabs';
+    21→    21→import {
+    22→    22→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    23→    23→} from '@/components/ui/table';
+    24→    24→import { Badge } from '@/components/ui/badge';
+    25→    25→import { base44 } from '@/api/base44Client';
+    26→    26→import { useStore } from '@/lib/store';
+    27→    27→import { t, formatCurrency, nextCodeFromList } from '@/lib/utils-binaa';
+    28→    28→import ModuleLayout from '@/components/shared/ModuleLayout';
+    29→    29→import ConfirmDialog from '@/components/shared/ConfirmDialog';
+    30→    30→import { toast } from 'sonner';
+    31→    31→
+    32→    32→// ═══════════════════════════════════════════════════════════════════════
+    33→    33→// MenuManagement — إدارة قائمة الطعام (الأقسام + الوجبات)
+    34→    34→//   - تبويب 1: الأقسام (CRUD + إعادة ترتيب)
+    35→    35→//   - تبويب 2: الوجبات (CRUD + بحث + فلترة + استيراد CSV + تصدير CSV)
+    36→    36→// ═══════════════════════════════════════════════════════════════════════
+    37→    37→
+    38→    38→const errorMessage = (err, fallback) => err?.data?.error || err?.message || fallback;
+    39→    39→
+    40→    40→const EMPTY_CATEGORY = {
+    41→    41→  code: '', name: '', nameEn: '', sortOrder: 1, isActive: true,
+    42→    42→};
+    43→    43→
+    44→    44→const EMPTY_ITEM = {
+    45→    45→  code: '', name: '', nameEn: '', categoryId: '', unit: 'قطعة',
+    46→    46→  costPrice: '', salePrice: '', quantity: '', reorderLevel: '', isActive: true, notes: '',
+    47→    47→};
+    48→    48→
+    49→    49→// رؤوس CSV المعتمدة للاستيراد/التصدير
+    50→    50→const CSV_HEADERS = ['code', 'name', 'nameEn', 'categoryId', 'costPrice', 'salePrice', 'unit'];
+    51→    51→
+    52→    52→// تحويل CSV نصي إلى مصفوفة كائنات (يدعم الفواصل فقط — بسيط وسريع)
+    53→    53→// تحليل CSV يدعم: الفواصل (,) والفواصل المنقوطة (؛)، النصوص بين علامات اقتباس،
+    54→    54→// وBOM في بداية الملف (Excel يضيفه أحياناً).
+    55→    55→const parseCSV = (text) => {
+    56→    56→  // إزالة BOM إن وُجد
+    57→    57→  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    58→    58→  const lines = clean.split('\n').filter(l => l.trim().length > 0);
+    59→    59→  if (!lines.length) return [];
+    60→    60→
+    61→    61→  // اكتشاف الفاصل: إن احتوى السطر الأول على ؛ أكثر من ، فالفاصل هو ؛
+    62→    62→  const firstLine = lines[0];
+    63→    63→  const semicolonCount = (firstLine.match(/;/g) || []).length;
+    64→    64→  const commaCount = (firstLine.match(/,/g) || []).length;
+    65→    65→  const delimiter = semicolonCount > commaCount ? ';' : ',';
+    66→    66→
+    67→    67→  // تحليل سطر يدعم النصوص بين علامات اقتباس
+    68→    68→  const parseLine = (line) => {
+    69→    69→    const result = [];
+    70→    70→    let current = '';
+    71→    71→    let inQuotes = false;
+    72→    72→    for (let i = 0; i < line.length; i++) {
+    73→    73→      const ch = line[i];
+    74→    74→      if (ch === '"') {
+    75→    75→        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+    76→    76→        else { inQuotes = !inQuotes; }
+    77→    77→      } else if (ch === delimiter && !inQuotes) {
+    78→    78→        result.push(current.trim());
+    79→    79→        current = '';
+    80→    80→      } else {
+    81→    81→        current += ch;
+    82→    82→      }
+    83→    83→    }
+    84→    84→    result.push(current.trim());
+    85→    85→    return result;
+    86→    86→  };
+    87→    87→
+    88→    88→  const headers = parseLine(lines[0]);
+    89→    89→  return lines.slice(1).map((line) => {
+    90→    90→    const values = parseLine(line);
+    91→    91→    const obj = {};
+    92→    92→    headers.forEach((h, i) => { obj[h] = values[i] ?? ''; });
+    93→    93→    return obj;
+    94→    94→  });
+    95→    95→};
+    96→    96→
+    97→    97→// توليد سلسلة CSV من قائمة أصناف
+    98→    98→const itemsToCSV = (rows) => {
+    99→    99→  const esc = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+   100→   100→  const header = CSV_HEADERS.map(esc).join(',');
+   101→   101→  const body = rows.map((r) => CSV_HEADERS.map((h) => {
+   102→   102→    if (h === 'categoryId') return esc(r.categoryId || r.category || '');
+   103→   103→    if (h === 'costPrice') return esc(r.costPrice ?? r.unitCost ?? '');
+   104→   104→    if (h === 'salePrice') return esc(r.salePrice ?? r.unitCost ?? '');
+   105→   105→    return esc(r[h]);
+   106→   106→  }).join(',')).join('\n');
+   107→   107→  return `${header}\n${body}`;
+   108→   108→};
+   109→   109→
+   110→   110→const downloadTextFile = (filename, text, mime = 'text/csv;charset=utf-8;') => {
+   111→   111→  const blob = new Blob(['\uFEFF' + text], { type: mime });
+   112→   112→  const url = URL.createObjectURL(blob);
+   113→   113→  const a = document.createElement('a');
+   114→   114→  a.href = url;
+   115→   115→  a.download = filename;
+   116→   116→  a.click();
+   117→   117→  URL.revokeObjectURL(url);
+   118→   118→};
+   119→   119→
+   120→   120→export default function MenuManagement() {
+   121→   121→  const { lang } = useStore();
+   122→   122→
+   123→   123→  // ─── بيانات مشتركة ──────────────────────────────────────────────────
+   124→   124→  const [tab, setTab] = useState('categories');
+   125→   125→  const [categories, setCategories] = useState([]);
+   126→   126→  const [items, setItems] = useState([]);
+   127→   127→  const [loading, setLoading] = useState(true);
+   128→   128→
+   129→   129→  // ─── تبويب الأقسام ──────────────────────────────────────────────────
+   130→   130→  const [catDialogOpen, setCatDialogOpen] = useState(false);
+   131→   131→  const [catEditing, setCatEditing] = useState(null);
+   132→   132→  const [catForm, setCatForm] = useState(EMPTY_CATEGORY);
+   133→   133→  const [catSaving, setCatSaving] = useState(false);
+   134→   134→  const [catDelete, setCatDelete] = useState(null); // category to delete
+   135→   135→
+   136→   136→  // ─── تبويب الوجبات ──────────────────────────────────────────────────
+   137→   137→  const [itemSearch, setItemSearch] = useState('');
+   138→   138→  const [itemFilterCat, setItemFilterCat] = useState('ALL');
+   139→   139→  const [itemDialogOpen, setItemDialogOpen] = useState(false);
+   140→   140→  const [itemEditing, setItemEditing] = useState(null);
+   141→   141→  const [itemForm, setItemForm] = useState(EMPTY_ITEM);
+   142→   142→  const [itemSaving, setItemSaving] = useState(false);
+   143→   143→  const [itemDelete, setItemDelete] = useState(null);
+   144→   144→
+   145→   145→  // ─── استيراد CSV ────────────────────────────────────────────────────
+   146→   146→  const fileInputRef = useRef(null);
+   147→   147→  const [importPreview, setImportPreview] = useState(null); // array of parsed rows
+   148→   148→  const [importing, setImporting] = useState(false);
+   149→   149→
+   150→   150→  // ─── تحميل البيانات ─────────────────────────────────────────────────
+   151→   151→  const load = async () => {
+   152→   152→    setLoading(true);
+   153→   153→    try {
+   154→   154→      const [cats, its] = await Promise.all([
+   155→   155→        base44.entities.MenuCategory.list('sortOrder', 500),
+   156→   156→        base44.entities.InventoryItem.list('code', 1000),
+   157→   157→      ]);
+   158→   158→      setCategories((cats || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)));
+   159→   159→      setItems(its || []);
+   160→   160→    } catch (err) {
+   161→   161→      toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang)));
+   162→   162→    } finally {
+   163→   163→      setLoading(false);
+   164→   164→    }
+   165→   165→  };
+   166→   166→  useEffect(() => { load(); }, []);
+   167→   167→
+   168→   168→  // خريطة الأقسام: id → category (للوصول السريع)
+   169→   169→  const catById = useMemo(() => {
+   170→   170→    const m = new Map();
+   171→   171→    categories.forEach((c) => m.set(c.id, c));
+   172→   172→    return m;
+   173→   173→  }, [categories]);
+   174→   174→
+   175→   175→  // عدد الأصناف لكل قسم
+   176→   176→  const countByCat = useMemo(() => {
+   177→   177→    const m = new Map();
+   178→   178→    items.forEach((it) => {
+   179→   179→      const k = it.categoryId || '__none__';
+   180→   180→      m.set(k, (m.get(k) || 0) + 1);
+   181→   181→    });
+   182→   182→    return m;
+   183→   183→  }, [items]);
+   184→   184→
+   185→   185→  // ─── فلترة الأصناف ──────────────────────────────────────────────────
+   186→   186→  const filteredItems = useMemo(() => {
+   187→   187→    const q = itemSearch.trim().toLowerCase();
+   188→   188→    return items.filter((it) => {
+   189→   189→      const matchCat = itemFilterCat === 'ALL' || it.categoryId === itemFilterCat;
+   190→   190→      const matchSearch = !q ||
+   191→   191→        String(it.name || '').toLowerCase().includes(q) ||
+   192→   192→        String(it.nameEn || '').toLowerCase().includes(q) ||
+   193→   193→        String(it.code || '').toLowerCase().includes(q);
+   194→   194→      return matchCat && matchSearch;
+   195→   195→    });
+   196→   196→  }, [items, itemSearch, itemFilterCat]);
+   197→   197→
+   198→   198→  // إجمالي هامش الربح
+   199→   199→  const totalProfit = useMemo(
+   200→   200→    () => filteredItems.reduce((s, it) => {
+   201→   201→      const cost = parseFloat(it.costPrice) || 0;
+   202→   202→      const sale = parseFloat(it.salePrice ?? it.unitCost) || 0;
+   203→   203→      return s + Math.max(0, sale - cost);
+   204→   204→    }, 0),
+   205→   205→    [filteredItems]
+   206→   206→  );
+   207→   207→
+   208→   208→  // ═══════════════════════════════════════════════════════════════════════
+   209→   209→  // إجراءات الأقسام (CRUD + Reorder)
+   210→   210→  // ═══════════════════════════════════════════════════════════════════════
+   211→   211→  const openNewCategory = () => {
+   212→   212→    setCatEditing(null);
+   213→   213→    setCatForm({
+   214→   214→      ...EMPTY_CATEGORY,
+   215→   215→      code: nextCodeFromList(categories, 'CAT'),
+   216→   216→      sortOrder: (categories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0) || 0) + 1,
+   217→   217→      isActive: true,
+   218→   218→    });
+   219→   219→    setCatDialogOpen(true);
+   220→   220→  };
+   221→   221→
+   222→   222→  const openEditCategory = (cat) => {
+   223→   223→    setCatEditing(cat);
+   224→   224→    setCatForm({ ...EMPTY_CATEGORY, ...cat });
+   225→   225→    setCatDialogOpen(true);
+   226→   226→  };
+   227→   227→
+   228→   228→  const saveCategory = async () => {
+   229→   229→    if (!catForm.name || !catForm.name.trim()) {
+   230→   230→      toast.error(t('اسم القسم مطلوب', 'Category name is required', lang));
+   231→   231→      return;
+   232→   232→    }
+   233→   233→    setCatSaving(true);
+   234→   234→    try {
+   235→   235→      const data = {
+   236→   236→        code: catForm.code,
+   237→   237→        name: catForm.name.trim(),
+   238→   238→        nameEn: (catForm.nameEn || '').trim(),
+   239→   239→        sortOrder: Number(catForm.sortOrder) || 0,
+   240→   240→        isActive: !!catForm.isActive,
+   241→   241→      };
+   242→   242→      if (catEditing) {
+   243→   243→        await base44.entities.MenuCategory.update(catEditing.id, data);
+   244→   244→        toast.success(t('تم تحديث القسم', 'Category updated', lang));
+   245→   245→      } else {
+   246→   246→        await base44.entities.MenuCategory.create(data);
+   247→   247→        toast.success(t('تم إضافة القسم', 'Category added', lang));
+   248→   248→      }
+   249→   249→      setCatDialogOpen(false);
+   250→   250→      await load();
+   251→   251→    } catch (err) {
+   252→   252→      toast.error(errorMessage(err, t('فشل الحفظ', 'Save failed', lang)));
+   253→   253→    } finally {
+   254→   254→      setCatSaving(false);
+   255→   255→    }
+   256→   256→  };
+   257→   257→
+   258→   258→  const removeCategory = async () => {
+   259→   259→    if (!catDelete) return;
+   260→   260→    // تحقق من عدم وجود أصناف تابعة
+   261→   261→    const linked = items.filter((it) => it.categoryId === catDelete.id);
+   262→   262→    if (linked.length > 0) {
+   263→   263→      toast.error(t(
+   264→   264→        `لا يمكن الحذف — يوجد ${linked.length} وجبة مرتبطة بهذا القسم`,
+   265→   265→        `Cannot delete — ${linked.length} item(s) are linked to this category`,
+   266→   266→        lang
+   267→   267→      ));
+   268→   268→      return;
+   269→   269→    }
+   270→   270→    try {
+   271→   271→      await base44.entities.MenuCategory.delete(catDelete.id);
+   272→   272→      toast.success(t('تم حذف القسم', 'Category deleted', lang));
+   273→   273→      await load();
+   274→   274→    } catch (err) {
+   275→   275→      toast.error(errorMessage(err, t('فشل الحذف', 'Delete failed', lang)));
+   276→   276→    }
+   277→   277→  };
+   278→   278→
+   279→   279→  // إعادة الترتيب: تبديل sortOrder بين القسم والقسم المجاور
+   280→   280→  const moveCategory = async (idx, direction) => {
+   281→   281→    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+   282→   282→    if (targetIdx < 0 || targetIdx >= categories.length) return;
+   283→   283→    const a = categories[idx];
+   284→   284→    const b = categories[targetIdx];
+   285→   285→    const aOrder = a.sortOrder || 0;
+   286→   286→    const bOrder = b.sortOrder || 0;
+   287→   287→    try {
+   288→   288→      await Promise.all([
+   289→   289→        base44.entities.MenuCategory.update(a.id, { sortOrder: bOrder }),
+   290→   290→        base44.entities.MenuCategory.update(b.id, { sortOrder: aOrder }),
+   291→   291→      ]);
+   292→   292→      await load();
+   293→   293→    } catch (err) {
+   294→   294→      toast.error(errorMessage(err, t('فشل إعادة الترتيب', 'Reorder failed', lang)));
+   295→   295→    }
+   296→   296→  };
+   297→   297→
+   298→   298→  // ═══════════════════════════════════════════════════════════════════════
+   299→   299→  // إجراءات الوجبات (CRUD)
+   300→   300→  // ═══════════════════════════════════════════════════════════════════════
+   301→   301→  const openNewItem = () => {
+   302→   302→    if (!categories.length) {
+   303→   303→      toast.error(t('أضف قسماً أولاً قبل إضافة وجبة', 'Add a category first before adding items', lang));
+   304→   304→      return;
+   305→   305→    }
+   306→   306→    setItemEditing(null);
+   307→   307→    setItemForm({
+   308→   308→      ...EMPTY_ITEM,
+   309→   309→      code: nextCodeFromList(items, 'M'),
+   310→   310→      categoryId: categories[0]?.id || '',
+   311→   311→      unit: 'قطعة',
+   312→   312→      isActive: true,
+   313→   313→    });
+   314→   314→    setItemDialogOpen(true);
+   315→   315→  };
+   316→   316→
+   317→   317→  const openEditItem = (it) => {
+   318→   318→    setItemEditing(it);
+   319→   319→    setItemForm({ ...EMPTY_ITEM, ...it });
+   320→   320→    setItemDialogOpen(true);
+   321→   321→  };
+   322→   322→
+   323→   323→  const saveItem = async () => {
+   324→   324→    if (!itemForm.name || !itemForm.name.trim()) {
+   325→   325→      toast.error(t('اسم الوجبة مطلوب', 'Item name is required', lang));
+   326→   326→      return;
+   327→   327→    }
+   328→   328→    if (!itemForm.categoryId) {
+   329→   329→      toast.error(t('القسم مطلوب', 'Category is required', lang));
+   330→   330→      return;
+   331→   331→    }
+   332→   332→    const sale = parseFloat(itemForm.salePrice);
+   333→   333→    if (isNaN(sale) || sale <= 0) {
+   334→   334→      toast.error(t('سعر البيع مطلوب ويجب أن يكون أكبر من صفر', 'Sale price is required and must be > 0', lang));
+   335→   335→      return;
+   336→   336→    }
+   337→   337→    setItemSaving(true);
+   338→   338→    try {
+   339→   339→      const cat = catById.get(itemForm.categoryId);
+   340→   340→      const cost = parseFloat(itemForm.costPrice) || 0;
+   341→   341→      const data = {
+   342→   342→        code: itemForm.code,
+   343→   343→        name: itemForm.name.trim(),
+   344→   344→        nameEn: (itemForm.nameEn || '').trim(),
+   345→   345→        categoryId: itemForm.categoryId,
+   346→   346→        categoryName: cat?.name || '',
+   347→   347→        unit: itemForm.unit || 'قطعة',
+   348→   348→        costPrice: cost,
+   349→   349→        salePrice: sale,
+   350→   350→        // unitCost للتوافق مع الإصدارات السابقة (POS.jsx يقرأ salePrice || unitCost)
+   351→   351→        unitCost: sale,
+   352→   352→        quantity: Number(itemForm.quantity) || 0,
+   353→   353→        reorderLevel: Number(itemForm.reorderLevel) || 0,
+   354→   354→        isActive: !!itemForm.isActive,
+   355→   355→        notes: itemForm.notes || '',
+   356→   356→      };
+   357→   357→      if (itemEditing) {
+   358→   358→        await base44.entities.InventoryItem.update(itemEditing.id, data);
+   359→   359→        toast.success(t('تم تحديث الوجبة', 'Item updated', lang));
+   360→   360→      } else {
+   361→   361→        await base44.entities.InventoryItem.create(data);
+   362→   362→        toast.success(t('تمت إضافة الوجبة', 'Item added', lang));
+   363→   363→      }
+   364→   364→      setItemDialogOpen(false);
+   365→   365→      await load();
+   366→   366→    } catch (err) {
+   367→   367→      toast.error(errorMessage(err, t('فشل الحفظ', 'Save failed', lang)));
+   368→   368→    } finally {
+   369→   369→      setItemSaving(false);
+   370→   370→    }
+   371→   371→  };
+   372→   372→
+   373→   373→  const removeItem = async () => {
+   374→   374→    if (!itemDelete) return;
+   375→   375→    try {
+   376→   376→      await base44.entities.InventoryItem.delete(itemDelete.id);
+   377→   377→      toast.success(t('تم حذف الوجبة', 'Item deleted', lang));
+   378→   378→      await load();
+   379→   379→    } catch (err) {
+   380→   380→      toast.error(errorMessage(err, t('فشل الحذف', 'Delete failed', lang)));
+   381→   381→    }
+   382→   382→  };
+   383→   383→
+   384→   384→  // ═══════════════════════════════════════════════════════════════════════
+   385→   385→  // استيراد CSV (مع معاينة) + تصدير + نموذج
+   386→   386→  // ═══════════════════════════════════════════════════════════════════════
+   387→   387→  const triggerFilePicker = () => {
+   388→   388→    if (!categories.length) {
+   389→   389→      toast.error(t('أضف قسماً أولاً قبل الاستيراد', 'Add a category first before importing', lang));
+   390→   390→      return;
+   391→   391→    }
+   392→   392→    fileInputRef.current?.click();
+   393→   393→  };
+   394→   394→
+   395→   395→  const handleFileImport = (e) => {
+   396→   396→    const file = e.target.files?.[0];
+   397→   397→    if (!file) return;
+   398→   398→    const isExcel = file.name.match(/\.xlsx?$/i);
+   399→   399→    const reader = new FileReader();
+   400→   400→
+   401→   401→    reader.onload = (event) => {
+   402→   402→      try {
+   403→   403→        let rows = [];
+   404→   404→        if (isExcel) {
+   405→   405→          // قراءة ملف Excel (.xlsx / .xls)
+   406→   406→          const data = new Uint8Array(event.target.result);
+   407→   407→          const workbook = XLSX.read(data, { type: 'array' });
+   408→   408→          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+   409→   409→          rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+   410→   410→        } else {
+   411→   411→          // قراءة ملف CSV
+   412→   412→          rows = parseCSV(String(event.target.result || ''));
+   413→   413→        }
+   414→   414→
+   415→   415→        if (!rows.length) {
+   416→   416→          toast.error(t('الملف فارغ أو غير صالح', 'File is empty or invalid', lang));
+   417→   417→          return;
+   418→   418→        }
+   419→   419→        // تطبيع الحقول: تحويل categoryId النصي إلى id مطابق (إن أمكن)
+   420→   420→        const normalized = rows.map((r) => {
+   421→   421→          const rawCat = r.categoryId || r.category || r.categoryName || '';
+   422→   422→          // اقبل الـ id مباشرة أو اسم القسم بالعربي/الإنجليزي
+   423→   423→          const matchedCat = catById.get(rawCat) ||
+   424→   424→            categories.find((c) => c.name === rawCat || c.nameEn === rawCat || c.code === rawCat);
+   425→   425→          return {
+   426→   426→            ...r,
+   427→   427→            categoryId: matchedCat?.id || rawCat,
+   428→   428→            costPrice: parseFloat(r.costPrice) || 0,
+   429→   429→            salePrice: parseFloat(r.salePrice) || parseFloat(r.costPrice) || 0,
+   430→   430→          };
+   431→   431→        });
+   432→   432→        setImportPreview(normalized);
+   433→   433→      } catch (err) {
+   434→   434→        console.warn('Import parse failed:', err);
+   435→   435→        toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
+   436→   436→      }
+   437→   437→    };
+   438→   438→    reader.onerror = () => toast.error(t('فشل قراءة الملف', 'Failed to read file', lang));
+   439→   439→    // Excel يُقرأ كـ ArrayBuffer، CSV كـ Text
+   440→   440→    if (isExcel) {
+   441→   441→      reader.readAsArrayBuffer(file);
+   442→   442→    } else {
+   443→   443→      reader.readAsText(file, 'UTF-8');
+   444→   444→    }
+   445→   445→    e.target.value = '';
+   446→   446→  };
+   447→   447→
+   448→   448→  const confirmImport = async () => {
+   449→   449→    if (!importPreview || !importPreview.length) return;
+   450→   450→    setImporting(true);
+   451→   451→    let okCount = 0;
+   452→   452→    let failCount = 0;
+   453→   453→    try {
+   454→   454→      const payload = importPreview.map((r, idx) => {
+   455→   455→        const cat = catById.get(r.categoryId);
+   456→   456→        const sale = parseFloat(r.salePrice) || 0;
+   457→   457→        const cost = parseFloat(r.costPrice) || 0;
+   458→   458→        return {
+   459→   459→          code: r.code || `IMP-${String(idx + 1).padStart(4, '0')}`,
+   460→   460→          name: r.name || '',
+   461→   461→          nameEn: r.nameEn || '',
+   462→   462→          categoryId: cat?.id || r.categoryId || '',
+   463→   463→          categoryName: cat?.name || '',
+   464→   464→          unit: r.unit || 'قطعة',
+   465→   465→          costPrice: cost,
+   466→   466→          salePrice: sale,
+   467→   467→          unitCost: sale,
+   468→   468→          quantity: 0,
+   469→   469→          reorderLevel: 0,
+   470→   470→          isActive: true,
+   471→   471→          notes: '',
+   472→   472→        };
+   473→   473→      }).filter((p) => p.name && p.categoryId);
+   474→   474→
+   475→   475→      // bulkCreate على دفعات صغيرة لتفادي أي حدود
+   476→   476→      const CHUNK = 50;
+   477→   477→      for (let i = 0; i < payload.length; i += CHUNK) {
+   478→   478→        const slice = payload.slice(i, i + CHUNK);
+   479→   479→        try {
+   480→   480→          await base44.entities.InventoryItem.bulkCreate(slice);
+   481→   481→          okCount += slice.length;
+   482→   482→        } catch (err) {
+   483→   483→          console.warn('bulkCreate slice failed:', err);
+   484→   484→          failCount += slice.length;
+   485→   485→        }
+   486→   486→      }
+   487→   487→      if (okCount > 0) {
+   488→   488→        toast.success(t(
+   489→   489→          `تم استيراد ${okCount} وجبة${failCount ? ` — فشل ${failCount}` : ''}`,
+   490→   490→          `Imported ${okCount} item(s)${failCount ? ` — ${failCount} failed` : ''}`,
+   491→   491→          lang
+   492→   492→        ));
+   493→   493→      } else {
+   494→   494→        toast.error(t('لم يتم استيراد أي وجبة', 'No items imported', lang));
+   495→   495→      }
+   496→   496→      setImportPreview(null);
+   497→   497→      await load();
+   498→   498→    } catch (err) {
+   499→   499→      toast.error(errorMessage(err, t('فشل الاستيراد', 'Import failed', lang)));
+   500→   500→    } finally {
+   501→   501→      setImporting(false);
+   502→   502→    }
+   503→   503→  };
+   504→   504→
+   505→   505→  const exportItemsCSV = () => {
+   506→   506→    if (!filteredItems.length) {
+   507→   507→      toast.error(t('لا توجد وجبات للتصدير', 'No items to export', lang));
+   508→   508→      return;
+   509→   509→    }
+   510→   510→    downloadTextFile('menu-items.csv', itemsToCSV(filteredItems));
+   511→   511→    toast.success(t('تم تصدير القائمة', 'Menu exported', lang));
+   512→   512→  };
+   513→   513→
+   514→   514→  const downloadTemplate = () => {
+   515→   515→    const sample = [
+   516→   516→      { code: 'M-1001', name: 'برجر دجاج', nameEn: 'Chicken Burger', categoryId: categories[0]?.id || 'cat-mains', costPrice: 18, salePrice: 30, unit: 'قطعة' },
+   517→   517→      { code: 'M-1002', name: 'عصير برتقال', nameEn: 'Orange Juice', categoryId: categories[2]?.id || 'cat-beverages', costPrice: 7, salePrice: 15, unit: 'كوب' },
+   518→   518→    ];
+   519→   519→    downloadTextFile('menu-template.csv', itemsToCSV(sample));
+   520→   520→    toast.success(t('تم تنزيل النموذج', 'Template downloaded', lang));
+   521→   521→  };
+   522→   522→
+   523→   523→  // ═══════════════════════════════════════════════════════════════════════
+   524→   524→  // العرض
+   525→   525→  // ═══════════════════════════════════════════════════════════════════════
+   526→   526→  return (
+   527→   527→    <ModuleLayout
+   528→   528→      title={t('إدارة القائمة', 'Menu Management', lang)}
+   529→   529→      subtitle={t('إدارة أقسام القائمة والوجبات مع استيراد وتصدير CSV', 'Manage menu categories and items with CSV import/export', lang)}
+   530→   530→      actions={
+   531→   531→        <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
+   532→   532→          <RefreshCw className="size-4" />
+   533→   533→          {t('تحديث', 'Refresh', lang)}
+   534→   534→        </Button>
+   535→   535→      }
+   536→   536→    >
+   537→   537→      <Tabs value={tab} onValueChange={setTab}>
+   538→   538→        <TabsList>
+   539→   539→          <TabsTrigger value="categories" className="gap-1.5">
+   540→   540→            <FolderPlus className="size-3.5" />
+   541→   541→            {t('الأقسام', 'Categories', lang)}
+   542→   542→            <Badge variant="secondary" className="ms-1">{categories.length}</Badge>
+   543→   543→          </TabsTrigger>
+   544→   544→          <TabsTrigger value="items" className="gap-1.5">
+   545→   545→            <UtensilsCrossed className="size-3.5" />
+   546→   546→            {t('الوجبات', 'Menu Items', lang)}
+   547→   547→            <Badge variant="secondary" className="ms-1">{items.length}</Badge>
+   548→   548→          </TabsTrigger>
+   549→   549→        </TabsList>
+   550→   550→
+   551→   551→        {/* ════════════ تبويب الأقسام ════════════ */}
+   552→   552→        <TabsContent value="categories">
+   553→   553→          <div className="flex items-center justify-between gap-2 mb-3">
+   554→   554→            <p className="text-sm text-muted-foreground">
+   555→   555→              {t('أنشئ أقسام القائمة (أطباق رئيسية، مشروبات، مقبلات…)', 'Create menu categories (mains, drinks, appetizers…)', lang)}
+   556→   556→            </p>
+   557→   557→            <Button onClick={openNewCategory} className="gap-1.5 bg-amber-600 hover:bg-amber-700">
+   558→   558→              <Plus className="size-4" />
+   559→   559→              {t('إضافة قسم', 'Add Category', lang)}
+   560→   560→            </Button>
+   561→   561→          </div>
+   562→   562→
+   563→   563→          {loading ? (
+   564→   564→            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   565→   565→              {Array.from({ length: 4 }).map((_, i) => (
+   566→   566→                <Card key={i} className="h-32 animate-pulse bg-muted/40" />
+   567→   567→              ))}
+   568→   568→            </div>
+   569→   569→          ) : categories.length === 0 ? (
+   570→   570→            <Card>
+   571→   571→              <CardContent className="py-12 text-center text-muted-foreground">
+   572→   572→                <FolderPlus className="size-10 mx-auto mb-2 opacity-40" />
+   573→   573→                <p className="text-sm">
+   574→   574→                  {t('لا توجد أقسام بعد — ابدأ بإضافة قسم', 'No categories yet — start by adding one', lang)}
+   575→   575→                </p>
+   576→   576→                <Button onClick={openNewCategory} className="mt-3 gap-1.5 bg-amber-600 hover:bg-amber-700">
+   577→   577→                  <Plus className="size-4" />
+   578→   578→                  {t('إضافة قسم', 'Add Category', lang)}
+   579→   579→                </Button>
+   580→   580→              </CardContent>
+   581→   581→            </Card>
+   582→   582→          ) : (
+   583→   583→            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+   584→   584→              {categories.map((cat, idx) => {
+   585→   585→                const count = countByCat.get(cat.id) || 0;
+   586→   586→                return (
+   587→   587→                  <Card
+   588→   588→                    key={cat.id}
+   589→   589→                    className="overflow-hidden border-t-4 border-t-amber-500 hover:shadow-md transition-shadow"
+   590→   590→                  >
+   591→   591→                    <CardContent className="p-4">
+   592→   592→                      <div className="flex items-start justify-between gap-2">
+   593→   593→                        <div className="flex items-center gap-2">
+   594→   594→                          <div className="size-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+   595→   595→                            <FolderPlus className="size-5" />
+   596→   596→                          </div>
+   597→   597→                          <div className="leading-tight">
+   598→   598→                            <div className="font-bold text-foreground text-sm">{cat.name}</div>
+   599→   599→                            {cat.nameEn && (
+   600→   600→                              <div dir="ltr" className="text-[11px] text-muted-foreground text-start">{cat.nameEn}</div>
+   601→   601→                            )}
+   602→   602→                          </div>
+   603→   603→                        </div>
+   604→   604→                        <Badge variant={cat.isActive ? 'default' : 'secondary'} className={
+   605→   605→                          cat.isActive
+   606→   606→                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+   607→   607→                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+   608→   608→                        }>
+   609→   609→                          {cat.isActive ? t('نشط', 'Active', lang) : t('معطّل', 'Inactive', lang)}
+   610→   610→                        </Badge>
+   611→   611→                      </div>
+   612→   612→
+   613→   613→                      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+   614→   614→                        <span className="font-mono">{cat.code}</span>
+   615→   615→                        <span>{t('ترتيب', 'Order', lang)}: <strong className="text-foreground">{cat.sortOrder ?? 0}</strong></span>
+   616→   616→                      </div>
+   617→   617→
+   618→   618→                      <div className="mt-3 flex items-center justify-between">
+   619→   619→                        <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">
+   620→   620→                          <UtensilsCrossed className="size-3 me-1" />
+   621→   621→                          {count} {t('وجبة', 'items', lang)}
+   622→   622→                        </Badge>
+   623→   623→                        <div className="flex items-center gap-1">
+   624→   624→                          <Button
+   625→   625→                            variant="ghost" size="icon"
+   626→   626→                            className="size-7"
+   627→   627→                            disabled={idx === 0}
+   628→   628→                            onClick={() => moveCategory(idx, 'up')}
+   629→   629→                            title={t('تحريك لأعلى', 'Move up', lang)}
+   630→   630→                          >
+   631→   631→                            <ArrowUp className="size-3.5" />
+   632→   632→                          </Button>
+   633→   633→                          <Button
+   634→   634→                            variant="ghost" size="icon"
+   635→   635→                            className="size-7"
+   636→   636→                            disabled={idx === categories.length - 1}
+   637→   637→                            onClick={() => moveCategory(idx, 'down')}
+   638→   638→                            title={t('تحريك لأسفل', 'Move down', lang)}
+   639→   639→                          >
+   640→   640→                            <ArrowDown className="size-3.5" />
+   641→   641→                          </Button>
+   642→   642→                          <Button
+   643→   643→                            variant="ghost" size="icon"
+   644→   644→                            className="size-7"
+   645→   645→                            onClick={() => openEditCategory(cat)}
+   646→   646→                            title={t('تعديل', 'Edit', lang)}
+   647→   647→                          >
+   648→   648→                            <Pencil className="size-3.5" />
+   649→   649→                          </Button>
+   650→   650→                          <Button
+   651→   651→                            variant="ghost" size="icon"
+   652→   652→                            className="size-7 text-destructive hover:text-destructive"
+   653→   653→                            onClick={() => setCatDelete(cat)}
+   654→   654→                            title={t('حذف', 'Delete', lang)}
+   655→   655→                          >
+   656→   656→                            <Trash2 className="size-3.5" />
+   657→   657→                          </Button>
+   658→   658→                        </div>
+   659→   659→                      </div>
+   660→   660→                    </CardContent>
+   661→   661→                  </Card>
+   662→   662→                );
+   663→   663→              })}
+   664→   664→            </div>
+   665→   665→          )}
+   666→   666→        </TabsContent>
+   667→   667→
+   668→   668→        {/* ════════════ تبويب الوجبات ════════════ */}
+   669→   669→        <TabsContent value="items">
+   670→   670→          {/* شريط الأدوات: بحث + فلترة قسم + إجراءات */}
+   671→   671→          <div className="flex flex-col md:flex-row gap-2 mb-3">
+   672→   672→            <div className="relative flex-1">
+   673→   673→              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   674→   674→              <Input
+   675→   675→                value={itemSearch}
+   676→   676→                onChange={(e) => setItemSearch(e.target.value)}
+   677→   677→                placeholder={t('ابحث بالاسم أو الرمز...', 'Search by name or code...', lang)}
+   678→   678→                className="ps-9"
+   679→   679→              />
+   680→   680→            </div>
+   681→   681→            <Select value={itemFilterCat} onValueChange={setItemFilterCat}>
+   682→   682→              <SelectTrigger className="w-full md:w-56">
+   683→   683→                <SelectValue placeholder={t('كل الأقسام', 'All Categories', lang)} />
+   684→   684→              </SelectTrigger>
+   685→   685→              <SelectContent>
+   686→   686→                <SelectItem value="ALL">{t('كل الأقسام', 'All Categories', lang)}</SelectItem>
+   687→   687→                {categories.map((c) => (
+   688→   688→                  <SelectItem key={c.id} value={c.id}>{c.name}{c.nameEn ? ` — ${c.nameEn}` : ''}</SelectItem>
+   689→   689→                ))}
+   690→   690→              </SelectContent>
+   691→   691→            </Select>
+   692→   692→            <div className="flex items-center gap-2 flex-wrap">
+   693→   693→              <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5">
+   694→   694→                <FileSpreadsheet className="size-4" />
+   695→   695→                {t('نموذج CSV', 'CSV Template', lang)}
+   696→   696→              </Button>
+   697→   697→              <Button variant="outline" size="sm" onClick={triggerFilePicker} className="gap-1.5">
+   698→   698→                <Upload className="size-4" />
+   699→   699→                {t('استيراد من ملف', 'Import from File', lang)}
+   700→   700→              </Button>
+   701→   701→              <Button variant="outline" size="sm" onClick={exportItemsCSV} className="gap-1.5">
+   702→   702→                <Download className="size-4" />
+   703→   703→                {t('تصدير', 'Export', lang)}
+   704→   704→              </Button>
+   705→   705→              <Button onClick={openNewItem} className="gap-1.5 bg-amber-600 hover:bg-amber-700">
+   706→   706→                <Plus className="size-4" />
+   707→   707→                {t('إضافة وجبة', 'Add Item', lang)}
+   708→   708→              </Button>
+   709→   709→            </div>
+   710→   710→            <input
+   711→   711→              ref={fileInputRef}
+   712→   712→              type="file"
+   713→   713→              accept=".csv,text/csv,.xlsx,.xls,application/json"
+   714→   714→              onChange={handleFileImport}
+   715→   715→              className="hidden"
+   716→   716→            />
+   717→   717→          </div>
+   718→   718→
+   719→   719→          {/* بطاقات ملخصة */}
+   720→   720→          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+   721→   721→            <Card><CardContent className="p-3">
+   722→   722→              <div className="text-[11px] text-muted-foreground">{t('إجمالي الوجبات', 'Total Items', lang)}</div>
+   723→   723→              <div className="text-lg font-bold text-foreground">{filteredItems.length}</div>
+   724→   724→            </CardContent></Card>
+   725→   725→            <Card><CardContent className="p-3">
+   726→   726→              <div className="text-[11px] text-muted-foreground">{t('الأقسام', 'Categories', lang)}</div>
+   727→   727→              <div className="text-lg font-bold text-foreground">{categories.length}</div>
+   728→   728→            </CardContent></Card>
+   729→   729→            <Card><CardContent className="p-3">
+   730→   730→              <div className="text-[11px] text-muted-foreground">{t('الوجبات النشطة', 'Active Items', lang)}</div>
+   731→   731→              <div className="text-lg font-bold text-emerald-700">{filteredItems.filter((i) => i.isActive).length}</div>
+   732→   732→            </CardContent></Card>
+   733→   733→            <Card><CardContent className="p-3">
+   734→   734→              <div className="text-[11px] text-muted-foreground">{t('إجمالي هامش الربح', 'Total Profit Margin', lang)}</div>
+   735→   735→              <div className="text-lg font-bold text-emerald-700">{formatCurrency(totalProfit, lang)}</div>
+   736→   736→            </CardContent></Card>
+   737→   737→          </div>
+   738→   738→
+   739→   739→          {/* جدول الوجبات */}
+   740→   740→          <Card>
+   741→   741→            <div className="overflow-x-auto">
+   742→   742→              <Table>
+   743→   743→                <TableHeader>
+   744→   744→                  <TableRow>
+   745→   745→                    <TableHead className="w-24">{t('الرمز', 'Code', lang)}</TableHead>
+   746→   746→                    <TableHead>{t('الوجبة', 'Item', lang)}</TableHead>
+   747→   747→                    <TableHead>{t('القسم', 'Category', lang)}</TableHead>
+   748→   748→                    <TableHead className="text-end">{t('سعر الشراء', 'Cost', lang)}</TableHead>
+   749→   749→                    <TableHead className="text-end">{t('سعر البيع', 'Sale', lang)}</TableHead>
+   750→   750→                    <TableHead className="text-end">{t('هامش الربح', 'Margin', lang)}</TableHead>
+   751→   751→                    <TableHead className="text-center">{t('الحالة', 'Status', lang)}</TableHead>
+   752→   752→                    <TableHead className="text-center">{t('إجراءات', 'Actions', lang)}</TableHead>
+   753→   753→                  </TableRow>
+   754→   754→                </TableHeader>
+   755→   755→                <TableBody>
+   756→   756→                  {loading ? (
+   757→   757→                    Array.from({ length: 5 }).map((_, i) => (
+   758→   758→                      <TableRow key={i}>
+   759→   759→                        {Array.from({ length: 8 }).map((_, j) => (
+   760→   760→                          <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>
+   761→   761→                        ))}
+   762→   762→                      </TableRow>
+   763→   763→                    ))
+   764→   764→                  ) : filteredItems.length === 0 ? (
+   765→   765→                    <TableRow>
+   766→   766→                      <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+   767→   767→                        <UtensilsCrossed className="size-10 mx-auto mb-2 opacity-40" />
+   768→   768→                        {t('لا توجد وجبات مطابقة', 'No matching items', lang)}
+   769→   769→                      </TableCell>
+   770→   770→                    </TableRow>
+   771→   771→                  ) : (
+   772→   772→                    filteredItems.map((it) => {
+   773→   773→                      const cat = catById.get(it.categoryId);
+   774→   774→                      const cost = parseFloat(it.costPrice) || 0;
+   775→   775→                      const sale = parseFloat(it.salePrice ?? it.unitCost) || 0;
+   776→   776→                      const margin = sale - cost;
+   777→   777→                      return (
+   778→   778→                        <TableRow key={it.id} className="hover:bg-muted/30">
+   779→   779→                          <TableCell className="font-mono text-xs text-muted-foreground">{it.code}</TableCell>
+   780→   780→                          <TableCell>
+   781→   781→                            <div className="font-medium text-foreground">{it.name}</div>
+   782→   782→                            {it.nameEn && (
+   783→   783→                              <div dir="ltr" className="text-[11px] text-muted-foreground text-start">{it.nameEn}</div>
+   784→   784→                            )}
+   785→   785→                          </TableCell>
+   786→   786→                          <TableCell>
+   787→   787→                            {cat ? (
+   788→   788→                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 text-xs">
+   789→   789→                                {cat.name}
+   790→   790→                              </span>
+   791→   791→                            ) : (
+   792→   792→                              <span className="text-xs text-muted-foreground">—</span>
+   793→   793→                            )}
+   794→   794→                          </TableCell>
+   795→   795→                          <TableCell className="text-end text-sm">{formatCurrency(cost, lang)}</TableCell>
+   796→   796→                          <TableCell className="text-end text-sm font-semibold text-emerald-700">{formatCurrency(sale, lang)}</TableCell>
+   797→   797→                          <TableCell className="text-end text-sm">
+   798→   798→                            <span className={margin >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+   799→   799→                              {formatCurrency(margin, lang)}
+   800→   800→                            </span>
+   801→   801→                          </TableCell>
+   802→   802→                          <TableCell className="text-center">
+   803→   803→                            <Badge variant="secondary" className={
+   804→   804→                              it.isActive
+   805→   805→                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+   806→   806→                                : 'bg-slate-100 text-slate-500 border border-slate-200'
+   807→   807→                            }>
+   808→   808→                              {it.isActive ? t('نشط', 'Active', lang) : t('معطّل', 'Inactive', lang)}
+   809→   809→                            </Badge>
+   810→   810→                          </TableCell>
+   811→   811→                          <TableCell>
+   812→   812→                            <div className="flex items-center justify-center gap-1">
+   813→   813→                              <Button variant="ghost" size="icon" className="size-7" onClick={() => openEditItem(it)}>
+   814→   814→                                <Pencil className="size-3.5" />
+   815→   815→                              </Button>
+   816→   816→                              <Button
+   817→   817→                                variant="ghost" size="icon"
+   818→   818→                                className="size-7 text-destructive hover:text-destructive"
+   819→   819→                                onClick={() => setItemDelete(it)}
+   820→   820→                              >
+   821→   821→                                <Trash2 className="size-3.5" />
+   822→   822→                              </Button>
+   823→   823→                            </div>
+   824→   824→                          </TableCell>
+   825→   825→                        </TableRow>
+   826→   826→                      );
+   827→   827→                    })
+   828→   828→                  )}
+   829→   829→                </TableBody>
+   830→   830→              </Table>
+   831→   831→            </div>
+   832→   832→          </Card>
+   833→   833→        </TabsContent>
+   834→   834→      </Tabs>
+   835→   835→
+   836→   836→      {/* ════════════ حوار إضافة/تعديل قسم ════════════ */}
+   837→   837→      <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
+   838→   838→        <DialogContent className="max-w-md" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+   839→   839→          <DialogHeader>
+   840→   840→            <DialogTitle>
+   841→   841→              {catEditing ? t('تعديل القسم', 'Edit Category', lang) : t('إضافة قسم', 'Add Category', lang)}
+   842→   842→            </DialogTitle>
+   843→   843→          </DialogHeader>
+   844→   844→          <div className="grid grid-cols-2 gap-3 py-2">
+   845→   845→            <div className="space-y-1">
+   846→   846→              <Label>{t('الرمز', 'Code', lang)}</Label>
+   847→   847→              <Input value={catForm.code} readOnly className="bg-muted font-mono" />
+   848→   848→            </div>
+   849→   849→            <div className="space-y-1">
+   850→   850→              <Label>{t('ترتيب العرض', 'Sort Order', lang)}</Label>
+   851→   851→              <Input
+   852→   852→                type="number" min="0"
+   853→   853→                value={catForm.sortOrder}
+   854→   854→                onChange={(e) => setCatForm((f) => ({ ...f, sortOrder: e.target.value }))}
+   855→   855→              />
+   856→   856→            </div>
+   857→   857→            <div className="space-y-1 col-span-2">
+   858→   858→              <Label>{t('الاسم (عربي)', 'Name (Arabic)', lang)} *</Label>
+   859→   859→              <Input
+   860→   860→                value={catForm.name}
+   861→   861→                onChange={(e) => setCatForm((f) => ({ ...f, name: e.target.value }))}
+   862→   862→                placeholder={t('مثال: أطباق رئيسية', 'e.g. Main Dishes', lang)}
+   863→   863→              />
+   864→   864→            </div>
+   865→   865→            <div className="space-y-1 col-span-2">
+   866→   866→              <Label>{t('الاسم (إنجليزي)', 'Name (English)', lang)}</Label>
+   867→   867→              <Input
+   868→   868→                value={catForm.nameEn}
+   869→   869→                onChange={(e) => setCatForm((f) => ({ ...f, nameEn: e.target.value }))}
+   870→   870→                dir="ltr"
+   871→   871→                placeholder="e.g. Main Dishes"
+   872→   872→              />
+   873→   873→            </div>
+   874→   874→            <div className="col-span-2 flex items-center justify-between rounded-md border p-2.5">
+   875→   875→              <Label className="text-sm">{t('قسم نشط', 'Active', lang)}</Label>
+   876→   876→              <Switch
+   877→   877→                checked={!!catForm.isActive}
+   878→   878→                onCheckedChange={(v) => setCatForm((f) => ({ ...f, isActive: v }))}
+   879→   879→              />
+   880→   880→            </div>
+   881→   881→          </div>
+   882→   882→          <DialogFooter>
+   883→   883→            <Button variant="outline" onClick={() => setCatDialogOpen(false)}>
+   884→   884→              {t('إلغاء', 'Cancel', lang)}
+   885→   885→            </Button>
+   886→   886→            <Button onClick={saveCategory} disabled={catSaving} className="bg-amber-600 hover:bg-amber-700">
+   887→   887→              {catSaving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
+   888→   888→            </Button>
+   889→   889→          </DialogFooter>
+   890→   890→        </DialogContent>
+   891→   891→      </Dialog>
+   892→   892→
+   893→   893→      {/* ════════════ حوار إضافة/تعديل وجبة ════════════ */}
+   894→   894→      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
+   895→   895→        <DialogContent className="max-w-2xl" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+   896→   896→          <DialogHeader>
+   897→   897→            <DialogTitle>
+   898→   898→              {itemEditing ? t('تعديل الوجبة', 'Edit Item', lang) : t('إضافة وجبة', 'Add Item', lang)}
+   899→   899→            </DialogTitle>
+   900→   900→          </DialogHeader>
+   901→   901→          <div className="grid grid-cols-2 gap-3 py-2">
+   902→   902→            <div className="space-y-1">
+   903→   903→              <Label>{t('الرمز', 'Code', lang)}</Label>
+   904→   904→              <Input value={itemForm.code} readOnly className="bg-muted font-mono" />
+   905→   905→            </div>
+   906→   906→            <div className="space-y-1">
+   907→   907→              <Label>{t('القسم', 'Category', lang)} *</Label>
+   908→   908→              <Select
+   909→   909→                value={itemForm.categoryId}
+   910→   910→                onValueChange={(v) => setItemForm((f) => ({ ...f, categoryId: v }))}
+   911→   911→              >
+   912→   912→                <SelectTrigger><SelectValue placeholder={t('اختر القسم', 'Select category', lang)} /></SelectTrigger>
+   913→   913→                <SelectContent>
+   914→   914→                  {categories.map((c) => (
+   915→   915→                    <SelectItem key={c.id} value={c.id}>{c.name}{c.nameEn ? ` — ${c.nameEn}` : ''}</SelectItem>
+   916→   916→                  ))}
+   917→   917→                </SelectContent>
+   918→   918→              </Select>
+   919→   919→            </div>
+   920→   920→            <div className="space-y-1 col-span-2">
+   921→   921→              <Label>{t('الاسم (عربي)', 'Name (Arabic)', lang)} *</Label>
+   922→   922→              <Input
+   923→   923→                value={itemForm.name}
+   924→   924→                onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))}
+   925→   925→                placeholder={t('مثال: برجر لحم', 'e.g. Beef Burger', lang)}
+   926→   926→              />
+   927→   927→            </div>
+   928→   928→            <div className="space-y-1 col-span-2">
+   929→   929→              <Label>{t('الاسم (إنجليزي)', 'Name (English)', lang)}</Label>
+   930→   930→              <Input
+   931→   931→                value={itemForm.nameEn}
+   932→   932→                onChange={(e) => setItemForm((f) => ({ ...f, nameEn: e.target.value }))}
+   933→   933→                dir="ltr"
+   934→   934→                placeholder="e.g. Beef Burger"
+   935→   935→              />
+   936→   936→            </div>
+   937→   937→            <div className="space-y-1">
+   938→   938→              <Label>{t('سعر الشراء', 'Cost Price', lang)}</Label>
+   939→   939→              <Input
+   940→   940→                type="number" min="0" step="0.01"
+   941→   941→                value={itemForm.costPrice}
+   942→   942→                onChange={(e) => setItemForm((f) => ({ ...f, costPrice: e.target.value }))}
+   943→   943→                placeholder="0.00"
+   944→   944→              />
+   945→   945→            </div>
+   946→   946→            <div className="space-y-1">
+   947→   947→              <Label>{t('سعر البيع', 'Sale Price', lang)} *</Label>
+   948→   948→              <Input
+   949→   949→                type="number" min="0" step="0.01"
+   950→   950→                value={itemForm.salePrice}
+   951→   951→                onChange={(e) => setItemForm((f) => ({ ...f, salePrice: e.target.value }))}
+   952→   952→                placeholder="0.00"
+   953→   953→              />
+   954→   954→            </div>
+   955→   955→            <div className="space-y-1">
+   956→   956→              <Label>{t('الوحدة', 'Unit', lang)}</Label>
+   957→   957→              <Input
+   958→   958→                value={itemForm.unit}
+   959→   959→                onChange={(e) => setItemForm((f) => ({ ...f, unit: e.target.value }))}
+   960→   960→                placeholder={t('قطعة، كوب، طبق…', 'pcs, cup, plate…', lang)}
+   961→   961→              />
+   962→   962→            </div>
+   963→   963→            <div className="space-y-1">
+   964→   964→              <Label>{t('الكمية الحالية', 'Current Qty', lang)}</Label>
+   965→   965→              <Input
+   966→   966→                type="number" min="0"
+   967→   967→                value={itemForm.quantity}
+   968→   968→                onChange={(e) => setItemForm((f) => ({ ...f, quantity: e.target.value }))}
+   969→   969→              />
+   970→   970→            </div>
+   971→   971→            <div className="space-y-1">
+   972→   972→              <Label>{t('حد إعادة الطلب', 'Reorder Level', lang)}</Label>
+   973→   973→              <Input
+   974→   974→                type="number" min="0"
+   975→   975→                value={itemForm.reorderLevel}
+   976→   976→                onChange={(e) => setItemForm((f) => ({ ...f, reorderLevel: e.target.value }))}
+   977→   977→              />
+   978→   978→            </div>
+   979→   979→            <div className="col-span-2 flex items-center justify-between rounded-md border p-2.5">
+   980→   980→              <Label className="text-sm">{t('وجبة نشطة', 'Active', lang)}</Label>
+   981→   981→              <Switch
+   982→   982→                checked={!!itemForm.isActive}
+   983→   983→                onCheckedChange={(v) => setItemForm((f) => ({ ...f, isActive: v }))}
+   984→   984→              />
+   985→   985→            </div>
+   986→   986→            <div className="space-y-1 col-span-2">
+   987→   987→              <Label>{t('ملاحظات', 'Notes', lang)}</Label>
+   988→   988→              <Input
+   989→   989→                value={itemForm.notes}
+   990→   990→                onChange={(e) => setItemForm((f) => ({ ...f, notes: e.target.value }))}
+   991→   991→                placeholder={t('مكونات، وصف…', 'Ingredients, description…', lang)}
+   992→   992→              />
+   993→   993→            </div>
+   994→   994→            {/* معاينة هامش الربح */}
+   995→   995→            <div className="col-span-2 text-xs text-muted-foreground bg-slate-50 border rounded-md p-2">
+   996→   996→              {t('هامش الربح المتوقع', 'Expected profit margin', lang)}:{' '}
+   997→   997→              <strong className="text-emerald-700">
+   998→   998→                {formatCurrency(
+   999→   999→                  Math.max(0, (parseFloat(itemForm.salePrice) || 0) - (parseFloat(itemForm.costPrice) || 0)),
+  1000→  1000→                  lang
+  1001→  1001→                )}
+  1002→  1002→              </strong>
+  1003→  1003→            </div>
+  1004→  1004→          </div>
+  1005→  1005→          <DialogFooter>
+  1006→  1006→            <Button variant="outline" onClick={() => setItemDialogOpen(false)}>
+  1007→  1007→              {t('إلغاء', 'Cancel', lang)}
+  1008→  1008→            </Button>
+  1009→  1009→            <Button onClick={saveItem} disabled={itemSaving} className="bg-amber-600 hover:bg-amber-700">
+  1010→  1010→              {itemSaving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
+  1011→  1011→            </Button>
+  1012→  1012→          </DialogFooter>
+  1013→  1013→        </DialogContent>
+  1014→  1014→      </Dialog>
+  1015→  1015→
+  1016→  1016→      {/* ════════════ حوار معاينة الاستيراد ════════════ */}
+  1017→  1017→      <Dialog open={!!importPreview} onOpenChange={(o) => { if (!importing) setImportPreview(o ? importPreview : null); }}>
+  1018→  1018→        <DialogContent className="max-w-3xl" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+  1019→  1019→          <DialogHeader>
+  1020→  1020→            <DialogTitle className="flex items-center gap-2">
+  1021→  1021→              <Upload className="size-5 text-amber-600" />
+  1022→  1022→              {t('معاينة الاستيراد', 'Import Preview', lang)}
+  1023→  1023→            </DialogTitle>
+  1024→  1024→          </DialogHeader>
+  1025→  1025→          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+  1026→  1026→            <p className="text-sm text-muted-foreground">
+  1027→  1027→              {importPreview?.length || 0} {t('صف سيتم استيرادها. راجعها قبل التأكيد.', 'rows will be imported. Review before confirming.', lang)}
+  1028→  1028→            </p>
+  1029→  1029→            <div className="rounded-md border overflow-x-auto">
+  1030→  1030→              <Table>
+  1031→  1031→                <TableHeader>
+  1032→  1032→                  <TableRow>
+  1033→  1033→                    <TableHead>#</TableHead>
+  1034→  1034→                    <TableHead>code</TableHead>
+  1035→  1035→                    <TableHead>name</TableHead>
+  1036→  1036→                    <TableHead>nameEn</TableHead>
+  1037→  1037→                    <TableHead>categoryId</TableHead>
+  1038→  1038→                    <TableHead className="text-end">costPrice</TableHead>
+  1039→  1039→                    <TableHead className="text-end">salePrice</TableHead>
+  1040→  1040→                    <TableHead>unit</TableHead>
+  1041→  1041→                    <TableHead className="text-center">{t('الحالة', 'Status', lang)}</TableHead>
+  1042→  1042→                  </TableRow>
+  1043→  1043→                </TableHeader>
+  1044→  1044→                <TableBody>
+  1045→  1045→                  {importPreview?.map((r, idx) => {
+  1046→  1046→                    const matchedCat = catById.get(r.categoryId);
+  1047→  1047→                    const valid = !!(r.name && (matchedCat || r.categoryId));
+  1048→  1048→                    return (
+  1049→  1049→                      <TableRow key={idx} className={valid ? '' : 'bg-rose-50'}>
+  1050→  1050→                        <TableCell className="text-xs text-muted-foreground">{idx + 1}</TableCell>
+  1051→  1051→                        <TableCell className="font-mono text-xs">{r.code || '—'}</TableCell>
+  1052→  1052→                        <TableCell className="text-sm">{r.name || <span className="text-rose-600">—</span>}</TableCell>
+  1053→  1053→                        <TableCell className="text-xs text-muted-foreground" dir="ltr">{r.nameEn || ''}</TableCell>
+  1054→  1054→                        <TableCell className="text-xs">
+  1055→  1055→                          {matchedCat ? (
+  1056→  1056→                            <span className="text-emerald-700">{matchedCat.name}</span>
+  1057→  1057→                          ) : (
+  1058→  1058→                            <span className="text-rose-600">{r.categoryId || t('غير معروف', 'unknown', lang)}</span>
+  1059→  1059→                          )}
+  1060→  1060→                        </TableCell>
+  1061→  1061→                        <TableCell className="text-end text-xs">{r.costPrice || 0}</TableCell>
+  1062→  1062→                        <TableCell className="text-end text-xs font-semibold">{r.salePrice || 0}</TableCell>
+  1063→  1063→                        <TableCell className="text-xs">{r.unit || '—'}</TableCell>
+  1064→  1064→                        <TableCell className="text-center">
+  1065→  1065→                          {valid ? (
+  1066→  1066→                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border border-emerald-200">
+  1067→  1067→                              {t('صالح', 'OK', lang)}
+  1068→  1068→                            </Badge>
+  1069→  1069→                          ) : (
+  1070→  1070→                            <Badge variant="secondary" className="bg-rose-100 text-rose-700 border border-rose-200">
+  1071→  1071→                              {t('متخطّى', 'Skipped', lang)}
+  1072→  1072→                            </Badge>
+  1073→  1073→                          )}
+  1074→  1074→                        </TableCell>
+  1075→  1075→                      </TableRow>
+  1076→  1076→                    );
+  1077→  1077→                  })}
+  1078→  1078→                </TableBody>
+  1079→  1079→              </Table>
+  1080→  1080→            </div>
+  1081→  1081→            <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+  1082→  1082→              <AlertCircle className="size-4 shrink-0 mt-0.5" />
+  1083→  1083→              <span>
+  1084→  1084→                {t(
+  1085→  1085→                  'الصفوف التي لا تحتوي على اسم أو قسم صالح سيتم تخطّيها تلقائياً.',
+  1086→  1086→                  'Rows missing a valid name or category will be skipped automatically.',
+  1087→  1087→                  lang
+  1088→  1088→                )}
+  1089→  1089→              </span>
+  1090→  1090→            </div>
+  1091→  1091→          </div>
+  1092→  1092→          <DialogFooter>
+  1093→  1093→            <Button variant="outline" onClick={() => setImportPreview(null)} disabled={importing}>
+  1094→  1094→              {t('إلغاء', 'Cancel', lang)}
+  1095→  1095→            </Button>
+  1096→  1096→            <Button onClick={confirmImport} disabled={importing} className="bg-amber-600 hover:bg-amber-700 gap-1.5">
+  1097→  1097→              {importing ? (
+  1098→  1098→                <>
+  1099→  1099→                  <RefreshCw className="size-4 animate-spin" />
+  1100→  1100→                  {t('جاري الاستيراد...', 'Importing...', lang)}
+  1101→  1101→                </>
+  1102→  1102→              ) : (
+  1103→  1103→                <>
+  1104→  1104→                  <Upload className="size-4" />
+  1105→  1105→                  {t('تأكيد الاستيراد', 'Confirm Import', lang)}
+  1106→  1106→                </>
+  1107→  1107→              )}
+  1108→  1108→            </Button>
+  1109→  1109→          </DialogFooter>
+  1110→  1110→        </DialogContent>
+  1111→  1111→      </Dialog>
+  1112→  1112→
+  1113→  1113→      {/* ════════════ تأكيد الحذف ════════════ */}
+  1114→  1114→      <ConfirmDialog
+  1115→  1115→        open={!!catDelete}
+  1116→  1116→        onOpenChange={(o) => !o && setCatDelete(null)}
+  1117→  1117→        title={t('حذف القسم', 'Delete Category', lang)}
+  1118→  1118→        description={
+  1119→  1119→          catDelete
+  1120→  1120→            ? t(
+  1121→  1121→                `سيتم حذف القسم "${catDelete.name}" نهائياً.`,
+  1122→  1122→                `Category "${catDelete.name}" will be permanently deleted.`,
+  1123→  1123→                lang
+  1124→  1124→              )
+  1125→  1125→            : ''
+  1126→  1126→        }
+  1127→  1127→        onConfirm={removeCategory}
+  1128→  1128→        confirmLabel={t('حذف', 'Delete', lang)}
+  1129→  1129→      />
+  1130→  1130→      <ConfirmDialog
+  1131→  1131→        open={!!itemDelete}
+  1132→  1132→        onOpenChange={(o) => !o && setItemDelete(null)}
+  1133→  1133→        title={t('حذف الوجبة', 'Delete Item', lang)}
+  1134→  1134→        description={
+  1135→  1135→          itemDelete
+  1136→  1136→            ? t(
+  1137→  1137→                `سيتم حذف الوجبة "${itemDelete.name}" نهائياً.`,
+  1138→  1138→                `Item "${itemDelete.name}" will be permanently deleted.`,
+  1139→  1139→                lang
+  1140→  1140→              )
+  1141→  1141→            : ''
+  1142→  1142→        }
+  1143→  1143→        onConfirm={removeItem}
+  1144→  1144→        confirmLabel={t('حذف', 'Delete', lang)}
+  1145→  1145→      />
+  1146→  1146→    </ModuleLayout>
+  1147→  1147→  );
+  1148→  1148→}
+  1149→  1149→

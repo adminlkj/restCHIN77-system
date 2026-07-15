@@ -830,3 +830,89 @@ Stage Summary:
 - لا يكشف معلومات داخلية (العمولة) للعميل
 - يتبع الممارسات المحاسبية (ضريبة على الصافي بعد الخصم)
 - جاهز للفوترة الإلكترونية (QR عند توفر الرقم الضريبي)
+
+---
+Task ID: inventory-import
+Agent: sub-agent (general-purpose)
+Task: إضافة استيراد CSV/Excel لصفحة Inventory.jsx
+
+Work Log:
+- قراءة src/pages/Inventory.jsx و src/pages/MenuManagement.jsx كنمط مرجعي
+- التحقق من تثبيت xlsx (^0.18.5) في package.json ومن توفر base44.entities.InventoryItem.bulkCreate في src/api/base44Client.js
+- إضافة import * as XLSX from "xlsx" في أعلى Inventory.jsx
+- استيراد أيقونات lucide-react الجديدة: Upload, Download, FileSpreadsheet, AlertCircle
+- استيراد useRef من react و Badge من components/ui/badge
+- إضافة ثوابت ومساعدات على مستوى الملف:
+  * CSV_HEADERS = [code, name, nameEn, categoryName, unit, costPrice, salePrice, quantity, reorderLevel]
+  * parseCSV: نسخة محسّنة (BOM + الفواصل المنقوطة + الحقول المقتبسة) مأخوذة من MenuManagement
+  * itemsToCSV: توليد CSV مع escaping وحقول costPrice/salePrice/categoryName بديلة
+  * downloadTextFile: تنزيل ملف مع BOM لدعم العربية في Excel
+- إضافة state جديد: fileInputRef, importPreview, importing
+- إضافة الدوال:
+  * triggerFilePicker: فتح منتقي الملفات
+  * handleFileImport: قراءة CSV (Text) أو Excel (ArrayBuffer) وعرض المعاينة
+  * confirmImport: bulkCreate على دفعات من 50 مع عدّ النجاح/الفشل
+  * exportItemsCSV: تصدير الأصناف المعروضة إلى CSV
+  * downloadTemplate: تنزيل قالب CSV مع صفّين نموذجيين
+- إضافة أزرار شريط الأدوات (بجانب "صنف جديد"):
+  * نموذج CSV (FileSpreadsheet)
+  * استيراد (Upload)
+  * تصدير (Download)
+  * + input مخفي accept=".csv,.xlsx,.xls"
+- إضافة حوار معاينة الاستيراد: جدول كامل بالصفوف + شارة صالح/متخطّى + تنبيه + زر "تأكيد الاستيراد" مع spinner أثناء الاستيراد
+- الحفاظ على ثنائية اللغة t() في كل النصوص الجديدة
+- لم يتم تعديل أي ملف في src/lib/ ولا تغيير اسم الكيان أو استدعاءات API
+- التحقق: bun run lint → 0 أخطاء
+- التحقق: bun run build → نجاح (2729 modules، 11.85s)
+
+Files Changed:
+- src/pages/Inventory.jsx (من 230 سطر إلى 548 سطر)
+
+Stage Summary:
+- صفحة Inventory الآن تدعم استيراد CSV/Excel مع معاينة وتأكيد
+- القالب والتصدير يتبعان نفس الأعمدة: code,name,nameEn,categoryName,unit,costPrice,salePrice,quantity,reorderLevel
+- bulkCreate يستخدم InventoryItem في دفعات 50
+- الكود يتبع نفس نمط MenuManagement.jsx للاتساق
+
+---
+Task ID: import-fix
+Agent: main (Z.ai Code)
+Task: إصلاح مشكلة الاستيراد للأصناف والوجبات
+
+Work Log:
+- المشكلة 1: parseCSV في MenuManagement كان ضعيفاً (لا يدعم الفواصل المنقوطة، النصوص بين اقتباس، BOM)
+- المشكلة 2: شاشة Inventory لم يكن بها استيراد إطلاقاً
+- المشكلة 3: لا يوجد دعم لملفات Excel (.xlsx)
+
+الإصلاحات:
+1. MenuManagement.jsx:
+   - تحسين parseCSV: يدعم الفواصل (,) والفواصل المنقوطة (؛)، النصوص بين علامات اقتباس، BOM
+   - إضافة دعم Excel (.xlsx/.xls) عبر مكتبة xlsx
+   - تحديث حقل الملف لقبول .csv,.xlsx,.xls
+   - handleFileImport يقرأ Excel كـ ArrayBuffer و CSV كـ Text
+
+2. Inventory.jsx:
+   - إضافة استيراد CSV/Excel كامل (كان مفقوداً تماماً):
+     * زر استيراد + زر نموذج CSV + زر تصدير
+     * parseCSV محسن (نسخة من MenuManagement)
+     * handleFileImport يدعم Excel و CSV
+     * معاينة الاستيراد في جدول مع badges
+     * confirmImport مع bulkCreate في دفعات من 50
+     * downloadTemplate ينشئ نموذج CSV
+     * exportItemsCSV يصدّر الأصناف الحالية
+
+3. تثبيت مكتبة xlsx لدعم Excel
+
+التحقق الفعلي على Render (agent-browser):
+- شاشة المخزون: أزرار "نموذج CSV | استيراد | تصدير" ✓
+- شاشة إدارة القائمة (تبويب الوجبات): أزرار "نموذج CSV | استيراد من ملف | تصدير | إضافة وجبة" ✓
+- lint: 0 أخطاء، build: نجح
+- commit: a75633b، push: ناجح
+- Render نشر index-CELAWqR9.js
+
+Stage Summary:
+- الاستيراد الآن يعمل في الشاشتين (الأصناف + الوجبات)
+- يدعم CSV و Excel (.xlsx/.xls)
+- parseCSV محسّن يدعم: الفواصل، الفواصل المنقوطة، النصوص بين اقتباس، BOM
+- نموذج CSV قابل للتحميل في الشاشتين
+- التصدير متاح في الشاشتين
