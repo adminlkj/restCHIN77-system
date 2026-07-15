@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Pencil, Trash2, RefreshCw, Bike, FileText, DollarSign,
-  TrendingUp, Calculator, Eye, Search, Landmark, Printer, Calendar,
+  TrendingUp, Calculator, Eye, Search, Landmark, Printer, Calendar, CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -212,24 +212,31 @@ export default function DeliveryPlatforms() {
   //   pending      = net - paid
   const statements = useMemo(() => {
     return items.map(p => {
+      // ─── تصفية صارمة: فقط الفواتير المرتبطة بالمنصة عبر platformId ───
+      // لا نعتمد على platformName (قد يتطابق بالصدفة) ولا على invoiceType
+      // (توصيل مباشر ≠ منصة). المعيار الوحيد: platformId === p.id.
       const list = filterByDate(
-        invoices.filter(i => i.platformId === p.id || i.platformName === p.name)
+        invoices.filter(i => i.platformId && i.platformId === p.id)
       );
       const salesPreTax = list.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
       const salesVat = list.reduce((s, i) => s + (Number(i.vatAmount) || 0), 0);
       const salesTotal = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
       const commission = list.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0);
-      // ضريبة العمولة: من حقل platformCommissionVat إن وُجد، وإلا تُحسب 15% من العمولة
+      // ضريبة العمولة: من حقل platformCommissionVat إن وُجد، وإلا تُحسب من commissionVatRate
       const commissionVat = list.reduce((s, i) => {
         const v = Number(i.platformCommissionVat);
         if (!isNaN(v) && v > 0) return s + v;
-        return s + (Number(i.platformCommission) || 0) * 0.15;
+        return s + (Number(i.platformCommission) || 0) * (Number(p.commissionVatRate) || 0.15);
       }, 0);
+      // ─── معادلة موحّدة: الصافي = الإجمالي - العمولة - ضريبة العمولة ───
+      // تُستخدم في كل مكان (الجدول، النافذة، الطباعة، التسوية).
       const net = salesTotal - commission - commissionVat;
       // المسدّد = مجموع التسويات المرحّلة لهذه المنصة
       const platformSettlements = settlements.filter(s => s.platformId === p.id && s.status === 'POSTED');
       const paid = platformSettlements.reduce((s, st) => s + (Number(st.settledAmount) || 0), 0);
       const pending = Math.max(0, net - paid);
+      // آخر تسوية + آخر تحويل (للعرض في الجدول)
+      const lastSettlement = platformSettlements[0] || null;
       const commissionRate = Number(p.commissionRate) || 0;
       return {
         platform: p,
@@ -246,6 +253,9 @@ export default function DeliveryPlatforms() {
         paid,
         pending,
         settlementMethod: p.settlementMethod || 'NET',
+        lastSettlementDate: lastSettlement?.date || '',
+        lastSettlementRef: lastSettlement?.referenceNo || '',
+        isFullySettled: pending <= 0.01 && list.length > 0,
       };
     });
   }, [items, invoices, settlements, filterByDate]);
@@ -273,8 +283,9 @@ export default function DeliveryPlatforms() {
 
   const detailRows = useMemo(() => {
     if (!detailPlatform) return [];
+    // تصفية صارمة بـ platformId فقط
     return filterByDate(
-      invoices.filter(i => i.platformId === detailPlatform.id || i.platformName === detailPlatform.name)
+      invoices.filter(i => i.platformId && i.platformId === detailPlatform.id)
     );
   }, [detailPlatform, invoices, filterByDate]);
 
@@ -613,7 +624,7 @@ export default function DeliveryPlatforms() {
             <SummaryCard icon={<Calculator className="size-4" />} label={t('العمولات', 'Commissions', lang)} value={formatCurrency(totals.commission, lang)} tone="rose" />
             <SummaryCard icon={<Calculator className="size-4" />} label={t('ضريبة العمولات', 'Commission VAT', lang)} value={formatCurrency(totals.commissionVat, lang)} tone="rose" />
             <SummaryCard icon={<DollarSign className="size-4" />} label={t('الصافي المستحق', 'Net Payable', lang)} value={formatCurrency(totals.net, lang)} tone="teal" />
-            <SummaryCard icon={<DollarSign className="size-4" />} label={t('المتبقي', 'Pending', lang)} value={formatCurrency(totals.pending, lang)} tone="amber" />
+            <SummaryCard icon={<DollarSign className="size-4" />} label={t('الرصيد لدى المنصات', 'Platform Balance', lang)} value={formatCurrency(totals.pending, lang)} tone="amber" />
           </div>
 
           {/* جدول الكشوفات — تفصيل محاسبي كامل */}
@@ -630,20 +641,21 @@ export default function DeliveryPlatforms() {
                   <TableHead className="text-end">{t('ض. العمولة', 'Comm. VAT', lang)}</TableHead>
                   <TableHead className="text-end">{t('الصافي', 'Net', lang)}</TableHead>
                   <TableHead className="text-end">{t('المحصل', 'Paid', lang)}</TableHead>
-                  <TableHead className="text-end">{t('المتبقي', 'Pending', lang)}</TableHead>
+                  <TableHead className="text-end">{t('الرصيد لدى المنصة', 'Platform Balance', lang)}</TableHead>
+                  <TableHead className="text-center">{t('آخر تسوية', 'Last Settlement', lang)}</TableHead>
                   <TableHead className="text-center">{t('إجراءات', 'Actions', lang)}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                       {t('جاري التحميل...', 'Loading...', lang)}
                     </TableCell>
                   </TableRow>
                 ) : statements.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                       {t('لا توجد منصات', 'No platforms', lang)}
                     </TableCell>
                   </TableRow>
@@ -653,7 +665,11 @@ export default function DeliveryPlatforms() {
                       <TableCell>
                         <div className="font-medium">{s.platform.name}</div>
                         <div className="text-[10px] text-muted-foreground font-mono" dir="ltr">{s.platform.code}</div>
-                        <Badge variant="outline" className="text-[10px] mt-0.5">{s.settlementMethod}</Badge>
+                        <Badge variant="outline" className="text-[10px] mt-0.5">
+                          {s.settlementMethod === 'GROSS'
+                            ? t('العمولة على الإجمالي', 'Commission on Gross', lang)
+                            : t('العمولة على الصافي', 'Commission on Net', lang)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-center font-semibold">{s.orders}</TableCell>
                       <TableCell className="text-end font-mono" dir="ltr">{formatCurrency(s.salesPreTax, lang)}</TableCell>
@@ -669,6 +685,14 @@ export default function DeliveryPlatforms() {
                       <TableCell className={`text-end font-mono ${s.pending > 0 ? 'text-amber-700 font-bold' : 'text-muted-foreground'}`} dir="ltr">
                         {formatCurrency(s.pending, lang)}
                       </TableCell>
+                      <TableCell className="text-center text-xs">
+                        {s.lastSettlementDate ? (
+                          <div>
+                            <div dir="ltr">{formatDate(s.lastSettlementDate, lang)}</div>
+                            {s.lastSettlementRef && <div className="text-[10px] text-blue-600 font-mono" dir="ltr">{s.lastSettlementRef}</div>}
+                          </div>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => openDetail(s.platform)}>
@@ -682,15 +706,21 @@ export default function DeliveryPlatforms() {
                           >
                             <Printer className="size-3.5" /> {t('طباعة', 'Print', lang)}
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1 text-xs"
-                            disabled={settling || s.pending <= 0}
-                            onClick={() => openSettleDialog(s)}
-                          >
-                            <Landmark className="size-3.5" /> {t('تسوية', 'Settle', lang)}
-                          </Button>
+                          {s.isFullySettled ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px]">
+                              <CheckCircle2 className="size-3 ms-0.5" /> {t('تمت التسوية', 'Settled', lang)}
+                            </Badge>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-xs"
+                              disabled={settling}
+                              onClick={() => openSettleDialog(s)}
+                            >
+                              <Landmark className="size-3.5" /> {t('تسوية', 'Settle', lang)}
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -860,8 +890,8 @@ export default function DeliveryPlatforms() {
               <Select value={form.settlementMethod} onValueChange={v => setForm(f => ({ ...f, settlementMethod: v }))}>
                 <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="NET">{t('صافي (المنصة تخصم العمولة)', 'Net (platform deducts commission)', lang)}</SelectItem>
-                  <SelectItem value="GROSS">{t('إجمالي (تحويل بالإجمالي ثم فاتورة عمولة)', 'Gross (full transfer + commission invoice)', lang)}</SelectItem>
+                  <SelectItem value="NET">{t('العمولة على الصافي (المنصة تخصم العمولة قبل التحويل)', 'Commission on Net (platform deducts commission before transfer)', lang)}</SelectItem>
+                  <SelectItem value="GROSS">{t('العمولة على الإجمالي (تحويل بالإجمالي ثم فاتورة عمولة)', 'Commission on Gross (full transfer + commission invoice)', lang)}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[10px] text-muted-foreground">

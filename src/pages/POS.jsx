@@ -702,18 +702,20 @@ export default function POS() {
       ? await resolveReceiptSettings(activeProjectId, companySettings)
       : companySettings;
 
-    // تحديد نوع البيع واسم العميل بشكل صحيح (منع "زبون نقدي" مع منصة)
-    let saleType = 'DINE_IN'; // DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM
-    let effectiveClientName = customerName || t('زبون نقدي', 'Cash Customer', lang);
+    // تحديد نوع البيع واسم العميل
+    // العلاقة الصحيحة: Platform → Invoices → Customer (العميل النهائي)
+    // المنصة تُسجّل في platformId/platformName، والعميل النهائي في clientName.
+    let saleType = 'DINE_IN';
+    let effectiveClientName = customerName || '';
     let effectiveClientId = customerId || '';
     let platformName = '';
 
     if (isPlatformSale) {
       saleType = 'PLATFORM';
       platformName = selectedPlatform?.name || '';
-      // في بيع المنصة: العميل = اسم المنصة (لا "زبون نقدي")
-      effectiveClientName = platformName;
-      effectiveClientId = '';
+      // العميل النهائي: اسم الزبون إن أُدخل، وإلا "عميل منصة" (ليس "زبون نقدي" وليس اسم المنصة)
+      effectiveClientName = customerName || t('عميل منصة', 'Platform Customer', lang);
+      effectiveClientId = customerId || '';
     } else if (isDelivery) {
       saleType = 'DIRECT_DELIVERY';
       platformName = t('توصيل مباشر', 'Direct Delivery', lang);
