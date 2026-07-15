@@ -1,0 +1,97 @@
+{
+  "name": "BranchSetting",
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "معرّف الفرع (Project.id)"
+    },
+    "branchName": {
+      "type": "string",
+      "description": "اسم الفرع بالعربية"
+    },
+    "branchNameEn": {
+      "type": "string",
+      "description": "اسم الفرع بالإنجليزية"
+    },
+    "phone": {
+      "type": "string",
+      "description": "هاتف الفرع"
+    },
+    "phone2": {
+      "type": "string",
+      "description": "هاتف إضافي"
+    },
+    "address": {
+      "type": "string",
+      "description": "العنوان التفصيلي"
+    },
+    "city": {
+      "type": "string",
+      "description": "المدينة / الحي"
+    },
+    "logoUrl": {
+      "type": "string",
+      "description": "رابط شعار الفرع"
+    },
+    "vatNumber": {
+      "type": "string",
+      "description": "الرقم الضريبي للفرع (إن اختلف عن الشركة)"
+    },
+    "primaryColor": {
+      "type": "string",
+      "default": "#d97706",
+      "description": "اللون الأساسي للفرع"
+    },
+    "accentColor": {
+      "type": "string",
+      "default": "#1f2d3d",
+      "description": "اللون الثانوي للفرع"
+    },
+    "managerName": {
+      "type": "string",
+      "description": "اسم مدير الفرع"
+    },
+    "posTerminalId": {
+      "type": "string",
+      "description": "معرّف نقطة البيع (يُولّد تلقائياً)"
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": true,
+      "description": "هل الفرع نشط"
+    }
+  },
+  "required": ["branchId"],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

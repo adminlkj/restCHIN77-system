@@ -29,12 +29,13 @@ import { toast } from 'sonner';
 
 // ═══════════════════════════════════════════════════════════════════════
 // إدارة الفروع — كل فرع هو Project (كيان base44) مع إعداداته الخاصة
-// (شعار، هاتف، عنوان، نقطة بيع، طاولات) في localStorage.
+// (شعار، هاتف، عنوان، نقطة بيع، طاولات) في قاعدة البيانات (BranchSetting).
+// كل الدوال في branchSettings.js تعيد Promise — يجب استخدام await/then.
 // ═══════════════════════════════════════════════════════════════════════
 
 const emptyForm = {
   code: '', name: '', nameAr: '', location: '', description: '',
-  status: 'ACTIVE', projectType: 'CONSTRUCTION', contractValue: 0,
+  status: 'ACTIVE',
   startDate: '', endDate: '',
 };
 
@@ -60,6 +61,8 @@ export default function Branches() {
   const [form, setForm] = useState(emptyForm);
   const [branchSettingsForm, setBranchSettingsForm] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
+  // خريطة إعدادات الفروع: branchId → settings (تُحمّل async من قاعدة البيانات)
+  const [settingsMap, setSettingsMap] = useState({});
 
   // ─── تحميل الفروع ──────────────────────────────────────────────────
   const load = async () => {
@@ -75,6 +78,33 @@ export default function Branches() {
     }
   };
   useEffect(() => { load(); }, []);
+
+  // تحميل إعدادات كل فرع بشكل async بعد توفر قائمة الفروع.
+  // يُخزّن النتائج في خريطة state لتُعرض في بطاقات الفروع.
+  useEffect(() => {
+    if (!items.length) return;
+    let active = true;
+    (async () => {
+      const entries = await Promise.all(
+        items.map(async (it) => {
+          try {
+            const s = await getBranchSettings(it.id);
+            return [it.id, s];
+          } catch {
+            return [it.id, {}];
+          }
+        })
+      );
+      if (active) {
+        setSettingsMap(prev => {
+          const next = { ...prev };
+          for (const [id, s] of entries) next[id] = s;
+          return next;
+        });
+      }
+    })();
+    return () => { active = false; };
+  }, [items]);
 
   // فلترة بحسب البحث والحالة
   const filtered = useMemo(() => {
@@ -100,10 +130,18 @@ export default function Branches() {
     setEditing(item);
     setForm({
       ...emptyForm, ...item,
-      contractValue: item.contractValue || 0,
     });
-    setBranchSettingsForm({ ...emptySettings, ...getBranchSettings(item.id) });
+    // الإعدادات تُحمّل async — استخدم ما هو متوفر في الخريطة، وأكمل التحميل في الخلفية.
+    const cached = settingsMap[item.id] || {};
+    setBranchSettingsForm({ ...emptySettings, ...cached });
     setDialogOpen(true);
+    // حمّل الإعدادات المحدّثة من قاعدة البيانات بشكل async
+    getBranchSettings(item.id)
+      .then(s => {
+        setBranchSettingsForm(prev => ({ ...prev, ...s }));
+        setSettingsMap(prev => ({ ...prev, [item.id]: s }));
+      })
+      .catch(() => { /* ignore — keep cached/empty */ });
   };
 
   const askDelete = (id) => { setDeleteId(id); setConfirmOpen(true); };
@@ -118,15 +156,13 @@ export default function Branches() {
       const payload = {
         ...form,
         code: form.code || nextCodeFromList(items, 'BR'),
-        contractValue: parseFloat(form.contractValue) || 0,
-        projectType: form.projectType || 'CONSTRUCTION',
         status: form.status || 'ACTIVE',
       };
 
       if (editing) {
-        // تحديث الفرع + إعداداته
+        // تحديث الفرع + إعداداته (إعدادات الفرع async)
         await base44.entities.Project.update(editing.id, payload);
-        setBranchSettings(editing.id, {
+        await setBranchSettings(editing.id, {
           ...branchSettingsForm,
           branchName: branchSettingsForm.branchName || payload.name,
         });
@@ -136,9 +172,9 @@ export default function Branches() {
         const created = await base44.entities.Project.create(payload);
         const branchId = created?.id;
         if (branchId) {
-          const posId = autoCreatePOS(branchId, payload.name);
+          const posId = await autoCreatePOS(branchId, payload.name);
           createDefaultTables(branchId, 10);
-          setBranchSettings(branchId, {
+          await setBranchSettings(branchId, {
             ...branchSettingsForm,
             branchName: payload.name,
             address: payload.location || branchSettingsForm.address,
@@ -161,9 +197,15 @@ export default function Branches() {
   const remove = async () => {
     try {
       await base44.entities.Project.delete(deleteId);
-      // تنظيف محلي: حذف الإعدادات والطاولات المرتبطة بالفرع
-      deleteBranchSettings(deleteId);
+      // تنظيف: حذف الإعدادات (async) والطاولات المرتبطة بالفرع
+      await deleteBranchSettings(deleteId);
       deleteBranchTables(deleteId);
+      // إزالة الإعدادات من الخريطة المحلية
+      setSettingsMap(prev => {
+        const next = { ...prev };
+        delete next[deleteId];
+        return next;
+      });
       toast.success(t('تم حذف الفرع وجميع بياناته', 'Branch and its data deleted', lang));
       load();
     } catch (e) {
@@ -236,7 +278,7 @@ export default function Branches() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(item => {
             const st = PROJECT_STATUS[item.status] || PROJECT_STATUS.PLANNING;
-            const settings = getBranchSettings(item.id);
+            const settings = settingsMap[item.id] || {};
             const stats = getBranchTableStats(item.id);
             return (
               <Card

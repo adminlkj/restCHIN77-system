@@ -1,24 +1,24 @@
 import React, { useState } from 'react';
-import { Building2, CalendarClock, FileText, Globe, Info } from 'lucide-react';
+import { Building2, FileText, Globe, Info, Store } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useStore } from '@/lib/store';
 import { t } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import CompanySettingsCard from '@/components/settings/CompanySettingsCard';
+import BranchSettingsCard from '@/components/settings/BranchSettingsCard';
 import PrintSettingsCard from '@/components/settings/PrintSettingsCard';
-import FiscalControlCard from '@/components/settings/FiscalControlCard';
 
 export default function Settings() {
   const { lang, toggleLang } = useStore();
   const [tab, setTab] = useState('general');
 
   const SECTIONS = [
-    { key: 'general', ar: 'عام', en: 'General', Icon: Globe },
-    { key: 'company', ar: 'بيانات الشركة', en: 'Company', Icon: Building2 },
-    { key: 'fiscal', ar: 'التحكم المالي', en: 'Fiscal Control', Icon: CalendarClock },
-    { key: 'print', ar: 'الطباعة والإيصال', en: 'Print & Receipt', Icon: FileText },
-    { key: 'about', ar: 'حول النظام', en: 'About', Icon: Info },
+    { key: 'general',  ar: 'عام',              en: 'General',          Icon: Globe },
+    { key: 'company',  ar: 'بيانات الشركة',   en: 'Company',          Icon: Building2 },
+    { key: 'branches', ar: 'إعدادات الفروع',  en: 'Branch Settings',  Icon: Store },
+    { key: 'print',    ar: 'الطباعة والإيصال', en: 'Print & Receipt',  Icon: FileText },
+    { key: 'about',    ar: 'حول النظام',      en: 'About',            Icon: Info },
   ];
 
   return (
@@ -60,7 +60,7 @@ export default function Settings() {
 
         {tab === 'company' && <CompanySettingsCard />}
 
-        {tab === 'fiscal' && <FiscalControlCard />}
+        {tab === 'branches' && <BranchSettingsCard />}
 
         {tab === 'print' && <PrintSettingsCard />}
 

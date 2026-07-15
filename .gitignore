@@ -31,3 +31,13 @@ node_modules
 # Uploaded files (user-generated content)
 /uploads
 bun.lock
+
+# Local-only artifacts (not part of the app)
+/restaurant-system
+/skills
+/.zscripts
+next-env.d.ts
+*.tsbuildinfo
+
+# OS / runtime
+Thumbs.db

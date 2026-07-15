@@ -26,7 +26,6 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingAuth(true);
       const currentUser = await base44.auth.me();
-      // ضمان أن المستخدم ليس فارغاً — الـ mock backend يُرجع دائماً مالكاً افتراضياً.
       if (currentUser && (currentUser.email || currentUser.id)) {
         setUser(currentUser);
         setIsAuthenticated(true);

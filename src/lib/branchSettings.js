@@ -1,16 +1,21 @@
 // ═══════════════════════════════════════════════════════════════════════
-// نظام إعدادات الفروع — كل فرع له إعداداته الخاصة (لوقو، اسم، هاتف، موقع).
-// يُخزّن الجزء الخاص بالإعدادات في localStorage مفتّح بـ branchId،
-// بينما البيانات الأساسية (code, name, location) تبقى في كيان Project.
+// نظام إعدادات الفروع — كل فرع له إعداداته الخاصة.
+// يُخزّن في قاعدة البيانات (كيان BranchSetting) ليعمل عبر كل الأجهزة.
 //
-// لا يُعدّل هذا الملف أي محرك محاسبي — هو طبقة عرض فقط.
+// التسلسل الهرمي للإيصال:
+//   1. لوقو الفرع (من إعدادات الفرع)
+//   2. اسم الشركة (موحد، من إعدادات الشركة)
+//   3. بيانات الفرع (هاتف، عنوان، رقم ضريبي)
+//
+// لا يُعدّل هذا الملف أي محرك محاسبي.
 // ═══════════════════════════════════════════════════════════════════════
 
-const STORAGE_KEY = 'restaurant-branch-settings';
+import { base44 } from '@/api/base44Client';
 
 // القيم الافتراضية لإعدادات فرع جديد.
-const DEFAULT_BRANCH_SETTINGS = {
-  branchName: '',        // اسم الفرع (يُفضّل أخذه من Project.name)
+export const DEFAULT_BRANCH_SETTINGS = {
+  branchId: '',          // معرّف الفرع (Project.id)
+  branchName: '',        // اسم الفرع
   branchNameEn: '',      // الاسم الإنجليزي
   phone: '',             // هاتف الفرع
   phone2: '',            // هاتف إضافي
@@ -18,55 +23,80 @@ const DEFAULT_BRANCH_SETTINGS = {
   city: '',              // المدينة/الحي
   logoUrl: '',           // شعار الفرع
   vatNumber: '',         // الرقم الضريبي للفرع (إن اختلف)
-  primaryColor: '#d97706', // اللون الأساسي للإيصالات
-  accentColor: '#1f2d3d',  // اللون الثانوي
+  primaryColor: '#d97706',
+  accentColor: '#1f2d3d',
   managerName: '',       // اسم مدير الفرع
-  posTerminalId: '',     // معرّف نقطة البيع المرتبطة (يُنشأ تلقائياً)
-  isActive: true,        // هل الفرع مفتوح؟
+  posTerminalId: '',     // معرّف نقطة البيع
+  isActive: true,
 };
 
-// قراءة كل إعدادات الفروع من localStorage.
-function readAll() {
+// ذاكرة مؤقتة (cache) لتجنّب الطلبات المتكررة — تُحدّث عند كل جلب/حفظ.
+const cache = new Map();
+
+// جلب إعدادات فرع من قاعدة البيانات.
+// يعيد Promise (async) لأنه يتصل بالخادم.
+export async function getBranchSettings(branchId) {
+  if (!branchId) return { ...DEFAULT_BRANCH_SETTINGS };
+
+  // تحقق من الذاكرة المؤقتة أولاً
+  if (cache.has(branchId)) {
+    return { ...DEFAULT_BRANCH_SETTINGS, ...cache.get(branchId) };
+  }
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+    const results = await base44.entities.BranchSetting.filter({ branchId });
+    if (results && results.length > 0) {
+      const settings = { ...DEFAULT_BRANCH_SETTINGS, ...results[0] };
+      cache.set(branchId, settings);
+      return settings;
+    }
+  } catch (e) {
+    console.warn('Failed to fetch branch settings:', e);
+  }
+
+  return { ...DEFAULT_BRANCH_SETTINGS, branchId };
+}
+
+// حفظ إعدادات فرع في قاعدة البيانات.
+export async function setBranchSettings(branchId, settings) {
+  if (!branchId) return null;
+
+  const payload = { ...DEFAULT_BRANCH_SETTINGS, ...settings, branchId };
+
+  try {
+    const results = await base44.entities.BranchSetting.filter({ branchId });
+    if (results && results.length > 0) {
+      // تحديث سجل موجود
+      const updated = await base44.entities.BranchSetting.update(results[0].id, payload);
+      cache.set(branchId, { ...payload, ...updated });
+      return cache.get(branchId);
+    } else {
+      // إنشاء سجل جديد
+      const created = await base44.entities.BranchSetting.create(payload);
+      cache.set(branchId, { ...payload, ...created });
+      return cache.get(branchId);
+    }
+  } catch (e) {
+    console.error('Failed to save branch settings:', e);
+    // fallback: cache only
+    cache.set(branchId, payload);
+    return payload;
   }
 }
 
-// حفظ كل إعدادات الفروع.
-function writeAll(map) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-  } catch { /* ignore */ }
-}
-
-// جلب إعدادات فرع واحد بالمعرّف. يُدمج مع الافتراضيات.
-export function getBranchSettings(branchId) {
-  if (!branchId) return { ...DEFAULT_BRANCH_SETTINGS };
-  const all = readAll();
-  return { ...DEFAULT_BRANCH_SETTINGS, ...(all[branchId] || {}) };
-}
-
-// حفظ إعدادات فرع واحد.
-export function setBranchSettings(branchId, settings) {
-  if (!branchId) return;
-  const all = readAll();
-  all[branchId] = { ...DEFAULT_BRANCH_SETTINGS, ...(all[branchId] || {}), ...settings };
-  writeAll(all);
-  return all[branchId];
-}
-
-// دمج إعدادات الفرع مع إعدادات الشركة الأم (الإعدادات العامة).
+// دمج إعدادات الفرع مع إعدادات الشركة الأم.
 // الأولوية: إعدادات الفرع > إعدادات الشركة > الافتراضي.
-// هذا ما يُمرّر إلى قالب الإيصال الحراري.
-export function resolveReceiptSettings(branchId, companySettings = {}) {
-  const branch = getBranchSettings(branchId);
+// يعيد Promise لأنه يجلب إعدادات الفرع من قاعدة البيانات.
+export async function resolveReceiptSettings(branchId, companySettings = {}) {
+  const branch = await getBranchSettings(branchId);
   return {
     ...companySettings,
-    companyName: branch.branchName || companySettings.companyName || '',
-    companyNameEn: branch.branchNameEn || companySettings.companyNameEn || '',
+    // اسم الشركة يبقى موحداً من إعدادات الشركة (لا يُ override باسم الفرع)
+    companyName: companySettings.companyName || '',
+    companyNameEn: companySettings.companyNameEn || '',
+    // بيانات الفرع تظهر أسفل اسم الشركة
+    branchName: branch.branchName || '',
+    branchNameEn: branch.branchNameEn || '',
     phone: branch.phone || companySettings.phone || '',
     address: branch.address || companySettings.address || '',
     city: branch.city || companySettings.city || '',
@@ -74,29 +104,36 @@ export function resolveReceiptSettings(branchId, companySettings = {}) {
     vatNumber: branch.vatNumber || companySettings.vatNumber || '',
     primaryColor: branch.primaryColor || companySettings.primaryColor || '#d97706',
     accentColor: branch.accentColor || companySettings.accentColor || '#1f2d3d',
-    // حقل إضافي يُستخدم في الإيصال لتمييز الفرع
-    branchName: branch.branchName,
   };
 }
 
 // إنشاء نقطة بيع تلقائياً للفرع عند إنشائه.
-// يُرجع معرّف نقطة البيع (POS Terminal ID).
-export function autoCreatePOS(branchId, branchName) {
+export async function autoCreatePOS(branchId, branchName) {
   if (!branchId) return null;
   const posId = `POS-${branchId.slice(-6).toUpperCase()}`;
-  setBranchSettings(branchId, { posTerminalId: posId });
+  await setBranchSettings(branchId, { posTerminalId: posId, branchName });
   return posId;
 }
 
 // حذف إعدادات فرع (عند حذف الفرع نفسه).
-export function deleteBranchSettings(branchId) {
+export async function deleteBranchSettings(branchId) {
   if (!branchId) return;
-  const all = readAll();
-  delete all[branchId];
-  writeAll(all);
+  cache.delete(branchId);
+  try {
+    const results = await base44.entities.BranchSetting.filter({ branchId });
+    if (results && results.length > 0) {
+      await base44.entities.BranchSetting.delete(results[0].id);
+    }
+  } catch (e) {
+    console.warn('Failed to delete branch settings:', e);
+  }
 }
 
-// قائمة كل معرّفات الفروع التي لها إعدادات محفوظة.
-export function listBranchIds() {
-  return Object.keys(readAll());
+// قائمة كل إعدادات الفروع.
+export async function listBranchSettings() {
+  try {
+    return await base44.entities.BranchSetting.list('-created_date', 500);
+  } catch {
+    return [];
+  }
 }
