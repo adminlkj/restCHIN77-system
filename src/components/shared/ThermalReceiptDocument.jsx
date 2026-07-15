@@ -173,22 +173,22 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
         <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#555', marginBottom: 2 }}>{settings.companyNameEn}</div>
       ) : null}
 
-      {/* اسم الفرع — يظهر إن كان الإيصال مرتبطاً بفرع محدّد */}
-      {settings.branchName ? (
-        <div style={{ textAlign: 'center', fontSize: 10, color: primary, fontWeight: 700 }}>
-          {T('فرع:', 'Branch:')} {settings.branchName}
+      {settings.crNumber ? (
+        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
+          {T('السجل التجاري', 'CR')}: <span dir="ltr">{settings.crNumber}</span>
         </div>
       ) : null}
 
       {settings.vatNumber ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
-          {T('الرقم الضريبي', 'VAT No.')}: <span dir="ltr">{settings.vatNumber}</span>
+          {T('الرقم الضريبي', 'VAT')}: <span dir="ltr">{settings.vatNumber}</span>
         </div>
       ) : null}
 
-      {settings.crNumber ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
-          {T('السجل التجاري', 'CR No.')}: <span dir="ltr">{settings.crNumber}</span>
+      {/* اسم الفرع — يظهر إن كان الإيصال مرتبطاً بفرع محدّد */}
+      {settings.branchName ? (
+        <div style={{ textAlign: 'center', fontSize: 10, color: primary, fontWeight: 700, marginTop: 2 }}>
+          {settings.branchName}{settings.city ? ` - ${settings.city}` : ''}
         </div>
       ) : null}
 
@@ -199,9 +199,9 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
         </div>
       ) : null}
 
-      {(settings.address || settings.city) ? (
+      {(settings.address && !settings.city) ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555', maxWidth: '95%', margin: '0 auto' }}>
-          {[settings.address, settings.city].filter(Boolean).join(' - ')}
+          {settings.address}
         </div>
       ) : null}
 
@@ -210,23 +210,36 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
       {/* ─── بيانات الإيصال ─── */}
       <div style={{ fontSize: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 700 }}>{T('إيصال', 'Receipt')} #</span>
+          <span style={{ fontWeight: 700 }}>{T('إيصال رقم', 'Receipt No.')}</span>
           <span dir="ltr" style={{ fontWeight: 700 }}>{invoice.invoiceNo || '—'}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>{T('التاريخ والوقت', 'Date & Time')}</span>
-          <span dir="ltr">{dateTime}</span>
+          <span>{T('التاريخ', 'Date')}</span>
+          <span dir="ltr">{dateTime.split(' ')[0]}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>{T('النوع', 'Type')}</span>
+          <span>{T('الوقت', 'Time')}</span>
+          <span dir="ltr">{dateTime.split(' ')[1] || ''}</span>
+        </div>
+        {/* نوع الطلب — يصف العملية (صالة/استلام/توصيل) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>{T('نوع الطلب', 'Order Type')}</span>
           <span style={{ fontWeight: 600 }}>
-            {saleTypeLabel
-              ? (saleType === 'PLATFORM' && platformName
-                ? `${platformName} — ${rtl ? saleTypeLabel.ar : saleTypeLabel.en}`
-                : (rtl ? saleTypeLabel.ar : saleTypeLabel.en))
-              : (rtl ? typeLabel.ar : typeLabel.en)}
+            {saleType === 'PLATFORM' || saleType === 'DIRECT_DELIVERY'
+              ? T('توصيل', 'Delivery')
+              : saleType === 'TAKEAWAY'
+                ? T('استلام', 'Takeaway')
+                : T('صالة', 'Dine-in')}
           </span>
         </div>
+        {/* منصة التوصيل — قناة البيع (منفصلة عن العميل) */}
+        {platformName && (saleType === 'PLATFORM' || saleType === 'DIRECT_DELIVERY') ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>{T('منصة التوصيل', 'Delivery Platform')}</span>
+            <span style={{ fontWeight: 600 }}>{platformName}</span>
+          </div>
+        ) : null}
+        {/* الزبون — العميل النهائي (ليس المنصة) */}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>{T('الزبون', 'Customer')}</span>
           <span style={{ fontWeight: 600 }}>{customerName}</span>
@@ -243,9 +256,10 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
             <span>{invoice.cashier}</span>
           </div>
         ) : null}
-        {invoice.tableNo ? (
+        {/* رقم الطاولة — فقط للصالة، مخفي للمنصات */}
+        {saleType !== 'PLATFORM' && saleType !== 'DIRECT_DELIVERY' && invoice.tableNo ? (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>{T('رقم الطاولة', 'Table No.')}</span>
+            <span>{T('الطاولة', 'Table')}</span>
             <span dir="ltr">{invoice.tableNo}</span>
           </div>
         ) : null}
@@ -280,28 +294,37 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
 
       <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0' }}>{divider}</div>
 
-      {/* ─── الملخّص المالي ─── */}
+      {/* ─── ملخّص الإجماليات ─── */}
       <div style={{ fontSize: 11 }}>
+        {/* المجموع الفرعي (قبل الخصومات) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
-          <span>{T('المجموع قبل الخصومات', 'Gross before discounts')}</span>
+          <span>{T('المجموع الفرعي', 'Subtotal')}</span>
           <span dir="ltr"><Money value={subtotal + discountAmount + itemDiscountsTotal} /></span>
         </div>
+        {/* الخصومات — تفصيل واضح */}
         {itemDiscountsTotal > 0 ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
-            <span>{T('خصومات الأصناف', 'Item discounts')}</span>
+            <span>{T('خصم الأصناف', 'Item Discount')}</span>
             <span dir="ltr">-<Money value={itemDiscountsTotal} /></span>
           </div>
         ) : null}
         {customerDiscountAmount > 0 ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
-            <span>{T(`خصم العميل (${Math.round(discountPercentage)}%)`, `Customer discount (${Math.round(discountPercentage)}%)`)}</span>
+            <span>{T(`خصم العميل (${Math.round(discountPercentage)}%)`, `Customer Discount (${Math.round(discountPercentage)}%)`)}</span>
             <span dir="ltr">-<Money value={customerDiscountAmount} /></span>
           </div>
         ) : null}
         {manualDiscountAmount > 0 ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
-            <span>{T('خصم إضافي', 'Manual discount')}</span>
+            <span>{T('خصم يدوي', 'Manual Discount')}</span>
             <span dir="ltr">-<Money value={manualDiscountAmount} /></span>
+          </div>
+        ) : null}
+        {/* صافي قبل الضريبة */}
+        {(itemDiscountsTotal > 0 || customerDiscountAmount > 0 || manualDiscountAmount > 0) ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 600, borderTop: '1px dotted #ddd', paddingTop: 2 }}>
+            <span>{T('صافي قبل الضريبة', 'Net before VAT')}</span>
+            <span dir="ltr"><Money value={subtotal} /></span>
           </div>
         ) : null}
         {deliveryFee > 0 ? (
@@ -315,89 +338,90 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
           <span dir="ltr"><Money value={vat} /></span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontWeight: 800, fontSize: 13, borderTop: '1px dashed #999', marginTop: 2, color: primary }}>
-          <span>{T('الإجمالي الكلي', 'Total Amount')}</span>
+          <span>{T('الإجمالي', 'Total')}</span>
           <span dir="ltr"><Money value={total} /></span>
         </div>
-        {platformName ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 9, color: '#666' }}>
-            <span>{T('المنصة', 'Platform')}: {platformName}</span>
-            {platformCommission > 0 ? (
-              <span dir="ltr">({T('عمولة', 'Comm.')}: <Money value={platformCommission} />)</span>
-            ) : null}
-          </div>
-        ) : null}
-        {/* النقد المستلم والباقي (للبيع النقدي) */}
-        {cashReceived > 0 ? (
-          <>
-            {appliedPayments.length > 0 && (
-              <div style={{ borderTop: '1px dotted #ccc', marginTop: 4, paddingTop: 4 }}>
-                <div style={{ fontSize: 9, color: '#666', marginBottom: 2 }}>{T('طريقة الدفع', 'Payment Method')}:</div>
-                {appliedPayments.map((p, i) => {
-                  const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
-                  return (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10 }}>
-                      <span>{rtl ? label.ar : label.en}</span>
-                      <span dir="ltr"><Money value={p.amount} /></span>
-                    </div>
-                  );
-                })}
+
+        {/* ─── طرق السداد / حالة السداد ─── */}
+        <div style={{ borderTop: '1px dotted #ccc', marginTop: 4, paddingTop: 4 }}>
+          {saleType === 'PLATFORM' ? (
+            /* بيع منصة: آجل على المنصة — لا نطبع العمولة للعميل */
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10, color: '#666' }}>
+                <span>{T('طريقة السداد', 'Payment Method')}</span>
+                <span style={{ fontWeight: 600 }}>{T('آجل - ' + platformName, 'Credit - ' + platformName)}</span>
               </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10, color: '#666' }}>
-              <span>{T('المستلم من الزبون', 'Received')}</span>
-              <span dir="ltr"><Money value={cashReceived} /></span>
-            </div>
-            {change > 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#1d4ed8' }}>
-                <span>{T('الباقي للزبون', 'Change')}</span>
-                <span dir="ltr"><Money value={change} /></span>
+              {balance > 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
+                  <span>{T('المبلغ المستحق', 'Amount Due')}</span>
+                  <span dir="ltr"><Money value={balance} /></span>
+                </div>
+              ) : null}
+            </>
+          ) : cashReceived > 0 ? (
+            /* بيع نقدي: المستلم + الباقي */
+            <>
+              <div style={{ fontSize: 9, color: '#666', marginBottom: 2 }}>{T('طريقة السداد', 'Payment Method')}:</div>
+              {appliedPayments.map((p, i) => {
+                const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10 }}>
+                    <span>{rtl ? label.ar : label.en}</span>
+                    <span dir="ltr"><Money value={p.amount} /></span>
+                  </div>
+                );
+              })}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10, color: '#666' }}>
+                <span>{T('المستلم', 'Received')}</span>
+                <span dir="ltr"><Money value={cashReceived} /></span>
               </div>
-            ) : null}
-          </>
-        ) : paid > 0 ? (
-          <>
-            {appliedPayments.length > 0 && (
-              <div style={{ borderTop: '1px dotted #ccc', marginTop: 4, paddingTop: 4 }}>
-                <div style={{ fontSize: 9, color: '#666', marginBottom: 2 }}>{T('طريقة الدفع', 'Payment Method')}:</div>
-                {appliedPayments.map((p, i) => {
-                  const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
-                  return (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10 }}>
-                      <span>{rtl ? label.ar : label.en}</span>
-                      <span dir="ltr"><Money value={p.amount} /></span>
-                    </div>
-                  );
-                })}
+              {change > 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#1d4ed8' }}>
+                  <span>{T('الباقي', 'Change')}</span>
+                  <span dir="ltr"><Money value={change} /></span>
+                </div>
+              ) : null}
+            </>
+          ) : paid > 0 ? (
+            /* مدفوع جزئياً أو كلياً بدون cashReceived */
+            <>
+              <div style={{ fontSize: 9, color: '#666', marginBottom: 2 }}>{T('طريقة السداد', 'Payment Method')}:</div>
+              {appliedPayments.map((p, i) => {
+                const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10 }}>
+                    <span>{rtl ? label.ar : label.en}</span>
+                    <span dir="ltr"><Money value={p.amount} /></span>
+                  </div>
+                );
+              })}
+              {balance > 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
+                  <span>{T('المبلغ المستحق', 'Amount Due')}</span>
+                  <span dir="ltr"><Money value={balance} /></span>
+                </div>
+              ) : null}
+            </>
+          ) : balance > 0 ? (
+            /* آجل بدون منصة */
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: 10, color: '#666' }}>
+                <span>{T('طريقة السداد', 'Payment Method')}</span>
+                <span style={{ fontWeight: 600 }}>{T('آجل', 'Credit')}</span>
               </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
-              <span>{T('المدفوع', 'Paid')}</span>
-              <span dir="ltr"><Money value={paid} /></span>
-            </div>
-          </>
-        ) : balance > 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
-            <span>{T('المتبقي (آجل)', 'Balance Due (Credit)')}</span>
-            <span dir="ltr"><Money value={balance} /></span>
-          </div>
-        ) : null}
-        {/* شارة نوع البيع + المنصة */}
-        {saleTypeLabel ? (
-          <div style={{ textAlign: 'center', marginTop: 4, fontSize: 10, fontWeight: 700, color: primary }}>
-            {saleType === 'PLATFORM' && platformName ? `${platformName}` : (rtl ? saleTypeLabel.ar : saleTypeLabel.en)}
-          </div>
-        ) : null}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
+                <span>{T('المبلغ المستحق', 'Amount Due')}</span>
+                <span dir="ltr"><Money value={balance} /></span>
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* ─── QR رمز ZATCA ─── */}
       {qrPayload ? (
         <div style={{ textAlign: 'center', marginTop: 6 }}>
           <img src={zatcaQrImageUrl(qrPayload, 100)} alt="ZATCA QR" style={{ width: 100, height: 100 }} />
-          <div style={{ fontSize: 8, color: '#888' }}>{T('امسح للتحقق من الإيصال', 'Scan to verify receipt')}</div>
-        </div>
-      ) : (settings.showQr !== false && !settings.vatNumber) ? (
-        <div style={{ textAlign: 'center', marginTop: 6, fontSize: 8, color: '#888' }}>
-          {T('أدخل الرقم الضريبي في الإعدادات لإظهار QR', 'Add a VAT number in Settings to show QR')}
         </div>
       ) : null}
 
@@ -410,11 +434,13 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
       <div style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>
         {T('نتمنى لكم وجبة شهية', 'We hope you enjoyed your meal')}
       </div>
+      {settings.phone ? (
+        <div style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>
+          {T('للاستفسارات', 'Inquiries')}: <span dir="ltr">{settings.phone}</span>
+        </div>
+      ) : null}
       {settings.website ? (
         <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>{settings.website}</div>
-      ) : null}
-      {settings.email ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888' }}>{settings.email}</div>
       ) : null}
     </div>
   );
