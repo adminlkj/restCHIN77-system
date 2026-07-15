@@ -21,8 +21,12 @@ export const DEFAULT_COMPANY_SETTINGS = {
   accentColor: '#1f2d3d',
   bankName: '',
   bankAccountName: '',
+  bankAccountNumber: '',
+  bankBranch: '',
   iban: '',
+  swiftCode: '',
   terms: '',
+  receiptFooterMessage: '',
   showQr: true,
 };
 

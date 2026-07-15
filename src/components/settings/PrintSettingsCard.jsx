@@ -23,16 +23,16 @@ const TEMPLATES = [
 // فاتورة تجريبية لمعاينة القالب داخل الإعدادات.
 const SAMPLE_INVOICE = {
   invoiceNo: 'INV-0001',
-  invoiceType: 'RENTAL',
-  clientName: 'شركة العميل التجريبية',
-  projectName: 'مشروع تجريبي',
+  invoiceType: 'CONSTRUCTION',
+  clientName: 'زبون تجريبي',
+  projectName: 'الفرع الرئيسي',
   date: new Date().toISOString().slice(0, 10),
   dueDate: new Date(Date.now() + 15 * 864e5).toISOString().slice(0, 10),
   status: 'SENT',
-  subtotal: 10000,
-  vatAmount: 1500,
-  totalAmount: 11500,
-  paidAmount: 5000,
+  subtotal: 100,
+  vatAmount: 15,
+  totalAmount: 115,
+  paidAmount: 50,
 };
 
 const Field = ({ label, children }) => (
@@ -51,7 +51,7 @@ export default function PrintSettingsCard() {
   const [uploading, setUploading] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  useEffect(() => { if (!loading) setForm(settings); }, [loading]);  
+  useEffect(() => { if (!loading) setForm(settings); }, [loading, settings]);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -153,6 +153,10 @@ export default function PrintSettingsCard() {
         {/* الشروط والأحكام + QR */}
         <Field label={t('الشروط والأحكام', 'Terms & Conditions', lang)}>
           <Textarea value={form.terms || ''} onChange={e => set('terms', e.target.value)} rows={3} placeholder={t('تُطبع في أسفل كل فاتورة', 'Printed at the bottom of every invoice', lang)} />
+        </Field>
+
+        <Field label={t('رسالة الإيصال الختامية', 'Receipt Closing Message', lang)}>
+          <Textarea value={form.receiptFooterMessage || ''} onChange={e => set('receiptFooterMessage', e.target.value)} rows={2} placeholder={t('شكراً لزيارتكم — نتمنى لكم وجبة شهية', 'Thank you for visiting — We hope you enjoyed your meal', lang)} />
         </Field>
 
         <div className="flex items-center justify-between rounded-lg border p-3">

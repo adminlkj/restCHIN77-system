@@ -24,7 +24,7 @@ export default function CompanySettingsCard() {
   const [form, setForm] = useState(DEFAULT_COMPANY_SETTINGS);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (!loading) setForm(settings); }, [loading]);  
+  useEffect(() => { if (!loading) setForm(settings); }, [loading, settings]);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 

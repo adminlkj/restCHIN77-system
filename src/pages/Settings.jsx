@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
-import { Building2, FileText, Globe, Info, Store } from 'lucide-react';
+import { Building2, FileText, Globe, Info, Store, Palette, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { useStore } from '@/lib/store';
 import { t } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
@@ -46,16 +50,38 @@ export default function Settings() {
 
       <div className="max-w-3xl">
         {tab === 'general' && (
-          <Card>
-            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Globe className="size-4" />{t('اللغة', 'Language', lang)}</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t('اللغة الحالية للنظام', 'Current system language', lang)}: <strong>{lang === 'ar' ? 'العربية' : 'English'}</strong></p>
-              <Button onClick={toggleLang} variant="outline" className="gap-2">
-                <Globe className="size-4" />
-                {lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            {/* اللغة */}
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Globe className="size-4" />{t('اللغة', 'Language', lang)}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">{t('اللغة الحالية للنظام', 'Current system language', lang)}: <strong>{lang === 'ar' ? 'العربية' : 'English'}</strong></p>
+                <Button onClick={toggleLang} variant="outline" className="gap-2">
+                  <Globe className="size-4" />
+                  {lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* إعدادات سريعة */}
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Receipt className="size-4" />{t('إعدادات سريعة', 'Quick Settings', lang)}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">{t('روابط سريعة للأقسام الأكثر استخداماً', 'Quick links to most used sections', lang)}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTab('company')}>
+                    <Building2 className="size-3.5" />{t('بيانات الشركة', 'Company Data', lang)}
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTab('branches')}>
+                    <Store className="size-3.5" />{t('إعدادات الفروع', 'Branch Settings', lang)}
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTab('print')}>
+                    <Palette className="size-3.5" />{t('إعدادات الطباعة', 'Print Settings', lang)}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {tab === 'company' && <CompanySettingsCard />}
@@ -70,19 +96,27 @@ export default function Settings() {
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">{t('اسم النظام', 'System Name', lang)}</span>
-                <span className="font-medium">بِنَاء ERP</span>
+                <span className="font-medium">{t('نظام إدارة المطاعم', 'Restaurant Management System', lang)}</span>
               </div>
               <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">{t('الإصدار', 'Version', lang)}</span>
-                <span className="font-medium">1.0.0</span>
+                <span className="font-medium">2.0.0</span>
               </div>
               <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">{t('المجال', 'Domain', lang)}</span>
                 <span className="font-medium">{t('إدارة المطاعم', 'Restaurant Management', lang)}</span>
               </div>
-              <div className="flex justify-between py-2">
+              <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">{t('العملة', 'Currency', lang)}</span>
                 <span className="font-medium">{t('ريال سعودي (SAR)', 'Saudi Riyal (SAR)', lang)}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-muted-foreground">{t('نسبة الضريبة', 'VAT Rate', lang)}</span>
+                <span className="font-medium">15%</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-muted-foreground">{t('التوافق', 'Compliance', lang)}</span>
+                <span className="font-medium">{t('هيئة الزكاة والضريبة والجمارك', 'ZATCA Compliant', lang)}</span>
               </div>
             </CardContent>
           </Card>
