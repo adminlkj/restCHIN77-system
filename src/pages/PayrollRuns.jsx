@@ -63,7 +63,12 @@ export default function PayrollRuns() {
 
   const filtered = items.filter(i => !search || i.code?.toLowerCase().includes(search.toLowerCase()));
 
-  const openNew = () => { setEditing(null); setForm({ ...empty, code: `PAY-${new Date().getFullYear()}-${String(items.length + 1).padStart(2, '0')}` }); setDialogOpen(true); };
+  const openNew = () => {
+    setEditing(null);
+    // الكود يُولّد تلقائياً عند الحفظ — لا حقل للإدخال اليدوي.
+    setForm({ ...empty, year: new Date().getFullYear() });
+    setDialogOpen(true);
+  };
   const openEdit = (item) => {
     if (item.status !== 'DRAFT') return toast.error(t('لا يمكن تعديل مسير معتمد أو مدفوع', 'Cannot edit an approved or paid payroll run', lang));
     setEditing(item); setForm({ ...empty, ...item, status: 'DRAFT' }); setDialogOpen(true);
@@ -81,7 +86,7 @@ export default function PayrollRuns() {
   const netAmount = sal + all - ded;
 
   const save = async () => {
-    if (!form.code || !form.month || !form.year) return toast.error(t('الكود والشهر والسنة مطلوبة', 'Code, month and year required', lang));
+    if (!form.month || !form.year) return toast.error(t('الشهر والسنة مطلوبة', 'Month and year required', lang));
     const m = parseInt(form.month), y = parseInt(form.year);
     // منع تكرار مسيّر لنفس الشهر والسنة
     const dup = items.find(i => i.month === m && i.year === y && i.id !== editing?.id);
@@ -89,9 +94,15 @@ export default function PayrollRuns() {
     if (netAmount <= 0) return toast.error(t('صافي المسير يجب أن يكون أكبر من صفر', 'Net amount must be greater than zero', lang));
     if (form.status === 'PAID' && !form.paymentAccountCode) return toast.error(t('لا يمكن تسجيل السداد دون تحديد طريقة الدفع', 'Payment requires a payment method', lang));
     if (form.status === 'PAID' && !form.paymentDate) return toast.error(t('لا يمكن تسجيل السداد دون تحديد تاريخ الدفع', 'Payment requires a payment date', lang));
+    // توليد الكود تلقائياً: PAY-2026-07-01 (السنة-الشهر-تسلسل)
+    const autoCode = editing?.code || (() => {
+      const prefix = `PAY-${y}-${String(m).padStart(2, '0')}`;
+      const existing = items.filter(i => (i.code || '').startsWith(prefix)).length;
+      return `${prefix}-${String(existing + 1).padStart(2, '0')}`;
+    })();
     setSaving(true);
     try {
-      const data = { ...form, month: m, year: y, totalSalaries: sal, totalAllowances: all, totalDeductions: ded, netAmount };
+      const data = { ...form, code: autoCode, month: m, year: y, totalSalaries: sal, totalAllowances: all, totalDeductions: ded, netAmount };
       if (editing && form.status === 'PAID') {
         await OperationEngine.payPayrollRun(editing.id, data);
         toast.success(t('تم تسجيل السداد وترحيل قيد الدفع', 'Payment recorded and posted', lang));
@@ -223,7 +234,6 @@ export default function PayrollRuns() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editing ? t('تعديل المسير', 'Edit Payroll', lang) : t('مسير جديد', 'New Payroll Run', lang)}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
-            <div className="space-y-1.5"><Label>{t('الكود', 'Code', lang)} *</Label><Input value={form.code} readOnly className="bg-muted font-mono" /></div>
             <div className="space-y-1.5">
               <Label>{t('الشهر', 'Month', lang)} *</Label>
               <Select value={String(form.month)} onValueChange={v => setForm(f => ({ ...f, month: v }))}>
@@ -232,7 +242,7 @@ export default function PayrollRuns() {
               </Select>
             </div>
             <div className="space-y-1.5"><Label>{t('السنة', 'Year', lang)} *</Label><Input type="number" value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))} /></div>
-            <div className="space-y-1.5">
+            <div className="col-span-2 space-y-1.5">
               <Label>{t('الحالة', 'Status', lang)}</Label>
               <Input readOnly value={form.status === 'PAID' ? t('سداد مسير معتمد', 'Pay approved payroll', lang) : t('مسودة (تُعتمد لاحقاً)', 'Draft (approve later)', lang)} className="bg-muted text-muted-foreground" />
             </div>
