@@ -16,15 +16,23 @@ const VAT_RATE = 0.15;
 
 // خريطة الحسابات الافتراضية حسب الدور (تُستخدم كخطة بديلة إن لم يوجد حساب في الدليل)
 // خطة بديلة تطابق الشجرة القياسية الحالية — تُستخدم فقط إن لم يوجد الدور في الدليل.
+// ملاحظة محاسبية: البيع النقدي يُذهب للصندوق/البنك/البطاقة حسب طريقة الدفع،
+// والبيع الآجل يُذهب لذمم العملاء، وبيع المنصات يُذهب لذمم المنصات.
 const ACCOUNTS = {
-  CASH:                 { code: '1111', name: 'الصندوق' },
+  CASH:                 { code: '1111', name: 'صندوق الكاشير' },
   BANK:                 { code: '1112', name: 'البنك' },
+  CARD_MADA:            { code: '1114', name: 'نقدية بطاقات البيع (مدى)' },
+  CARD_VISA:            { code: '1114', name: 'نقدية بطاقات البيع (فيزا)' },
+  CARD_MC:              { code: '1114', name: 'نقدية بطاقات البيع (ماستركارد)' },
+  CARD_OTHER:           { code: '1114', name: 'نقدية بطاقات البيع (أخرى)' },
   RECEIVABLES:          { code: '1121', name: 'ذمم العملاء' },
+  PLATFORM_RECEIVABLE:  { code: '1115', name: 'مستحقات منصات التوصيل' },
   PAYABLES:             { code: '2110', name: 'ذمم الموردين' },
   VAT_PAYABLE:          { code: '2160', name: 'ضريبة القيمة المضافة المحصلة' },
   VAT_RECEIVABLE:       { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة' },
   ACCRUED_SALARIES:     { code: '2140', name: 'رواتب مستحقة الدفع' },
-  REVENUE_CONSTRUCTION: { code: '4100', name: 'إيرادات أعمال المقاولات' },
+  REVENUE_SALES:        { code: '4100', name: 'إيرادات المبيعات' },
+  REVENUE_CONSTRUCTION: { code: '4100', name: 'إيرادات المبيعات' },
   REVENUE_RENTAL:       { code: '4200', name: 'إيرادات تأجير المعدات' },
   REVENUE_SERVICE:      { code: '4300', name: 'إيرادات الخدمات' },
   EXPENSE_GENERAL:      { code: '5250', name: 'المصروفات العمومية' },
@@ -244,18 +252,91 @@ async function buildJE(base44, operationType, meta, amounts, fallbackBuilder, pa
 }
 
 // ─── بناة القيود الثابتة ──────────────────────────────────────────────────────
-function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, vatAmount, totalAmount, invoiceType, projectName }) {
-  const rev = invoiceType === 'RENTAL' ? ACCOUNTS.REVENUE_RENTAL : invoiceType === 'SERVICE' ? ACCOUNTS.REVENUE_SERVICE : ACCOUNTS.REVENUE_CONSTRUCTION;
-  // مركز التكلفة = اسم المشروع لربط القيد بالمشروع في تقارير الربحية ومراكز التكلفة
+// خريطة طرق الدفع → الحساب المدين (للبيع النقدي: الصندوق/البنك/البطاقة).
+// السياسة المحاسبية الإلزامية:
+//   - البيع النقدي (CASH/CARD_*): مدين = الحساب النقدي المعني، NO ذمم عملاء.
+//   - البيع الآجل (CREDIT بدون دفع): مدين = ذمم العملاء.
+//   - بيع المنصات (isPlatformSale): مدين = ذمم المنصات (مع partyType=PLATFORM).
+//   - الدفع المتعدد: يُنشأ سطر مدين لكل طريقة دفع بقيمتها.
+const PAYMENT_METHOD_ACCOUNTS = {
+  CASH:       ACCOUNTS.CASH,
+  CARD_MADA:  ACCOUNTS.CARD_MADA,
+  CARD_VISA:  ACCOUNTS.CARD_VISA,
+  CARD_MC:    ACCOUNTS.CARD_MC,
+  CARD_OTHER: ACCOUNTS.CARD_OTHER,
+  BANK:       ACCOUNTS.BANK,
+};
+
+function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, vatAmount, totalAmount, invoiceType, projectName, payments, isPlatformSale, platformId, platformName }) {
+  const rev = invoiceType === 'RENTAL' ? ACCOUNTS.REVENUE_RENTAL : invoiceType === 'SERVICE' ? ACCOUNTS.REVENUE_SERVICE : ACCOUNTS.REVENUE_SALES;
   const costCenter = projectName || '';
+  const vat = num(vatAmount);
+
+  // قرر سطور المدين حسب نوع البيع وطرق الدفع.
+  let debitLines = [];
+  let partyType = 'CLIENT';
+  let partyId = clientId || '';
+  let partyName = clientName || '';
+
+  if (isPlatformSale) {
+    // بيع المنصات: ذمم المنصات (آجل حتى التحصيل)
+    debitLines.push({
+      accountCode: ACCOUNTS.PLATFORM_RECEIVABLE.code,
+      accountName: ACCOUNTS.PLATFORM_RECEIVABLE.name,
+      debit: num(totalAmount), credit: 0,
+      description: `فاتورة منصة ${platformName || ''} ${invoiceNo}`,
+      partyType: 'PLATFORM', partyId: platformId || '', partyName: platformName || '',
+      costCenter,
+    });
+  } else if (Array.isArray(payments) && payments.length > 0) {
+    // بيع نقدي بطرق دفع واحدة أو أكثر: سطر مدين لكل طريقة دفع.
+    // ندمج نفس الطريقة (مثلاً دفعتين نقداً) في سطر واحد لتجنب تكرار السطور.
+    const merged = {};
+    for (const p of payments) {
+      const m = p.method || p.type || 'CASH';
+      merged[m] = (merged[m] || 0) + num(p.amount);
+    }
+    for (const [method, amount] of Object.entries(merged)) {
+      const acc = PAYMENT_METHOD_ACCOUNTS[method] || ACCOUNTS.CASH;
+      debitLines.push({
+        accountCode: acc.code, accountName: acc.name,
+        debit: +amount.toFixed(2), credit: 0,
+        description: `تحصيل ${invoiceNo} — ${acc.name}`,
+        costCenter,
+      });
+    }
+  } else {
+    // بيع آجل بدون دفع: ذمم العملاء
+    debitLines.push({
+      accountCode: ACCOUNTS.RECEIVABLES.code, accountName: ACCOUNTS.RECEIVABLES.name,
+      debit: num(totalAmount), credit: 0,
+      description: `فاتورة آجلة ${invoiceNo}`,
+      partyType, partyId, partyName, costCenter,
+    });
+  }
+
+  const creditLines = [
+    { accountCode: rev.code, accountName: rev.name, debit: 0, credit: num(subtotal), description: 'إيرادات المبيعات', costCenter },
+    ...(vat > 0 ? [{ accountCode: ACCOUNTS.VAT_PAYABLE.code, accountName: ACCOUNTS.VAT_PAYABLE.name, debit: 0, credit: vat, description: 'ضريبة القيمة المضافة 15%', costCenter }] : []),
+  ];
+
+  const lines = [...debitLines, ...creditLines];
+  // تحقق التوازن (يجب أن يتطابق المدين مع totalAmount)
+  const totalDebit = lines.reduce((s, l) => s + num(l.debit), 0);
+  const totalCredit = lines.reduce((s, l) => s + num(l.credit), 0);
+  // إن كان هناك فرق صغير بسبب تقريب، عدّل سطر الإيراد.
+  const diff = num(totalAmount) - totalDebit;
+  if (Math.abs(diff) > 0.01) {
+    // فرق كبير = خطأ في البيانات؛ ارفع استثناء بدل قيد غير متوازن.
+    throw new Error(`اختلال توازن القيد لفاتورة ${invoiceNo}: المدين ${totalDebit} مقابل المتوقع ${totalAmount} (الفرق ${diff.toFixed(2)})`);
+  }
+
   return {
-    entryNo: `JE-SINV-${invoiceNo}`, date, description: `فاتورة مبيعات ${invoiceNo} — ${clientName}${projectName ? ` — ${projectName}` : ''}`, sourceType: 'SalesInvoice', isPosted: true,
-    totalDebit: totalAmount, totalCredit: totalAmount,
-    lines: [
-      { accountCode: ACCOUNTS.RECEIVABLES.code, accountName: ACCOUNTS.RECEIVABLES.name, debit: totalAmount, credit: 0, description: `فاتورة ${invoiceNo}`, partyType: 'CLIENT', partyId: clientId, partyName: clientName, costCenter },
-      { accountCode: rev.code, accountName: rev.name, debit: 0, credit: subtotal, description: 'الإيراد الأساسي', costCenter },
-      ...(vatAmount > 0 ? [{ accountCode: ACCOUNTS.VAT_PAYABLE.code, accountName: ACCOUNTS.VAT_PAYABLE.name, debit: 0, credit: vatAmount, description: 'ضريبة القيمة المضافة 15%', costCenter }] : []),
-    ],
+    entryNo: `JE-SINV-${invoiceNo}`, date,
+    description: `فاتورة مبيعات ${invoiceNo} — ${clientName}${projectName ? ` — ${projectName}` : ''}${isPlatformSale ? ` — منصة ${platformName || ''}` : ''}`,
+    sourceType: 'SalesInvoice', isPosted: true,
+    totalDebit: num(totalAmount), totalCredit: num(totalAmount),
+    lines,
   };
 }
 
@@ -869,14 +950,38 @@ async function updateSalesInvoice(base44, id, data, prevStatus) {
 }
 
 // اعتماد فاتورة مبيعات: يرحّل قيد الإيراد ويحوّل الحالة إلى معتمدة.
+// السياسة المحاسبية:
+//   - البيع النقدي (payments موجودة): مدين = الصندوق/البنك/البطاقة حسب طريقة الدفع.
+//   - بيع المنصات (notes.isPlatformSale): مدين = ذمم المنصات (آجل).
+//   - البيع الآجل بدون دفع: مدين = ذمم العملاء.
 async function approveSalesInvoice(base44, id) {
   const inv = await base44.asServiceRole.entities.SalesInvoice.get(id);
   if (!inv) throw new Error('الفاتورة غير موجودة');
   if (inv.status !== 'DRAFT') throw new Error('لا يمكن اعتماد إلا الفواتير التي في حالة مسودة');
+
+  // استخراج payments و isPlatformSale من notes (JSON string) إن وُجدت.
+  let notesObj = {};
+  try {
+    notesObj = typeof inv.notes === 'string' && inv.notes.trim().startsWith('{')
+      ? JSON.parse(inv.notes)
+      : (typeof inv.notes === 'object' && inv.notes ? inv.notes : {});
+  } catch { notesObj = {}; }
+
+  const payments = Array.isArray(notesObj.payments) ? notesObj.payments : (Array.isArray(inv.payments) ? inv.payments : []);
+  const isPlatformSale = notesObj.isPlatformSale === true || inv.isPlatformSale === true;
+  const platformId = notesObj?.platform?.platformId || inv.platformId || '';
+  const platformName = notesObj?.platform?.platformName || inv.platformName || '';
+
   const je = await buildJE(base44, 'SALES_INVOICE',
     { entryNo: `JE-SINV-${inv.invoiceNo}`, date: inv.date, description: `فاتورة مبيعات ${inv.invoiceNo} — ${inv.clientName}`, sourceType: 'SalesInvoice' },
     { base: num(inv.subtotal), vat: num(inv.vatAmount), total: num(inv.totalAmount) },
-    () => buildSalesInvoiceJE({ ...inv }),
+    () => buildSalesInvoiceJE({
+      invoiceNo: inv.invoiceNo, date: inv.date,
+      clientId: inv.clientId, clientName: inv.clientName,
+      subtotal: inv.subtotal, vatAmount: inv.vatAmount, totalAmount: inv.totalAmount,
+      invoiceType: inv.invoiceType, projectName: inv.projectName,
+      payments, isPlatformSale, platformId, platformName,
+    }),
     { type: 'CLIENT', id: inv.clientId, name: inv.clientName });
   await autoPostJE(base44, je);
   return await base44.asServiceRole.entities.SalesInvoice.update(id, { status: 'APPROVED' });

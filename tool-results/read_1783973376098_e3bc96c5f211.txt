@@ -1,0 +1,831 @@
+     1→import React, { useState, useEffect, useMemo } from 'react';
+     2→import {
+     3→  Plus, Minus, X, Search, Printer, Receipt as ReceiptIcon, Pause,
+     4→  CreditCard, Wallet, Banknote, Clock, UtensilsCrossed, LogOut,
+     5→  ShoppingCart, Trash2,
+     6→} from 'lucide-react';
+     7→import { Button } from '@/components/ui/button';
+     8→import { Input } from '@/components/ui/input';
+     9→import { Label } from '@/components/ui/label';
+    10→import { Card } from '@/components/ui/card';
+    11→import {
+    12→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    13→} from '@/components/ui/select';
+    14→import {
+    15→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    16→} from '@/components/ui/dialog';
+    17→import { useStore } from '@/lib/store';
+    18→import { useAuth } from '@/lib/AuthContext';
+    19→import { base44 } from '@/api/base44Client';
+    20→import {
+    21→  t, formatCurrency, formatDate, genInvoiceNo,
+    22→} from '@/lib/utils-binaa';
+    23→import { calcVAT } from '@/lib/businessEngine';
+    24→import { useCompanySettings } from '@/hooks/useCompanySettings';
+    25→import { getBranchSettings, resolveReceiptSettings } from '@/lib/branchSettings';
+    26→import { freeTable } from '@/lib/tables';
+    27→import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+    28→import { toast } from 'sonner';
+    29→
+    30→// ═══════════════════════════════════════════════════════════════════════
+    31→// POS — نقطة البيع: شاشة مقسّمة (منتجات يسار / إيصال يمين) كاملة الارتفاع.
+    32→// يقرأ الطاولة النشطة من localStorage['pos-active-table'] (يضبطها Tables.jsx).
+    33→// ═══════════════════════════════════════════════════════════════════════
+    34→
+    35→// خريطة فئات InventoryItem → تسميات مطعم
+    36→const CATEGORIES = [
+    37→  { key: 'ALL',         ar: 'الكل',           en: 'All' },
+    38→  { key: 'MATERIAL',    ar: 'أطباق رئيسية',   en: 'Main Dishes' },
+    39→  { key: 'CONSUMABLE',  ar: 'مشروبات',        en: 'Beverages' },
+    40→  { key: 'SPARE_PART',  ar: 'مقبلات',         en: 'Appetizers' },
+    41→  { key: 'TOOL',        ar: 'حلويات',         en: 'Desserts' },
+    42→  { key: 'FIXED_ASSET', ar: 'أخرى',           en: 'Other' },
+    43→];
+    44→
+    45→// بيانات تجريبية تُستخدم عند فشل الخادم — ليبقى الواجهة قابلة للاختبار
+    46→const DEMO_MENU = [
+    47→  { id: 'demo-1', code: 'M-001', name: 'برجر',    nameEn: 'Burger',    category: 'MATERIAL',   unitCost: 35, unit: 'قطعة',  isActive: true },
+    48→  { id: 'demo-2', code: 'M-002', name: 'بطاطس',   nameEn: 'Fries',     category: 'SPARE_PART', unitCost: 15, unit: 'قطعة',  isActive: true },
+    49→  { id: 'demo-3', code: 'M-003', name: 'بيبسي',   nameEn: 'Pepsi',     category: 'CONSUMABLE', unitCost: 8,  unit: 'علبة',  isActive: true },
+    50→  { id: 'demo-4', code: 'M-004', name: 'بيتزا',   nameEn: 'Pizza',     category: 'MATERIAL',   unitCost: 45, unit: 'قطعة',  isActive: true },
+    51→  { id: 'demo-5', code: 'M-005', name: 'شاي',     nameEn: 'Tea',       category: 'CONSUMABLE', unitCost: 5,  unit: 'كوب',   isActive: true },
+    52→  { id: 'demo-6', code: 'M-006', name: 'قهوة',    nameEn: 'Coffee',    category: 'CONSUMABLE', unitCost: 12, unit: 'كوب',   isActive: true },
+    53→  { id: 'demo-7', code: 'M-007', name: 'كيك',     nameEn: 'Cake',      category: 'TOOL',       unitCost: 18, unit: 'قطعة',  isActive: true },
+    54→  { id: 'demo-8', code: 'M-008', name: 'سلطة',    nameEn: 'Salad',     category: 'SPARE_PART', unitCost: 12, unit: 'طبق',   isActive: true },
+    55→];
+    56→
+    57→const PAYMENT_METHODS = [
+    58→  { key: 'CASH',   ar: 'نقداً',  en: 'Cash',   Icon: Banknote,    color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+    59→  { key: 'CARD',   ar: 'بطاقة',  en: 'Card',   Icon: CreditCard,  color: 'bg-blue-100 text-blue-700 border-blue-300' },
+    60→  { key: 'WALLET', ar: 'محفظة',  en: 'Wallet', Icon: Wallet,      color: 'bg-purple-100 text-purple-700 border-purple-300' },
+    61→  { key: 'CREDIT', ar: 'آجل',    en: 'Credit', Icon: Clock,       color: 'bg-amber-100 text-amber-700 border-amber-300' },
+    62→];
+    63→
+    64→const POS_ACTIVE_TABLE_KEY = 'pos-active-table';
+    65→
+    66→function readActiveTable() {
+    67→  try {
+    68→    const raw = localStorage.getItem(POS_ACTIVE_TABLE_KEY);
+    69→    return raw ? JSON.parse(raw) : null;
+    70→  } catch { return null; }
+    71→}
+    72→
+    73→function clearActiveTable() {
+    74→  try { localStorage.removeItem(POS_ACTIVE_TABLE_KEY); } catch { /* ignore */ }
+    75→}
+    76→
+    77→export default function POS() {
+    78→  const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
+    79→  const { user } = useAuth();
+    80→  const { settings: companySettings } = useCompanySettings();
+    81→  const cashier = user?.full_name || (lang === 'ar' ? 'الكاشير' : 'Cashier');
+    82→
+    83→  // ─── حالة ───────────────────────────────────────────────────────────
+    84→  const [cart, setCart] = useState([]);
+    85→  const [menuItems, setMenuItems] = useState([]);
+    86→  const [menuLoading, setMenuLoading] = useState(true);
+    87→  const [search, setSearch] = useState('');
+    88→  const [activeCategory, setActiveCategory] = useState('ALL');
+    89→  const [customers, setCustomers] = useState([]);
+    90→  const [customerId, setCustomerId] = useState('');
+    91→  const [customerName, setCustomerName] = useState('');
+    92→  const [payments, setPayments] = useState([]); // [{ method, amount }]
+    93→  const [cashReceived, setCashReceived] = useState('');
+    94→  const [printReceipt, setPrintReceipt] = useState(null); // invoice object
+    95→  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+    96→  const [activeTable, setActiveTable] = useState(() => readActiveTable());
+    97→
+    98→  // اسم الفرع من إعدادات الفرع (المدمجة مع إعدادات الشركة)
+    99→  const branchSettings = useMemo(
+   100→    () => activeProjectId ? getBranchSettings(activeProjectId) : {},
+   101→    [activeProjectId]
+   102→  );
+   103→  const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
+   104→  const tableLabel = activeTable?.tableName || t('طاولة', 'Table', lang);
+   105→
+   106→  // ─── تحميل المنتجات والزبائن ───────────────────────────────────────
+   107→  useEffect(() => {
+   108→    let active = true;
+   109→    (async () => {
+   110→      setMenuLoading(true);
+   111→      try {
+   112→        const items = await base44.entities.InventoryItem.filter({ isActive: true });
+   113→        if (!active) return;
+   114→        if (Array.isArray(items) && items.length) {
+   115→          setMenuItems(items);
+   116→        } else {
+   117→          // لا توجد عناصر — استخدم البيانات التجريبية
+   118→          setMenuItems(DEMO_MENU);
+   119→        }
+   120→      } catch (e) {
+   121→        console.warn('Menu load failed, using demo data:', e);
+   122→        if (!active) return;
+   123→        setMenuItems(DEMO_MENU);
+   124→      } finally {
+   125→        if (active) setMenuLoading(false);
+   126→      }
+   127→
+   128→      // الزبائن (اختياري)
+   129→      try {
+   130→        const cs = await base44.entities.Client.list();
+   131→        if (active && Array.isArray(cs)) setCustomers(cs);
+   132→      } catch { /* الزبائن اختياريون */ }
+   133→    })();
+   134→    return () => { active = false; };
+   135→  }, []);
+   136→
+   137→  // ─── فلترة المنتجات ─────────────────────────────────────────────────
+   138→  const filteredMenu = useMemo(() => {
+   139→    return menuItems.filter(item => {
+   140→      const matchCat = activeCategory === 'ALL' || item.category === activeCategory;
+   141→      const q = search.trim().toLowerCase();
+   142→      const matchSearch = !q ||
+   143→        String(item.name || '').toLowerCase().includes(q) ||
+   144→        String(item.nameEn || '').toLowerCase().includes(q) ||
+   145→        String(item.code || '').toLowerCase().includes(q);
+   146→      return matchCat && matchSearch;
+   147→    });
+   148→  }, [menuItems, activeCategory, search]);
+   149→
+   150→  // ─── عربة التسوّق ───────────────────────────────────────────────────
+   151→  const addToCart = (item) => {
+   152→    setCart(prev => {
+   153→      const idx = prev.findIndex(c => c.itemId === item.id);
+   154→      if (idx >= 0) {
+   155→        const next = [...prev];
+   156→        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+   157→        return next;
+   158→      }
+   159→      return [...prev, {
+   160→        itemId: item.id,
+   161→        name: item.name,
+   162→        nameEn: item.nameEn || '',
+   163→        price: parseFloat(item.unitCost) || 0,
+   164→        qty: 1,
+   165→      }];
+   166→    });
+   167→  };
+   168→
+   169→  const changeQty = (itemId, delta) => {
+   170→    setCart(prev => prev
+   171→      .map(c => c.itemId === itemId ? { ...c, qty: c.qty + delta } : c)
+   172→      .filter(c => c.qty > 0)
+   173→    );
+   174→  };
+   175→
+   176→  const setQty = (itemId, qty) => {
+   177→    const q = Math.max(0, parseInt(qty) || 0);
+   178→    if (q === 0) {
+   179→      setCart(prev => prev.filter(c => c.itemId !== itemId));
+   180→    } else {
+   181→      setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, qty: q } : c));
+   182→    }
+   183→  };
+   184→
+   185→  const removeItem = (itemId) => {
+   186→    setCart(prev => prev.filter(c => c.itemId !== itemId));
+   187→  };
+   188→
+   189→  const clearCart = () => {
+   190→    setCart([]);
+   191→    setPayments([]);
+   192→    setCashReceived('');
+   193→  };
+   194→
+   195→  // ─── الحسابات المالية ───────────────────────────────────────────────
+   196→  const subtotal = useMemo(
+   197→    () => cart.reduce((s, c) => s + (c.price * c.qty), 0),
+   198→    [cart]
+   199→  );
+   200→  const vatCalc = useMemo(() => calcVAT(subtotal, 0.15), [subtotal]);
+   201→  const total = vatCalc.total;
+   202→  const totalPaid = useMemo(
+   203→    () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
+   204→    [payments]
+   205→  );
+   206→  const change = totalPaid > total ? totalPaid - total : 0;
+   207→  const isFullyPaid = totalPaid >= total && total > 0;
+   208→
+   209→  // ─── المدفوعات ──────────────────────────────────────────────────────
+   210→  const addPayment = (method, amount = null) => {
+   211→    const amt = amount !== null ? amount : parseFloat(cashReceived);
+   212→    if (!amt || amt <= 0) {
+   213→      toast.error(t('أدخل مبلغاً صحيحاً', 'Enter a valid amount', lang));
+   214→      return;
+   215→    }
+   216→    const remaining = total - totalPaid;
+   217→    if (amt > remaining + 0.01 && method !== 'CREDIT') {
+   218→      // نسمح بالمبلغ الزائد (الباقي للزبون) لكن ننبه
+   219→      toast.info(t('المبلغ أكبر من المتبقي — الباقي للزبون', 'Amount exceeds remaining — change due', lang));
+   220→    }
+   221→    setPayments(prev => [...prev, { method, amount: +amt.toFixed(2) }]);
+   222→    setCashReceived('');
+   223→  };
+   224→
+   225→  const removePayment = (idx) => {
+   226→    setPayments(prev => prev.filter((_, i) => i !== idx));
+   227→  };
+   228→
+   229→  // ─── إجراءات ────────────────────────────────────────────────────────
+   230→  const exitToTables = () => {
+   231→    clearActiveTable();
+   232→    setActiveItem('tables');
+   233→  };
+   234→
+   235→  // طباعة طلب المطبخ (إيصال داخلي للمنتجات فقط — بلا أسعار)
+   236→  const printOrder = () => {
+   237→    if (!cart.length) {
+   238→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   239→      return;
+   240→    }
+   241→    const w = window.open('', '_blank', 'width=400,height=600');
+   242→    if (!w) {
+   243→      toast.error(t('الرجاء السماح بالنوافذ المنبثقة', 'Please allow pop-ups', lang));
+   244→      return;
+   245→    }
+   246→    const rtl = lang === 'ar';
+   247→    const itemsHtml = cart.map((c, i) => `
+   248→      <tr>
+   249→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc;">${i + 1}</td>
+   250→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; font-weight:700;">${c.name}</td>
+   251→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; text-align:center; font-weight:700;">${c.qty}</td>
+   252→      </tr>
+   253→    `).join('');
+   254→    w.document.write(`
+   255→      <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
+   256→        <head><meta charset="utf-8"><title>${t('طلب المطبخ', 'Kitchen Order', lang)}</title>
+   257→        <style>
+   258→          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+   259→          body { font-family:'Cairo','Tahoma',sans-serif; padding:8px; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
+   260→          .h { text-align:center; font-size:18px; font-weight:800; }
+   261→          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:6px; }
+   262→          table { width:100%; border-collapse:collapse; font-size:13px; }
+   263→          th { background:#000; color:#fff; padding:6px; font-size:12px; }
+   264→          .meta { font-size:11px; color:#555; margin:4px 0 8px; }
+   265→          @page { size: 80mm auto; margin: 4mm; }
+   266→        </style></head>
+   267→        <body>
+   268→          <div class="h">${t('طلب المطبخ', 'Kitchen Order', lang)}</div>
+   269→          <div class="sub">${branchLabel} — ${tableLabel}</div>
+   270→          <div class="meta">
+   271→            ${t('التاريخ', 'Date', lang)}: ${formatDate(new Date().toISOString(), lang)} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+   272→            ${t('الكاشير', 'Cashier', lang)}: ${cashier}
+   273→          </div>
+   274→          <table>
+   275→            <thead><tr><th>#</th><th>${t('الصنف', 'Item', lang)}</th><th>${t('الكمية', 'Qty', lang)}</th></tr></thead>
+   276→            <tbody>${itemsHtml}</tbody>
+   277→          </table>
+   278→          <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
+   279→        </body>
+   280→      </html>
+   281→    `);
+   282→    w.document.close();
+   283→    w.focus();
+   284→    toast.success(t('تم إرسال طلب المطبخ للطباعة', 'Kitchen order sent to printer', lang));
+   285→  };
+   286→
+   287→  // تعليق الطلب (DRAFT) — يُحرّر الطاولة ويعود لشاشة الطاولات
+   288→  const holdInvoice = () => {
+   289→    if (!cart.length) {
+   290→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   291→      return;
+   292→    }
+   293→    // إعادة الطاولة إلى متاحة مع إبقاء الإيصال مرتبطاً مؤقتاً (لا يُحفظ في الخادم)
+   294→    if (activeTable?.tableId) {
+   295→      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+   296→    }
+   297→    toast.success(t('تم تعليق الطلب — الطاولة متاحة الآن', 'Order held — table is now available', lang));
+   298→    clearCart();
+   299→    exitToTables();
+   300→  };
+   301→
+   302→  // إلغاء الطلب
+   303→  const cancelInvoice = () => {
+   304→    clearCart();
+   305→    setConfirmCancelOpen(false);
+   306→    if (activeTable?.tableId) {
+   307→      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+   308→    }
+   309→    toast.info(t('تم إلغاء الطلب', 'Order cancelled', lang));
+   310→    exitToTables();
+   311→  };
+   312→
+   313→  // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
+   314→  const handlePrintReceipt = async () => {
+   315→    if (!cart.length) {
+   316→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   317→      return;
+   318→    }
+   319→    if (!isFullyPaid) {
+   320→      toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
+   321→      return;
+   322→    }
+   323→
+   324→    // بناء الإيصال
+   325→    const year = new Date().getFullYear();
+   326→    const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
+   327→    const lineItems = cart.map(c => ({
+   328→      description: c.name,
+   329→      descriptionEn: c.nameEn || '',
+   330→      qty: c.qty,
+   331→      unitPrice: c.price,
+   332→      total: +(c.price * c.qty).toFixed(2),
+   333→    }));
+   334→    // إعدادات الإيصال المدمجة (فرع + شركة) — تُرفق للإيصال للطباعة المستقبلية
+   335→    const branchReceiptSettings = activeProjectId
+   336→      ? resolveReceiptSettings(activeProjectId, companySettings)
+   337→      : companySettings;
+   338→    const invoice = {
+   339→      invoiceNo,
+   340→      invoiceType: 'CONSTRUCTION', // dine-in
+   341→      projectId: activeProjectId || '',
+   342→      projectName: activeProjectName || branchLabel,
+   343→      clientId: customerId || '',
+   344→      clientName: customerName || t('زبون نقدي', 'Cash Customer', lang),
+   345→      date: new Date().toISOString(),
+   346→      lineItems,
+   347→      subtotal: +subtotal.toFixed(2),
+   348→      vatRate: 0.15,
+   349→      vatAmount: vatCalc.vat,
+   350→      totalAmount: total,
+   351→      paidAmount: totalPaid,
+   352→      status: isFullyPaid ? 'PAID' : 'PARTIALLY_PAID',
+   353→      description: `${t('طاولة', 'Table', lang)}: ${tableLabel}`,
+   354→      notes: JSON.stringify({
+   355→        tableId: activeTable?.tableId || '',
+   356→        tableName: tableLabel,
+   357→        payments,
+   358→        cashier,
+   359→        branchSettings: branchReceiptSettings,
+   360→      }),
+   361→      cashier,
+   362→      tableNo: tableLabel,
+   363→      branchSettings: branchReceiptSettings,
+   364→    };
+   365→
+   366→    // محاولة الحفظ على الخادم
+   367→    let saved = null;
+   368→    let backendOk = false;
+   369→    try {
+   370→      saved = await base44.entities.SalesInvoice.create(invoice);
+   371→      backendOk = true;
+   372→    } catch (e) {
+   373→      console.warn('SalesInvoice save failed (preview-only):', e);
+   374→    }
+   375→
+   376→    // تحرير الطاولة (متاحة) عند نجاح الحفظ أو حتى في المعاينة
+   377→    if (activeTable?.tableId) {
+   378→      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+   379→    }
+   380→
+   381→    // فتح معاينة الإيصال الحراري
+   382→    setPrintReceipt(saved || invoice);
+   383→
+   384→    if (backendOk) {
+   385→      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
+   386→    } else {
+   387→      toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
+   388→    }
+   389→
+   390→    // تنظيف
+   391→    clearCart();
+   392→  };
+   393→
+   394→  // ─── عرض ───────────────────────────────────────────────────────────
+   395→  return (
+   396→    <div className="h-full flex flex-col overflow-hidden">
+   397→      {/* الرأس العلوي */}
+   398→      <div className="shrink-0 border-b bg-white px-4 py-2.5 flex items-center gap-3">
+   399→        <div className="flex items-center gap-2">
+   400→          <div
+   401→            className="size-9 rounded-lg flex items-center justify-center text-white shrink-0"
+   402→            style={{ background: branchSettings.primaryColor || '#d97706' }}
+   403→          >
+   404→            <UtensilsCrossed className="size-5" />
+   405→          </div>
+   406→          <div className="leading-tight">
+   407→            <div className="font-bold text-foreground text-sm">{branchLabel}</div>
+   408→            <div className="text-[11px] text-muted-foreground">
+   409→              {branchSettings.posTerminalId && (
+   410→                <span dir="ltr" className="font-mono">{branchSettings.posTerminalId}</span>
+   411→              )}
+   412→            </div>
+   413→          </div>
+   414→        </div>
+   415→
+   416→        <div className="h-8 w-px bg-border mx-1" />
+   417→
+   418→        <div className="flex items-center gap-2 text-sm">
+   419→          <span className="text-muted-foreground">{t('الطاولة', 'Table', lang)}:</span>
+   420→          <span className="font-bold text-foreground bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
+   421→            {tableLabel}
+   422→          </span>
+   423→        </div>
+   424→
+   425→        <div className="h-8 w-px bg-border mx-1" />
+   426→
+   427→        <div className="flex items-center gap-2 text-sm">
+   428→          <span className="text-muted-foreground">{t('الكاشير', 'Cashier', lang)}:</span>
+   429→          <span className="font-semibold text-foreground">{cashier}</span>
+   430→        </div>
+   431→
+   432→        <div className="flex-1" />
+   433→
+   434→        <Button
+   435→          variant="outline"
+   436→          size="sm"
+   437→          onClick={exitToTables}
+   438→          className="gap-1.5"
+   439→        >
+   440→          <LogOut className="size-4" />
+   441→          {t('خروج', 'Exit', lang)}
+   442→        </Button>
+   443→      </div>
+   444→
+   445→      {/* الجسم: شبكة منقسمة */}
+   446→      <div className="flex-1 min-h-0 flex overflow-hidden">
+   447→        {/* ─── الجزء الأيمن: المنتجات (يسار في RTL) ─── */}
+   448→        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50">
+   449→          {/* شريط البحث */}
+   450→          <div className="shrink-0 p-3 border-b bg-white">
+   451→            <div className="relative">
+   452→              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   453→              <Input
+   454→                value={search}
+   455→                onChange={e => setSearch(e.target.value)}
+   456→                placeholder={t('ابحث عن صنف...', 'Search items...', lang)}
+   457→                className="ps-9 h-10"
+   458→              />
+   459→            </div>
+   460→            {/* تبويبات الفئات */}
+   461→            <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
+   462→              {CATEGORIES.map(cat => {
+   463→                const isActive = activeCategory === cat.key;
+   464→                return (
+   465→                  <button
+   466→                    key={cat.key}
+   467→                    onClick={() => setActiveCategory(cat.key)}
+   468→                    className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-colors ${
+   469→                      isActive
+   470→                        ? 'bg-amber-600 text-white'
+   471→                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+   472→                    }`}
+   473→                  >
+   474→                    {lang === 'ar' ? cat.ar : cat.en}
+   475→                  </button>
+   476→                );
+   477→              })}
+   478→            </div>
+   479→          </div>
+   480→
+   481→          {/* شبكة المنتجات */}
+   482→          <div className="flex-1 overflow-y-auto p-3">
+   483→            {menuLoading ? (
+   484→              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   485→                {Array.from({ length: 8 }).map((_, i) => (
+   486→                  <Card key={i} className="h-28 animate-pulse bg-muted/40" />
+   487→                ))}
+   488→              </div>
+   489→            ) : filteredMenu.length === 0 ? (
+   490→              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+   491→                <ShoppingCart className="size-12 mb-2 opacity-50" />
+   492→                <p className="text-sm">{t('لا توجد أصناف', 'No items found', lang)}</p>
+   493→              </div>
+   494→            ) : (
+   495→              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   496→                {filteredMenu.map(item => {
+   497→                  const price = parseFloat(item.unitCost) || 0;
+   498→                  return (
+   499→                    <Card
+   500→                      key={item.id}
+   501→                      onClick={() => addToCart(item)}
+   502→                      className="p-3 cursor-pointer hover:shadow-md hover:border-emerald-400 transition-all active:scale-[0.98] flex flex-col gap-1"
+   503→                    >
+   504→                      <div className="flex items-start justify-between gap-1">
+   505→                        <div className="font-bold text-sm text-foreground leading-tight line-clamp-2">
+   506→                          {item.name}
+   507→                        </div>
+   508→                      </div>
+   509→                      {item.nameEn && (
+   510→                        <div dir="ltr" className="text-[10px] text-muted-foreground line-clamp-1 text-start">
+   511→                          {item.nameEn}
+   512→                        </div>
+   513→                      )}
+   514→                      <div className="mt-auto pt-1 flex items-center justify-between">
+   515→                        <span className="text-[10px] text-muted-foreground font-mono">{item.code}</span>
+   516→                        <span className="font-bold text-emerald-700 text-sm">
+   517→                          {formatCurrency(price, lang)}
+   518→                        </span>
+   519→                      </div>
+   520→                    </Card>
+   521→                  );
+   522→                })}
+   523→              </div>
+   524→            )}
+   525→          </div>
+   526→        </div>
+   527→
+   528→        {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
+   529→        <div className="w-[400px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
+   530→          {/* رأس الإيصال: زبون + طاولة */}
+   531→          <div className="shrink-0 p-3 border-b bg-slate-50 space-y-2">
+   532→            <div className="flex items-center gap-2">
+   533→              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+   534→                {t('الزبون', 'Customer', lang)}:
+   535→              </Label>
+   536→              <Select
+   537→                value={customerId}
+   538→                onValueChange={(v) => {
+   539→                  if (v === '__cash__') {
+   540→                    setCustomerId('');
+   541→                    setCustomerName('');
+   542→                  } else {
+   543→                    const c = customers.find(c => c.id === v);
+   544→                    setCustomerId(v);
+   545→                    setCustomerName(c?.name || '');
+   546→                  }
+   547→                }}
+   548→              >
+   549→                <SelectTrigger className="h-8 text-xs">
+   550→                  <SelectValue placeholder={t('زبون نقدي', 'Cash Customer', lang)} />
+   551→                </SelectTrigger>
+   552→                <SelectContent>
+   553→                  <SelectItem value="__cash__">{t('زبون نقدي', 'Cash Customer', lang)}</SelectItem>
+   554→                  {customers.map(c => (
+   555→                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+   556→                  ))}
+   557→                </SelectContent>
+   558→              </Select>
+   559→            </div>
+   560→            {!customerId && (
+   561→              <Input
+   562→                value={customerName}
+   563→                onChange={e => setCustomerName(e.target.value)}
+   564→                placeholder={t('اسم الزبون (اختياري)', 'Customer name (optional)', lang)}
+   565→                className="h-8 text-xs"
+   566→              />
+   567→            )}
+   568→            <div className="flex items-center justify-between text-xs text-muted-foreground">
+   569→              <span>{t('الطاولة', 'Table', lang)}: <span className="font-bold text-foreground">{tableLabel}</span></span>
+   570→              <span>{t('الكاشير', 'Cashier', lang)}: <span className="font-bold text-foreground">{cashier}</span></span>
+   571→            </div>
+   572→          </div>
+   573→
+   574→          {/* قائمة الأصناف */}
+   575→          <div className="flex-1 min-h-0 overflow-y-auto">
+   576→            {cart.length === 0 ? (
+   577→              <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-6">
+   578→                <ShoppingCart className="size-10 mb-2 opacity-40" />
+   579→                <p className="text-sm text-center">
+   580→                  {t('السلة فارغة — اضغط على صنف لإضافته', 'Cart is empty — tap an item to add it', lang)}
+   581→                </p>
+   582→              </div>
+   583→            ) : (
+   584→              <div className="divide-y">
+   585→                {cart.map((item, idx) => (
+   586→                  <div key={item.itemId} className="p-2.5 hover:bg-slate-50">
+   587→                    <div className="flex items-start gap-2">
+   588→                      <span className="text-[11px] text-muted-foreground font-mono mt-0.5 shrink-0">
+   589→                        {idx + 1}.
+   590→                      </span>
+   591→                      <div className="flex-1 min-w-0">
+   592→                        <div className="font-semibold text-sm text-foreground truncate">{item.name}</div>
+   593→                        <div className="flex items-center gap-2 mt-1">
+   594→                          <div className="flex items-center gap-1">
+   595→                            <Button
+   596→                              variant="outline" size="icon"
+   597→                              className="size-6"
+   598→                              onClick={() => changeQty(item.itemId, -1)}
+   599→                            >
+   600→                              <Minus className="size-3" />
+   601→                            </Button>
+   602→                            <Input
+   603→                              value={item.qty}
+   604→                              onChange={e => setQty(item.itemId, e.target.value)}
+   605→                              className="h-6 w-10 text-center text-xs px-1"
+   606→                            />
+   607→                            <Button
+   608→                              variant="outline" size="icon"
+   609→                              className="size-6"
+   610→                              onClick={() => changeQty(item.itemId, 1)}
+   611→                            >
+   612→                              <Plus className="size-3" />
+   613→                            </Button>
+   614→                          </div>
+   615→                          <span className="text-xs text-muted-foreground">
+   616→                            {formatCurrency(item.price, lang)} × {item.qty}
+   617→                          </span>
+   618→                        </div>
+   619→                      </div>
+   620→                      <div className="text-end shrink-0">
+   621→                        <div className="font-bold text-sm text-foreground">
+   622→                          {formatCurrency(item.price * item.qty, lang)}
+   623→                        </div>
+   624→                        <Button
+   625→                          variant="ghost" size="icon"
+   626→                          className="size-6 text-destructive hover:text-destructive mt-0.5"
+   627→                          onClick={() => removeItem(item.itemId)}
+   628→                        >
+   629→                          <X className="size-3" />
+   630→                        </Button>
+   631→                      </div>
+   632→                    </div>
+   633→                  </div>
+   634→                ))}
+   635→              </div>
+   636→            )}
+   637→          </div>
+   638→
+   639→          {/* الملخّص المالي */}
+   640→          <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
+   641→            <div className="flex items-center justify-between text-sm">
+   642→              <span className="text-muted-foreground">{t('المجموع الفرعي', 'Subtotal', lang)}</span>
+   643→              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
+   644→            </div>
+   645→            <div className="flex items-center justify-between text-sm">
+   646→              <span className="text-muted-foreground">{t('ضريبة القيمة المضافة (15%)', 'VAT (15%)', lang)}</span>
+   647→              <span className="font-medium">{formatCurrency(vatCalc.vat, lang)}</span>
+   648→            </div>
+   649→            <div className="flex items-center justify-between text-base font-bold border-t pt-2">
+   650→              <span>{t('الإجمالي', 'Total', lang)}</span>
+   651→              <span className="text-emerald-700">{formatCurrency(total, lang)}</span>
+   652→            </div>
+   653→
+   654→            {/* المدفوعات المطبّقة */}
+   655→            {payments.length > 0 && (
+   656→              <div className="bg-white rounded-md border p-2 space-y-1">
+   657→                <div className="text-[11px] font-semibold text-muted-foreground">
+   658→                  {t('المدفوعات المطبّقة', 'Applied Payments', lang)}:
+   659→                </div>
+   660→                {payments.map((p, i) => {
+   661→                  const m = PAYMENT_METHODS.find(m => m.key === p.method);
+   662→                  return (
+   663→                    <div key={i} className="flex items-center justify-between text-xs">
+   664→                      <span className="flex items-center gap-1">
+   665→                        {m && <m.Icon className="size-3" />}
+   666→                        {m ? (lang === 'ar' ? m.ar : m.en) : p.method}
+   667→                      </span>
+   668→                      <span className="flex items-center gap-1">
+   669→                        <span className="font-medium">{formatCurrency(p.amount, lang)}</span>
+   670→                        <Button
+   671→                          variant="ghost" size="icon"
+   672→                          className="size-5 text-destructive"
+   673→                          onClick={() => removePayment(i)}
+   674→                        >
+   675→                          <X className="size-3" />
+   676→                        </Button>
+   677→                      </span>
+   678→                    </div>
+   679→                  );
+   680→                })}
+   681→                <div className="flex items-center justify-between text-xs font-semibold border-t pt-1">
+   682→                  <span>{t('المدفوع', 'Paid', lang)}</span>
+   683→                  <span>{formatCurrency(totalPaid, lang)}</span>
+   684→                </div>
+   685→                {change > 0 && (
+   686→                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-700">
+   687→                    <span>{t('الباقي للزبون', 'Change', lang)}</span>
+   688→                    <span>{formatCurrency(change, lang)}</span>
+   689→                  </div>
+   690→                )}
+   691→              </div>
+   692→            )}
+   693→
+   694→            {/* المبلغ المستلم + طرق الدفع */}
+   695→            <div className="grid grid-cols-2 gap-2">
+   696→              <Input
+   697→                type="number" min="0" step="0.01"
+   698→                value={cashReceived}
+   699→                onChange={e => setCashReceived(e.target.value)}
+   700→                placeholder={t('المبلغ المستلم', 'Amount received', lang)}
+   701→                className="h-9"
+   702→              />
+   703→              <Button
+   704→                onClick={() => addPayment('CASH')}
+   705→                className="h-9 bg-emerald-600 hover:bg-emerald-700 gap-1"
+   706→              >
+   707→                <Banknote className="size-4" /> {t('نقداً', 'Cash', lang)}
+   708→              </Button>
+   709→            </div>
+   710→            <div className="grid grid-cols-3 gap-2">
+   711→              <Button
+   712→                variant="outline"
+   713→                onClick={() => {
+   714→                  // بطاقة: المبلغ المتبقي
+   715→                  const remaining = +(total - totalPaid).toFixed(2);
+   716→                  if (remaining > 0) addPayment('CARD', remaining);
+   717→                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+   718→                }}
+   719→                className="h-9 gap-1 text-xs"
+   720→              >
+   721→                <CreditCard className="size-4" /> {t('بطاقة', 'Card', lang)}
+   722→              </Button>
+   723→              <Button
+   724→                variant="outline"
+   725→                onClick={() => {
+   726→                  const remaining = +(total - totalPaid).toFixed(2);
+   727→                  if (remaining > 0) addPayment('WALLET', remaining);
+   728→                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+   729→                }}
+   730→                className="h-9 gap-1 text-xs"
+   731→              >
+   732→                <Wallet className="size-4" /> {t('محفظة', 'Wallet', lang)}
+   733→              </Button>
+   734→              <Button
+   735→                variant="outline"
+   736→                onClick={() => {
+   737→                  const remaining = +(total - totalPaid).toFixed(2);
+   738→                  if (remaining > 0) addPayment('CREDIT', remaining);
+   739→                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+   740→                }}
+   741→                className="h-9 gap-1 text-xs"
+   742→              >
+   743→                <Clock className="size-4" /> {t('آجل', 'Credit', lang)}
+   744→              </Button>
+   745→            </div>
+   746→
+   747→            {/* أزرار الإجراءات */}
+   748→            <div className="grid grid-cols-2 gap-2 pt-1">
+   749→              <Button
+   750→                onClick={printOrder}
+   751→                variant="outline"
+   752→                className="h-10 gap-1.5"
+   753→                disabled={!cart.length}
+   754→              >
+   755→                <Printer className="size-4" />
+   756→                {t('طباعة الطلب', 'Print Order', lang)}
+   757→              </Button>
+   758→              <Button
+   759→                onClick={handlePrintReceipt}
+   760→                className="h-10 gap-1.5 bg-amber-600 hover:bg-amber-700"
+   761→                disabled={!cart.length || !isFullyPaid}
+   762→              >
+   763→                <ReceiptIcon className="size-4" />
+   764→                {t('طباعة الإيصال', 'Print Receipt', lang)}
+   765→              </Button>
+   766→              <Button
+   767→                onClick={holdInvoice}
+   768→                variant="outline"
+   769→                className="h-9 gap-1.5 text-xs"
+   770→                disabled={!cart.length}
+   771→              >
+   772→                <Pause className="size-3.5" />
+   773→                {t('تعليق', 'Hold', lang)}
+   774→              </Button>
+   775→              <Button
+   776→                onClick={() => cart.length ? setConfirmCancelOpen(true) : exitToTables()}
+   777→                variant="outline"
+   778→                className="h-9 gap-1.5 text-xs text-destructive hover:text-destructive"
+   779→              >
+   780→                <Trash2 className="size-3.5" />
+   781→                {t('إلغاء', 'Cancel', lang)}
+   782→              </Button>
+   783→            </div>
+   784→          </div>
+   785→        </div>
+   786→      </div>
+   787→
+   788→      {/* معاينة الإيصال الحراري */}
+   789→      <ReceiptPrintDialog
+   790→        open={!!printReceipt}
+   791→        onOpenChange={(o) => {
+   792→          setPrintReceipt(o ? printReceipt : null);
+   793→          if (!o) {
+   794→            // عند إغلاق المعاينة — تحرير الطاولة والعودة لشاشة الطاولات
+   795→            if (activeTable?.tableId) {
+   796→              try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+   797→            }
+   798→            clearActiveTable();
+   799→            setActiveItem('tables');
+   800→          }
+   801→        }}
+   802→        invoice={printReceipt}
+   803→      />
+   804→
+   805→      {/* تأكيد الإلغاء */}
+   806→      <Dialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+   807→        <DialogContent className="max-w-sm">
+   808→          <DialogHeader>
+   809→            <DialogTitle>{t('تأكيد الإلغاء', 'Confirm Cancel', lang)}</DialogTitle>
+   810→          </DialogHeader>
+   811→          <p className="text-sm text-muted-foreground">
+   812→            {t(
+   813→              'سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟',
+   814→              'The cart will be cleared and the table freed. Are you sure?',
+   815→              lang
+   816→            )}
+   817→          </p>
+   818→          <DialogFooter className="gap-2">
+   819→            <Button variant="outline" onClick={() => setConfirmCancelOpen(false)}>
+   820→              {t('تراجع', 'Back', lang)}
+   821→            </Button>
+   822→            <Button variant="destructive" onClick={cancelInvoice}>
+   823→              {t('نعم، ألغِ', 'Yes, Cancel', lang)}
+   824→            </Button>
+   825→          </DialogFooter>
+   826→        </DialogContent>
+   827→      </Dialog>
+   828→    </div>
+   829→  );
+   830→}
+   831→

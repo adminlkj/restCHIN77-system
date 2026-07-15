@@ -1,0 +1,798 @@
+     1→// ═══════════════════════════════════════════════════════════════════════
+     2→// Mock Backend — طبقة تخزين محلية تُمكّن النظام من العمل بالكامل
+     3→// دون الحاجة لخادم Base44. تُخزّن كل البيانات في localStorage.
+     4→//
+     5→// عند توفر خادم حقيقي لاحقاً، يكفي حذف هذا الملف واستعادة base44Client.js
+     6→// الأصلي. كل الـ APIs متطابقة.
+     7→// ═══════════════════════════════════════════════════════════════════════
+     8→
+     9→const TOKEN_KEY = 'binaa-auth-token';
+    10→const DB_KEY = 'restaurant-mock-db';
+    11→const SESSION_KEY = 'restaurant-mock-session';
+    12→
+    13→// ─── قاعدة البيانات المحلية ───────────────────────────────────────────────
+    14→function loadDB() {
+    15→  try {
+    16→    const raw = localStorage.getItem(DB_KEY);
+    17→    if (raw) return JSON.parse(raw);
+    18→  } catch { /* ignore */ }
+    19→  // قاعدة بيانات أولية فارغة — تُملأ بالبيانات الأولية في seed()
+    20→  return { users: [], entities: {}, registrationRequests: [] };
+    21→}
+    22→
+    23→function saveDB(db) {
+    24→  try {
+    25→    localStorage.setItem(DB_KEY, JSON.stringify(db));
+    26→  } catch { /* ignore */ }
+    27→}
+    28→
+    29→// ─── مستخدم مالك النظام الافتراضي ──────────────────────────────────────────
+    30→const OWNER_USER = {
+    31→  id: 'user-owner-001',
+    32→  email: 'fysl71443@gmail.com',
+    33→  full_name: 'فيصل المالك',
+    34→  role: 'admin',
+    35→  appRole: 'OWNER',
+    36→  isActive: true,
+    37→  allowedModules: null, // '*' — صلاحية مطلقة
+    38→  modulePermissions: null,
+    39→  created_date: new Date().toISOString(),
+    40→};
+    41→
+    42→// ─── المصادقة (Auth) ───────────────────────────────────────────────────────
+    43→function authLogin(email, password) {
+    44→  // كلمات المرور المقبولة للمالك
+    45→  const ownerPasswords = ['faisal.11223344', 'admin', '123456'];
+    46→  const isOwner = email.toLowerCase() === OWNER_USER.email;
+    47→  if (isOwner && ownerPasswords.includes(password)) {
+    48→    const token = 'mock-token-' + Date.now();
+    49→    localStorage.setItem(TOKEN_KEY, token);
+    50→    localStorage.removeItem('restaurant-logged-out'); // امسح علم الخروج
+    51→    const db = loadDB();
+    52→    // تأكد أن المالك موجود في قاعدة البيانات
+    53→    if (!db.users.find(u => u.email === OWNER_USER.email)) {
+    54→      db.users.push({ ...OWNER_USER });
+    55→      saveDB(db);
+    56→    }
+    57→    // ابدأ جلسة
+    58→    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: OWNER_USER.id, token }));
+    59→    return { access_token: token, user: { ...OWNER_USER } };
+    60→  }
+    61→  // أي مستخدم آخر مسجّل — أي كلمة مرور تعمل في وضع المعاينة
+    62→  const db = loadDB();
+    63→  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
+    64→  if (user) {
+    65→    const token = 'mock-token-' + Date.now() + '-' + user.id;
+    66→    localStorage.setItem(TOKEN_KEY, token);
+    67→    localStorage.removeItem('restaurant-logged-out'); // امسح علم الخروج
+    68→    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, token }));
+    69→    return { access_token: token, user: { ...user } };
+    70→  }
+    71→  const err = new Error('بيانات الدخول غير صحيحة');
+    72→  err.status = 401;
+    73→  throw err;
+    74→}
+    75→
+    76→function authMe() {
+    77→  // إن سجّل المستخدم خروجه صراحةً، لا يُعاد تسجيل دخوله تلقائياً.
+    78→  if (localStorage.getItem('restaurant-logged-out') === 'true') {
+    79→    const err = new Error('Authentication required');
+    80→    err.status = 401;
+    81→    throw err;
+    82→  }
+    83→  const sessionRaw = localStorage.getItem(SESSION_KEY);
+    84→  if (!sessionRaw) {
+    85→    // تلقائياً سجّل دخول المالك لتسهيل المعاينة (المرة الأولى فقط)
+    86→    const db = loadDB();
+    87→    if (!db.users.find(u => u.email === OWNER_USER.email)) {
+    88→      db.users.push({ ...OWNER_USER });
+    89→      saveDB(db);
+    90→    }
+    91→    const token = 'mock-token-auto-' + Date.now();
+    92→    localStorage.setItem(TOKEN_KEY, token);
+    93→    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: OWNER_USER.id, token }));
+    94→    return { ...OWNER_USER };
+    95→  }
+    96→  try {
+    97→    const session = JSON.parse(sessionRaw);
+    98→    const db = loadDB();
+    99→    const user = db.users.find(u => u.id === session.userId);
+   100→    if (user) return { ...user };
+   101→  } catch { /* ignore */ }
+   102→  // fallback: المالك
+   103→  return { ...OWNER_USER };
+   104→}
+   105→
+   106→function authLogout() {
+   107→  localStorage.removeItem(TOKEN_KEY);
+   108→  localStorage.removeItem(SESSION_KEY);
+   109→  localStorage.setItem('restaurant-logged-out', 'true');
+   110→}
+   111→
+   112→// ─── عمليات الكيانات (CRUD) ───────────────────────────────────────────────
+   113→function getCollection(db, entityName) {
+   114→  if (!db.entities[entityName]) db.entities[entityName] = [];
+   115→  return db.entities[entityName];
+   116→}
+   117→
+   118→// توليد معرّف فريد
+   119→function genId(entityName) {
+   120→  return `${entityName.toLowerCase()}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+   121→}
+   122→
+   123→// فرز نتائج حسب الحقل: -field = تنازلي، field = تصاعدي
+   124→function sortBy(items, sort) {
+   125→  if (!sort) return items;
+   126→  const desc = sort.startsWith('-');
+   127→  const field = desc ? sort.slice(1) : sort;
+   128→  return [...items].sort((a, b) => {
+   129→    let av = a[field], bv = b[field];
+   130→    if (av == null) av = '';
+   131→    if (bv == null) bv = '';
+   132→    if (typeof av === 'number' && typeof bv === 'number') {
+   133→      return desc ? bv - av : av - bv;
+   134→    }
+   135→    av = String(av); bv = String(bv);
+   136→    return desc ? bv.localeCompare(av) : av.localeCompare(bv);
+   137→  });
+   138→}
+   139→
+   140→// مطابقة سجل بالاستعلام (query) — يدعم المساواة البسيطة
+   141→function matchesQuery(item, query) {
+   142→  if (!query || typeof query !== 'object') return true;
+   143→  for (const [key, value] of Object.entries(query)) {
+   144→    if (item[key] !== value) return false;
+   145→  }
+   146→  return true;
+   147→}
+   148→
+   149→function entityList(entityName, sort = '-created_date', limit = 500) {
+   150→  const db = loadDB();
+   151→  const items = getCollection(db, entityName);
+   152→  const sorted = sortBy(items, sort);
+   153→  return sorted.slice(0, limit);
+   154→}
+   155→
+   156→function entityFilter(entityName, query = {}, sort = '-created_date', limit = 500) {
+   157→  const db = loadDB();
+   158→  const items = getCollection(db, entityName);
+   159→  const filtered = items.filter(i => matchesQuery(i, query));
+   160→  const sorted = sortBy(filtered, sort);
+   161→  return sorted.slice(0, limit);
+   162→}
+   163→
+   164→function entityGet(entityName, id) {
+   165→  const db = loadDB();
+   166→  const items = getCollection(db, entityName);
+   167→  const item = items.find(i => i.id === id);
+   168→  if (!item) {
+   169→    const err = new Error('السجل غير موجود');
+   170→    err.status = 404;
+   171→    throw err;
+   172→  }
+   173→  return { ...item };
+   174→}
+   175→
+   176→function entityCreate(entityName, data) {
+   177→  const db = loadDB();
+   178→  const items = getCollection(db, entityName);
+   179→  const now = new Date().toISOString();
+   180→  const newItem = {
+   181→    id: genId(entityName),
+   182→    ...data,
+   183→    created_date: data.created_date || now,
+   184→    updated_date: now,
+   185→    _owner_id: OWNER_USER.id,
+   186→  };
+   187→  items.push(newItem);
+   188→  saveDB(db);
+   189→  return { ...newItem };
+   190→}
+   191→
+   192→function entityBulkCreate(entityName, itemsData) {
+   193→  const db = loadDB();
+   194→  const items = getCollection(db, entityName);
+   195→  const now = new Date().toISOString();
+   196→  const created = itemsData.map(d => {
+   197→    const newItem = {
+   198→      id: genId(entityName),
+   199→      ...d,
+   200→      created_date: d.created_date || now,
+   201→      updated_date: now,
+   202→      _owner_id: OWNER_USER.id,
+   203→    };
+   204→    items.push(newItem);
+   205→    return { ...newItem };
+   206→  });
+   207→  saveDB(db);
+   208→  return created;
+   209→}
+   210→
+   211→function entityUpdate(entityName, id, updates) {
+   212→  const db = loadDB();
+   213→  const items = getCollection(db, entityName);
+   214→  const idx = items.findIndex(i => i.id === id);
+   215→  if (idx === -1) {
+   216→    const err = new Error('السجل غير موجود');
+   217→    err.status = 404;
+   218→    throw err;
+   219→  }
+   220→  items[idx] = {
+   221→    ...items[idx],
+   222→    ...updates,
+   223→    updated_date: new Date().toISOString(),
+   224→  };
+   225→  saveDB(db);
+   226→  return { ...items[idx] };
+   227→}
+   228→
+   229→function entityBulkUpdate(entityName, itemsData) {
+   230→  const db = loadDB();
+   231→  const items = getCollection(db, entityName);
+   232→  const updated = itemsData.map(d => {
+   233→    const idx = items.findIndex(i => i.id === d.id);
+   234→    if (idx !== -1) {
+   235→      items[idx] = { ...items[idx], ...d, updated_date: new Date().toISOString() };
+   236→      return { ...items[idx] };
+   237→    }
+   238→    return null;
+   239→  }).filter(Boolean);
+   240→  saveDB(db);
+   241→  return updated;
+   242→}
+   243→
+   244→function entityUpdateMany(entityName, query, update) {
+   245→  const db = loadDB();
+   246→  const items = getCollection(db, entityName);
+   247→  let count = 0;
+   248→  for (let i = 0; i < items.length; i++) {
+   249→    if (matchesQuery(items[i], query)) {
+   250→      items[i] = { ...items[i], ...update, updated_date: new Date().toISOString() };
+   251→      count++;
+   252→    }
+   253→  }
+   254→  saveDB(db);
+   255→  return { modifiedCount: count };
+   256→}
+   257→
+   258→function entityDelete(entityName, id) {
+   259→  const db = loadDB();
+   260→  const items = getCollection(db, entityName);
+   261→  const idx = items.findIndex(i => i.id === id);
+   262→  if (idx === -1) {
+   263→    const err = new Error('السجل غير موجود');
+   264→    err.status = 404;
+   265→    throw err;
+   266→  }
+   267→  items.splice(idx, 1);
+   268→  saveDB(db);
+   269→  return { success: true };
+   270→}
+   271→
+   272→function entityDeleteMany(entityName, query) {
+   273→  const db = loadDB();
+   274→  let items = getCollection(db, entityName);
+   275→  const before = items.length;
+   276→  items = items.filter(i => !matchesQuery(i, query));
+   277→  const after = items.length;
+   278→  db.entities[entityName] = items;
+   279→  saveDB(db);
+   280→  return { deletedCount: before - after };
+   281→}
+   282→
+   283→function entitySchema(entityName) {
+   284→  return { entity: entityName, fields: {} };
+   285→}
+   286→
+   287→function entityClient(entityName) {
+   288→  return {
+   289→    list: async (sort, limit) => entityList(entityName, sort, limit),
+   290→    filter: async (query, sort, limit) => entityFilter(entityName, query, sort, limit),
+   291→    get: async (id) => entityGet(entityName, id),
+   292→    create: async (data) => entityCreate(entityName, data),
+   293→    bulkCreate: async (items) => entityBulkCreate(entityName, items),
+   294→    update: async (id, data) => entityUpdate(entityName, id, data),
+   295→    bulkUpdate: async (items) => entityBulkUpdate(entityName, items),
+   296→    updateMany: async (query, update) => entityUpdateMany(entityName, query, update),
+   297→    delete: async (id) => entityDelete(entityName, id),
+   298→    deleteMany: async (query) => entityDeleteMany(entityName, query),
+   299→    schema: async () => entitySchema(entityName),
+   300→    subscribe: () => () => {},
+   301→  };
+   302→}
+   303→
+   304→// ─── استدعاء الدوال (Functions) ────────────────────────────────────────────
+   305→// بعض الدوال المحاسبية تُستدعى عبر base44.functions.invoke. نحاكيها هنا.
+   306→function functionsInvoke(name, payload = {}) {
+   307→  // postOperation — ترحيل القيود. نُرجع نجاحاً فقط (المحرك الحقيقي موجود في lib/).
+   308→  if (name === 'postOperation' || name === 'post_operation') {
+   309→    return { data: { success: true, message: 'تم الترحيل بنجاح (mock)' }, status: 200 };
+   310→  }
+   311→  if (name === 'assetDepreciation' || name === 'asset_depreciation') {
+   312→    return { data: { success: true, depreciated: 0 }, status: 200 };
+   313→  }
+   314→  // افتراضي
+   315→  return { data: { success: true, name, payload }, status: 200 };
+   316→}
+   317→
+   318→// ─── إدارة المستخدمين (Users) ──────────────────────────────────────────────
+   319→function usersInvite(email, role = 'user', appRole = 'VIEWER') {
+   320→  const db = loadDB();
+   321→  const existing = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+   322→  if (existing) {
+   323→    const err = new Error('المستخدم موجود مسبقاً');
+   324→    err.status = 400;
+   325→    throw err;
+   326→  }
+   327→  const newUser = {
+   328→    id: genId('user'),
+   329→    email,
+   330→    full_name: email.split('@')[0],
+   331→    role,
+   332→    appRole,
+   333→    isActive: false, // يحتاج تفعيل
+   334→    allowedModules: null,
+   335→    modulePermissions: null,
+   336→    created_date: new Date().toISOString(),
+   337→  };
+   338→  db.users.push(newUser);
+   339→  saveDB(db);
+   340→  return { ...newUser };
+   341→}
+   342→
+   343→function listRegistrationRequests() {
+   344→  const db = loadDB();
+   345→  return db.registrationRequests || [];
+   346→}
+   347→
+   348→function approveRegistrationRequest(data) {
+   349→  const db = loadDB();
+   350→  const req = (db.registrationRequests || []).find(r => r.id === data.id);
+   351→  if (!req) {
+   352→    const err = new Error('الطلب غير موجود');
+   353→    err.status = 404;
+   354→    throw err;
+   355→  }
+   356→  // أنشئ مستخدماً من الطلب
+   357→  const newUser = {
+   358→    id: genId('user'),
+   359→    email: req.email,
+   360→    full_name: req.fullName || req.email.split('@')[0],
+   361→    role: 'user',
+   362→    appRole: data.appRole || 'VIEWER',
+   363→    isActive: true,
+   364→    allowedModules: data.allowedModules || null,
+   365→    modulePermissions: null,
+   366→    created_date: new Date().toISOString(),
+   367→  };
+   368→  db.users.push(newUser);
+   369→  db.registrationRequests = (db.registrationRequests || []).filter(r => r.id !== data.id);
+   370→  saveDB(db);
+   371→  return { ...newUser };
+   372→}
+   373→
+   374→function rejectRegistrationRequest(id) {
+   375→  const db = loadDB();
+   376→  db.registrationRequests = (db.registrationRequests || []).filter(r => r.id !== id);
+   377→  saveDB(db);
+   378→  return { success: true };
+   379→}
+   380→
+   381→// ─── تحميل ملف (Upload) ────────────────────────────────────────────────────
+   382→async function uploadFile({ file } = {}) {
+   383→  if (!file) {
+   384→    const err = new Error('No file provided');
+   385→    err.status = 400;
+   386→    throw err;
+   387→  }
+   388→  // حوّل الملف إلى data URL محلي
+   389→  return new Promise((resolve, reject) => {
+   390→    const reader = new FileReader();
+   391→    reader.onload = () => resolve({ file_url: reader.result });
+   392→    reader.onerror = () => reject(new Error('فشل قراءة الملف'));
+   393→    reader.readAsDataURL(file);
+   394→  });
+   395→}
+   396→
+   397→// ═══════════════════════════════════════════════════════════════════════
+   398→// الواجهة العمومية — متطابقة مع base44Client الأصلي
+   399→// ═══════════════════════════════════════════════════════════════════════
+   400→export const base44 = {
+   401→  auth: {
+   402→    async loginViaEmailPassword(email, password) {
+   403→      return authLogin(email, password);
+   404→    },
+   405→    async register(data) {
+   406→      const db = loadDB();
+   407→      // أنشئ طلب تسجيل بانتظار الموافقة
+   408→      const req = {
+   409→        id: genId('reg'),
+   410→        email: data.email,
+   411→        fullName: data.full_name,
+   412→        status: 'pending',
+   413→        created_date: new Date().toISOString(),
+   414→      };
+   415→      if (!db.registrationRequests) db.registrationRequests = [];
+   416→      db.registrationRequests.push(req);
+   417→      saveDB(db);
+   418→      return { success: true, message: 'تم إرسال طلب التسجيل' };
+   419→    },
+   420→    async verifyOtp(data) {
+   421→      // لا حاجة لـ OTP في mock
+   422→      return { success: true };
+   423→    },
+   424→    resendOtp: async (email) => ({ success: true }),
+   425→    setToken: (token) => localStorage.setItem(TOKEN_KEY, token),
+   426→    me: async () => authMe(),
+   427→    updateMe: async (data) => {
+   428→      const me = authMe();
+   429→      const db = loadDB();
+   430→      const idx = db.users.findIndex(u => u.id === me.id);
+   431→      if (idx !== -1) {
+   432→        db.users[idx] = { ...db.users[idx], ...data };
+   433→        saveDB(db);
+   434→        return { ...db.users[idx] };
+   435→      }
+   436→      return me;
+   437→    },
+   438→    isAuthenticated: async () => Boolean(localStorage.getItem(TOKEN_KEY) || localStorage.getItem(SESSION_KEY)),
+   439→    logout: () => authLogout(),
+   440→    redirectToLogin: () => { window.location.href = '/login'; },
+   441→    loginWithProvider: async () => {
+   442→      // في mock، ادخل مباشرة كمالك
+   443→      return authLogin(OWNER_USER.email, 'faisal.11223344');
+   444→    },
+   445→    resetPasswordRequest: async (email) => ({ success: true }),
+   446→    resetPassword: async (data) => ({ success: true }),
+   447→  },
+   448→  entities: new Proxy({}, { get: (_, entityName) => entityClient(entityName) }),
+   449→  users: {
+   450→    inviteUser: usersInvite,
+   451→    listRegistrationRequests: async () => listRegistrationRequests(),
+   452→    approveRegistrationRequest: async (data) => approveRegistrationRequest(data),
+   453→    rejectRegistrationRequest: async (id) => rejectRegistrationRequest(id),
+   454→  },
+   455→  functions: {
+   456→    invoke: async (name, payload = {}) => functionsInvoke(name, payload),
+   457→  },
+   458→  analytics: { track: async () => ({ success: true }) },
+   459→  integrations: {
+   460→    Core: {
+   461→      async UploadFile(opts) { return uploadFile(opts); },
+   462→    },
+   463→  },
+   464→};
+   465→
+   466→// ═══════════════════════════════════════════════════════════════════════
+   467→// البيانات الأولية (Seed) — تُنشأ مرة واحدة عند أول تشغيل
+   468→// ═══════════════════════════════════════════════════════════════════════
+   469→export function seedDatabase() {
+   470→  const db = loadDB();
+   471→  if (db._seeded) return; // سبق إعدادها
+   472→
+   473→  // 1) المالك
+   474→  if (!db.users.find(u => u.email === OWNER_USER.email)) {
+   475→    db.users.push({ ...OWNER_USER });
+   476→  }
+   477→
+   478→  // 2) مستخدمون إضافيون تجريبيون
+   479→  const extraUsers = [
+   480→    { id: 'user-cashier-001', email: 'cashier@restaurant.sa', full_name: 'كاشير الفرع', role: 'user', appRole: 'CASHIER', isActive: true, allowedModules: null, modulePermissions: null, created_date: new Date().toISOString() },
+   481→    { id: 'user-manager-001', email: 'manager@restaurant.sa', full_name: 'مدير المطعم', role: 'user', appRole: 'RESTAURANT_MANAGER', isActive: true, allowedModules: null, modulePermissions: null, created_date: new Date().toISOString() },
+   482→    { id: 'user-accountant-001', email: 'accountant@restaurant.sa', full_name: 'محاسب المطعم', role: 'user', appRole: 'ACCOUNTANT', isActive: true, allowedModules: null, modulePermissions: null, created_date: new Date().toISOString() },
+   483→  ];
+   484→  for (const u of extraUsers) {
+   485→    if (!db.users.find(x => x.email === u.email)) db.users.push(u);
+   486→  }
+   487→
+   488→  // 2b) انسخ المستخدمين إلى كيان User (Entity) لتظهر في شاشة إدارة المستخدمين
+   489→  if (!db.entities.User) db.entities.User = [];
+   490→  const allUsers = [...db.users];
+   491→  for (const u of allUsers) {
+   492→    if (!db.entities.User.find(x => x.id === u.id)) {
+   493→      db.entities.User.push({ ...u });
+   494→    }
+   495→  }
+   496→
+   497→  // 3) فرع رئيسي (Project) + إعداداته + طاولاته
+   498→  const branchId = 'branch-main-001';
+   499→  if (!db.entities.Project) db.entities.Project = [];
+   500→  if (!db.entities.Project.find(p => p.id === branchId)) {
+   501→    db.entities.Project.push({
+   502→      id: branchId,
+   503→      code: 'BR-0001',
+   504→      name: 'الفرع الرئيسي - النخيل',
+   505→      nameAr: 'الفرع الرئيسي - النخيل',
+   506→      clientId: '',
+   507→      clientName: '',
+   508→      branchId: '',
+   509→      branchName: 'الفرع الرئيسي',
+   510→      projectManager: 'مدير الفرع',
+   511→      costCenter: '',
+   512→      location: 'حي النخيل - الرياض',
+   513→      startDate: new Date().toISOString().slice(0, 10),
+   514→      endDate: '',
+   515→      status: 'ACTIVE',
+   516→      projectType: 'CONSTRUCTION',
+   517→      progressPercent: 100,
+   518→      contractValue: 0,
+   519→      description: 'الفرع الرئيسي للمطعم',
+   520→      totalCosts: 0,
+   521→      totalRevenue: 0,
+   522→      created_date: new Date().toISOString(),
+   523→      updated_date: new Date().toISOString(),
+   524→    });
+   525→  }
+   526→
+   527→  // 4) إعدادات الشركة العامة (CompanySettings)
+   528→  if (!db.entities.CompanySettings) db.entities.CompanySettings = [];
+   529→  if (db.entities.CompanySettings.length === 0) {
+   530→    db.entities.CompanySettings.push({
+   531→      id: 'settings-001',
+   532→      companyName: 'مطعم الذواقة',
+   533→      companyNameEn: 'Gourmet Restaurant',
+   534→      vatNumber: '300000000000003',
+   535→      crNumber: '1010000000',
+   536→      address: 'حي النخيل',
+   537→      city: 'الرياض',
+   538→      phone: '0112345678',
+   539→      email: 'info@gourmet.sa',
+   540→      website: 'www.gourmet.sa',
+   541→      logoUrl: '',
+   542→      headerImageUrl: '',
+   543→      footerImageUrl: '',
+   544→      template: 'MODERN',
+   545→      primaryColor: '#d97706',
+   546→      accentColor: '#1f2d3d',
+   547→      bankName: 'البنك الأهلي',
+   548→      bankAccountName: 'مطعم الذواقة',
+   549→      iban: 'SA00 0000 0000 0000 0000',
+   550→      bankAccountNumber: '1234567890',
+   551→      bankBranch: 'الرياض',
+   552→      swiftCode: 'NCBKSAJE',
+   553→      terms: 'شكراً لتعاملكم معنا',
+   554→      showQr: true,
+   555→      created_date: new Date().toISOString(),
+   556→      updated_date: new Date().toISOString(),
+   557→    });
+   558→  }
+   559→
+   560→  // 5) زبائن تجريبيون — مع نسبة خصم لكل زبون مسجّل (الزبن النقدي بلا خصم)
+   561→  if (!db.entities.Client) db.entities.Client = [];
+   562→  const clients = [
+   563→    { name: 'زبون نقدي', phone: '', taxNumber: '', isActive: true, code: 'CL-0001', discountPercentage: 0, isCash: true },
+   564→    { name: 'محمد العتيبي', phone: '0501234567', taxNumber: '', isActive: true, code: 'CL-0002', discountPercentage: 10, isCash: false },
+   565→    { name: 'شركة الأمل', phone: '0119876543', taxNumber: '300012345600003', isActive: true, code: 'CL-0003', discountPercentage: 15, isCash: false },
+   566→  ];
+   567→  for (const c of clients) {
+   568→    if (!db.entities.Client.find(x => x.name === c.name)) {
+   569→      db.entities.Client.push({
+   570→        id: genId('Client'),
+   571→        ...c,
+   572→        created_date: new Date().toISOString(),
+   573→        updated_date: new Date().toISOString(),
+   574→      });
+   575→    }
+   576→  }
+   577→
+   578→  // 5b) منصات التوصيل (DeliveryPlatform) — هنقر، كيتا، جاهز، إلخ
+   579→  if (!db.entities.DeliveryPlatform) db.entities.DeliveryPlatform = [];
+   580→  if (db.entities.DeliveryPlatform.length === 0) {
+   581→    const platforms = [
+   582→      { code: 'PL-001', name: 'هنقرستيشن', nameEn: 'HungerStation', commissionRate: 15, phone: '920000001', isActive: true, notes: 'عمولة 15% على كل طلب', id: 'platform-hungerstation' },
+   583→      { code: 'PL-002', name: 'كيتا', nameEn: 'Keta', commissionRate: 12, phone: '920000002', isActive: true, notes: 'عمولة 12%', id: 'platform-keta' },
+   584→      { code: 'PL-003', name: 'جاهز', nameEn: 'Jahez', commissionRate: 15, phone: '920000003', isActive: true, notes: 'عمولة 15%', id: 'platform-jahez' },
+   585→      { code: 'PL-004', name: 'شفرة', nameEn: 'Shfar', commissionRate: 10, phone: '920000004', isActive: true, notes: 'عمولة 10%', id: 'platform-shfar' },
+   586→      { code: 'PL-005', name: 'توصيل مباشر', nameEn: 'Direct Delivery', commissionRate: 0, phone: '', isActive: true, notes: 'توصيل المطعم الخاص', id: 'platform-direct' },
+   587→    ];
+   588→    for (const p of platforms) {
+   589→      db.entities.DeliveryPlatform.push({
+   590→        ...p,
+   591→        created_date: new Date().toISOString(),
+   592→        updated_date: new Date().toISOString(),
+   593→      });
+   594→    }
+   595→  }
+   596→
+   597→  // 6) أصناف قائمة الطعام (InventoryItem)
+   598→  if (!db.entities.InventoryItem) db.entities.InventoryItem = [];
+   599→  const menuItems = [
+   600→    // أطباق رئيسية
+   601→    { code: 'M-001', name: 'برجر لحم أنجوس', nameEn: 'Angus Beef Burger', category: 'MATERIAL', unit: 'قطعة', quantity: 100, reorderLevel: 10, unitCost: 35, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: 'برجر فاخر مع جبنة شيدر' },
+   602→    { code: 'M-002', name: 'برجر دجاج مقرمش', nameEn: 'Crispy Chicken Burger', category: 'MATERIAL', unit: 'قطعة', quantity: 80, reorderLevel: 10, unitCost: 30, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   603→    { code: 'M-003', name: 'بيتزا مارجريتا', nameEn: 'Margherita Pizza', category: 'MATERIAL', unit: 'قطعة', quantity: 50, reorderLevel: 5, unitCost: 45, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   604→    { code: 'M-004', name: 'بيتزا بيبروني', nameEn: 'Pepperoni Pizza', category: 'MATERIAL', unit: 'قطعة', quantity: 50, reorderLevel: 5, unitCost: 50, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   605→    { code: 'M-005', name: 'شاورما دجاج', nameEn: 'Chicken Shawarma', category: 'MATERIAL', unit: 'قطعة', quantity: 200, reorderLevel: 20, unitCost: 15, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   606→    { code: 'M-006', name: 'شاورما لحم', nameEn: 'Beef Shawarma', category: 'MATERIAL', unit: 'قطعة', quantity: 200, reorderLevel: 20, unitCost: 18, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   607→    { code: 'M-007', name: 'ستيك لحم مشوي', nameEn: 'Grilled Beef Steak', category: 'MATERIAL', unit: 'قطعة', quantity: 30, reorderLevel: 5, unitCost: 85, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   608→    { code: 'M-008', name: 'باستا ألفريدو', nameEn: 'Pasta Alfredo', category: 'MATERIAL', unit: 'طبق', quantity: 40, reorderLevel: 5, unitCost: 40, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   609→    // مقبلات
+   610→    { code: 'S-001', name: 'بطاطس مقلية', nameEn: 'French Fries', category: 'SPARE_PART', unit: 'طبق', quantity: 150, reorderLevel: 15, unitCost: 15, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   611→    { code: 'S-002', name: 'ناجتس دجاج', nameEn: 'Chicken Nuggets', category: 'SPARE_PART', unit: 'طبق', quantity: 100, reorderLevel: 10, unitCost: 20, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   612→    { code: 'S-003', name: 'حلقات البصل', nameEn: 'Onion Rings', category: 'SPARE_PART', unit: 'طبق', quantity: 80, reorderLevel: 10, unitCost: 18, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   613→    { code: 'S-004', name: 'سلطة سيزر', nameEn: 'Caesar Salad', category: 'SPARE_PART', unit: 'طبق', quantity: 50, reorderLevel: 5, unitCost: 25, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   614→    // مشروبات
+   615→    { code: 'B-001', name: 'بيبسي', nameEn: 'Pepsi', category: 'CONSUMABLE', unit: 'علبة', quantity: 200, reorderLevel: 24, unitCost: 8, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   616→    { code: 'B-002', name: 'كوكا كولا', nameEn: 'Coca Cola', category: 'CONSUMABLE', unit: 'علبة', quantity: 200, reorderLevel: 24, unitCost: 8, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   617→    { code: 'B-003', name: 'مياه معدنية', nameEn: 'Water', category: 'CONSUMABLE', unit: 'قارورة', quantity: 300, reorderLevel: 48, unitCost: 5, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   618→    { code: 'B-004', name: 'عصير برتقال طازج', nameEn: 'Fresh Orange Juice', category: 'CONSUMABLE', unit: 'كوب', quantity: 60, reorderLevel: 10, unitCost: 15, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   619→    { code: 'B-005', name: 'قهوة عربية', nameEn: 'Arabic Coffee', category: 'CONSUMABLE', unit: 'فنجان', quantity: 200, reorderLevel: 20, unitCost: 12, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   620→    { code: 'B-006', name: 'شاي', nameEn: 'Tea', category: 'CONSUMABLE', unit: 'كوب', quantity: 300, reorderLevel: 30, unitCost: 5, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   621→    // حلويات
+   622→    { code: 'D-001', name: 'تشيز كيك', nameEn: 'Cheesecake', category: 'TOOL', unit: 'قطعة', quantity: 40, reorderLevel: 5, unitCost: 28, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   623→    { code: 'D-002', name: 'براوني', nameEn: 'Brownie', category: 'TOOL', unit: 'قطعة', quantity: 40, reorderLevel: 5, unitCost: 22, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   624→    { code: 'D-003', name: 'آيس كريم فانيلا', nameEn: 'Vanilla Ice Cream', category: 'TOOL', unit: 'كوب', quantity: 60, reorderLevel: 10, unitCost: 15, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   625→    { code: 'D-004', name: 'كنافة', nameEn: 'Kunafa', category: 'TOOL', unit: 'قطعة', quantity: 30, reorderLevel: 5, unitCost: 30, warehouseId: '', warehouseName: 'المخزن الرئيسي', location: '', isActive: true, notes: '' },
+   626→  ];
+   627→  for (const m of menuItems) {
+   628→    if (!db.entities.InventoryItem.find(x => x.code === m.code)) {
+   629→      db.entities.InventoryItem.push({
+   630→        id: genId('InventoryItem'),
+   631→        ...m,
+   632→        created_date: new Date().toISOString(),
+   633→        updated_date: new Date().toISOString(),
+   634→      });
+   635→    }
+   636→  }
+   637→
+   638→  // 7) موردون تجريبيون
+   639→  if (!db.entities.Supplier) db.entities.Supplier = [];
+   640→  const suppliers = [
+   641→    { code: 'SUP-001', name: 'مؤسسة الأغذية الذهبية', phone: '0114567890', email: 'sales@goldfood.sa', address: 'الرياض - المنطقة الصناعية', taxNumber: '300011112220003', contactPerson: 'أحمد', isActive: true, notes: 'مورد اللحوم' },
+   642→    { code: 'SUP-002', name: 'شركة المشروبات المتحدة', phone: '0117654321', email: 'info@bev.sa', address: 'جدة', taxNumber: '300022223330003', contactPerson: 'سعد', isActive: true, notes: 'مورد المشروبات' },
+   643→    { code: 'SUP-003', name: 'مخبز الحياة', phone: '0113334444', email: 'lifebakery@mail.sa', address: 'الرياض', taxNumber: '', contactPerson: 'نورة', isActive: true, notes: 'مورد الخبز والحلويات' },
+   644→  ];
+   645→  for (const s of suppliers) {
+   646→    if (!db.entities.Supplier.find(x => x.code === s.code)) {
+   647→      db.entities.Supplier.push({
+   648→        id: genId('Supplier'),
+   649→        ...s,
+   650→        created_date: new Date().toISOString(),
+   651→        updated_date: new Date().toISOString(),
+   652→      });
+   653→    }
+   654→  }
+   655→
+   656→  // 8) مخزن رئيسي
+   657→  if (!db.entities.Warehouse) db.entities.Warehouse = [];
+   658→  if (db.entities.Warehouse.length === 0) {
+   659→    db.entities.Warehouse.push({
+   660→      id: 'wh-main-001',
+   661→      code: 'WH-001',
+   662→      name: 'المخزن الرئيسي',
+   663→      location: 'الفرع الرئيسي - النخيل',
+   664→      branchId: branchId,
+   665→      branchName: 'الفرع الرئيسي',
+   666→      isActive: true,
+   667→      notes: '',
+   668→      created_date: new Date().toISOString(),
+   669→      updated_date: new Date().toISOString(),
+   670→    });
+   671→  }
+   672→
+   673→  // 9) إيصالات تجريبية (SalesInvoice) — إيصالان مدفوعان
+   674→  if (!db.entities.SalesInvoice) db.entities.SalesInvoice = [];
+   675→  if (db.entities.SalesInvoice.length === 0) {
+   676→    const today = new Date().toISOString().slice(0, 10);
+   677→    db.entities.SalesInvoice.push(
+   678→      {
+   679→        id: genId('SalesInvoice'),
+   680→        invoiceNo: 'INV-2026-0001',
+   681→        invoiceType: 'CONSTRUCTION',
+   682→        projectId: branchId,
+   683→        projectName: 'الفرع الرئيسي - النخيل',
+   684→        clientId: '',
+   685→        clientName: 'زبون نقدي',
+   686→        date: today,
+   687→        dueDate: '',
+   688→        subtotal: 80,
+   689→        vatRate: 0.15,
+   690→        vatAmount: 12,
+   691→        totalAmount: 92,
+   692→        paidAmount: 92,
+   693→        status: 'PAID',
+   694→        description: 'طاولة: طاولة 3',
+   695→        notes: JSON.stringify({ tableId: 't3', tableName: 'طاولة 3', payments: [{ method: 'cash', amount: 92 }], cashier: 'فيصل المالك' }),
+   696→        created_date: new Date(Date.now() - 3600000).toISOString(),
+   697→        updated_date: new Date(Date.now() - 3600000).toISOString(),
+   698→      },
+   699→      {
+   700→        id: genId('SalesInvoice'),
+   701→        invoiceNo: 'INV-2026-0002',
+   702→        invoiceType: 'SERVICE',
+   703→        projectId: branchId,
+   704→        projectName: 'الفرع الرئيسي - النخيل',
+   705→        clientId: '',
+   706→        clientName: 'محمد العتيبي',
+   707→        date: today,
+   708→        dueDate: '',
+   709→        subtotal: 60,
+   710→        discountPercentage: 10,
+   711→        discountAmount: 6,
+   712→        deliveryFee: 10,
+   713→        vatRate: 0.15,
+   714→        vatAmount: 9.6,
+   715→        totalAmount: 73.6,
+   716→        platformId: 'platform-hungerstation',
+   717→        platformName: 'هنقرستيشن',
+   718→        platformCommission: 11.04,
+   719→        paidAmount: 73.6,
+   720→        status: 'PAID',
+   721→        description: 'توصيل عبر هنقرستيشن',
+   722→        notes: JSON.stringify({ payments: [{ method: 'card', amount: 73.6 }], cashier: 'فيصل المالك', platform: 'هنقرستيشن', deliveryFee: 10 }),
+   723→        created_date: new Date(Date.now() - 1800000).toISOString(),
+   724→        updated_date: new Date(Date.now() - 1800000).toISOString(),
+   725→      }
+   726→    );
+   727→  }
+   728→
+   729→  db._seeded = true;
+   730→  saveDB(db);
+   731→
+   732→  // 10) طاولات افتراضية للفرع الرئيسي (تُخزّن في localStorage منفصل عبر tables.js)
+   733→  // نستخدم نفس الـ key الذي يستخدمه lib/tables.js
+   734→  try {
+   735→    const tablesKey = 'restaurant-tables';
+   736→    const existing = JSON.parse(localStorage.getItem(tablesKey) || '{}');
+   737→    const branchTables = Object.values(existing).filter(t => t.branchId === branchId);
+   738→    if (branchTables.length === 0) {
+   739→      const tables = {};
+   740→      const tableNames = [
+   741→        { name: 'طاولة 1', seats: 2 },
+   742→        { name: 'طاولة 2', seats: 4 },
+   743→        { name: 'طاولة 3', seats: 4 },
+   744→        { name: 'طاولة 4', seats: 6 },
+   745→        { name: 'طاولة 5', seats: 2 },
+   746→        { name: 'طاولة 6', seats: 4 },
+   747→        { name: 'طاولة 7', seats: 8 },
+   748→        { name: 'طاولة 8', seats: 4 },
+   749→      ];
+   750→      tableNames.forEach((t, i) => {
+   751→        const id = `tbl-seed-${branchId}-${i + 1}`;
+   752→        tables[id] = {
+   753→          id,
+   754→          branchId,
+   755→          name: t.name,
+   756→          seats: t.seats,
+   757→          status: i === 2 ? 'OCCUPIED' : 'AVAILABLE', // طاولة 3 مشغولة (الإيصال التجريبي)
+   758→          currentInvoiceId: i === 2 ? 'INV-2026-0001' : null,
+   759→          sortOrder: i + 1,
+   760→          createdAt: new Date().toISOString(),
+   761→        };
+   762→      });
+   763→      // ادمج مع أي طاولات موجودة لفروع أخرى
+   764→      const merged = { ...existing, ...tables };
+   765→      localStorage.setItem(tablesKey, JSON.stringify(merged));
+   766→    }
+   767→  } catch { /* ignore */ }
+   768→
+   769→  // 11) إعدادات الفرع الرئيسي (branchSettings) — لوقو/هاتف خاص بالفرع
+   770→  try {
+   771→    const branchSettingsKey = 'restaurant-branch-settings';
+   772→    const existing = JSON.parse(localStorage.getItem(branchSettingsKey) || '{}');
+   773→    if (!existing[branchId]) {
+   774→      existing[branchId] = {
+   775→        branchName: 'الفرع الرئيسي - النخيل',
+   776→        branchNameEn: 'Main Branch - Nakheel',
+   777→        phone: '0112345678',
+   778→        phone2: '0501112233',
+   779→        address: 'حي النخيل',
+   780→        city: 'الرياض',
+   781→        logoUrl: '',
+   782→        vatNumber: '300000000000003',
+   783→        primaryColor: '#d97706',
+   784→        accentColor: '#1f2d3d',
+   785→        managerName: 'مدير الفرع',
+   786→        posTerminalId: 'POS-001',
+   787→        isActive: true,
+   788→      };
+   789→      localStorage.setItem(branchSettingsKey, JSON.stringify(existing));
+   790→    }
+   791→  } catch { /* ignore */ }
+   792→}
+   793→
+   794→// شغّل البيانات الأولية عند تحميل هذا الملف
+   795→if (typeof window !== 'undefined') {
+   796→  try { seedDatabase(); } catch { /* ignore */ }
+   797→}
+   798→

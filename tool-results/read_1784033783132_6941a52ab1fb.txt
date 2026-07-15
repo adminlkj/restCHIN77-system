@@ -1,0 +1,621 @@
+     1→import React, { useState, useEffect, useMemo, useCallback } from 'react';
+     2→import {
+     3→  Plus, RefreshCw, Users, MoreVertical, Pencil, Trash2, Play,
+     4→  Sparkles, Clock, ArrowLeft, ArrowRight, LayoutGrid, Store,
+     5→  Layers, FileEdit,
+     6→} from 'lucide-react';
+     7→import { Card } from '@/components/ui/card';
+     8→import { Button } from '@/components/ui/button';
+     9→import { Input } from '@/components/ui/input';
+    10→import { Label } from '@/components/ui/label';
+    11→import {
+    12→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    13→} from '@/components/ui/select';
+    14→import {
+    15→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    16→} from '@/components/ui/dialog';
+    17→import {
+    18→  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+    19→} from '@/components/ui/dropdown-menu';
+    20→import { useStore } from '@/lib/store';
+    21→import { t } from '@/lib/utils-binaa';
+    22→import ModuleLayout from '@/components/shared/ModuleLayout';
+    23→import ConfirmDialog from '@/components/shared/ConfirmDialog';
+    24→import {
+    25→  TABLE_STATUS, getBranchTables, getBranchTableStats,
+    26→  addTable, updateTable, deleteTable,
+    27→  occupyTable, freeTable, reserveTable, setTableAvailable,
+    28→} from '@/lib/tables';
+    29→import { getBranchSettings, setBranchSettings as saveBranchSettings } from '@/lib/branchSettings';
+    30→import { toast } from 'sonner';
+    31→
+    32→// ═══════════════════════════════════════════════════════════════════════
+    33→// شاشة الطاولات — شبكة بصرية لطاولات الفرع النشط.
+    34→// كل طاولة لها حالة ملونة (متاحة، مشغولة، محجوزة، تنظيف، مسودة).
+    35→// يدعم: إعادة استئناف المسودة، أعمدة قابلة للضبط، إضافة متعددة.
+    36→// ═══════════════════════════════════════════════════════════════════════
+    37→
+    38→const FILTERS = [
+    39→  { key: 'ALL',        ar: 'الكل',       en: 'All' },
+    40→  { key: 'AVAILABLE',  ar: 'متاحة',      en: 'Available' },
+    41→  { key: 'OCCUPIED',   ar: 'مشغولة',     en: 'Occupied' },
+    42→  { key: 'DRAFT',      ar: 'مسودة',      en: 'Draft' },
+    43→  { key: 'RESERVED',   ar: 'محجوزة',     en: 'Reserved' },
+    44→  { key: 'CLEANING',   ar: 'تنظيف',      en: 'Cleaning' },
+    45→];
+    46→
+    47→// خريطة عدد الطاولات في كل صف ↔ كلاسات Tailwind.
+    48→const GRID_BY_PER_ROW = {
+    49→  3: 'grid-cols-2 sm:grid-cols-3',
+    50→  4: 'grid-cols-2 sm:grid-cols-4',
+    51→  5: 'grid-cols-2 sm:grid-cols-5',
+    52→  6: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6',
+    53→  8: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-8',
+    54→};
+    55→
+    56→const PER_ROW_OPTIONS = [3, 4, 5, 6, 8];
+    57→
+    58→export default function Tables() {
+    59→  const { lang, activeProjectId, activeProjectName, setProjectContext, setActiveItem } = useStore();
+    60→  const OpenArrow = lang === 'ar' ? ArrowLeft : ArrowRight;
+    61→
+    62→  const [tables, setTables] = useState([]);
+    63→  const [filter, setFilter] = useState('ALL');
+    64→  const [loading, setLoading] = useState(true);
+    65→  const [dialogOpen, setDialogOpen] = useState(false);
+    66→  const [bulkOpen, setBulkOpen] = useState(false);
+    67→  const [confirmOpen, setConfirmOpen] = useState(false);
+    68→  const [deleteId, setDeleteId] = useState(null);
+    69→  const [editId, setEditId] = useState(null);
+    70→  const [form, setForm] = useState({ name: '', seats: 4 });
+    71→  const [bulkForm, setBulkForm] = useState({ count: 5, prefix: 'طاولة', seats: 4 });
+    72→  const [saving, setSaving] = useState(false);
+    73→  // عدد الطاولات في كل صف — يُقرأ من branchSettings ويعاد للواجهة فوراً عند التغيير.
+    74→  const [tablesPerRow, setTablesPerRow] = useState(6);
+    75→  // إعدادات الفرع النشط (async) — تُحمّل من قاعدة البيانات (BranchSetting).
+    76→  const [branchSettings, setBranchSettings] = useState({});
+    77→  useEffect(() => {
+    78→    let active = true;
+    79→    if (!activeProjectId) { setBranchSettings({}); return; }
+    80→    getBranchSettings(activeProjectId)
+    81→      .then(s => { if (active) setBranchSettings(s); })
+    82→      .catch(() => { if (active) setBranchSettings({}); });
+    83→    return () => { active = false; };
+    84→  }, [activeProjectId]);
+    85→
+    86→  // ─── تحميل الطاولات ─────────────────────────────────────────────────
+    87→  const load = useCallback(() => {
+    88→    if (!activeProjectId) { setTables([]); setLoading(false); return; }
+    89→    setLoading(true);
+    90→    try {
+    91→      setTables(getBranchTables(activeProjectId));
+    92→    } catch (e) {
+    93→      console.warn('Tables load failed:', e);
+    94→      setTables([]);
+    95→    } finally {
+    96→      setLoading(false);
+    97→    }
+    98→  }, [activeProjectId]);
+    99→
+   100→  useEffect(() => { load(); }, [load]);
+   101→
+   102→  // قراءة إعداد عدد الطاولات في كل صف من إعدادات الفرع (async).
+   103→  useEffect(() => {
+   104→    let active = true;
+   105→    if (!activeProjectId) { setTablesPerRow(6); return; }
+   106→    getBranchSettings(activeProjectId)
+   107→      .then(s => {
+   108→        if (!active) return;
+   109→        const v = Number(s?.tablesPerRow);
+   110→        setTablesPerRow(PER_ROW_OPTIONS.includes(v) ? v : 6);
+   111→      })
+   112→      .catch(() => { if (active) setTablesPerRow(6); });
+   113→    return () => { active = false; };
+   114→  }, [activeProjectId]);
+   115→
+   116→  // إعادة التحميل عند العودة للنافذة (auto-refresh on focus)
+   117→  useEffect(() => {
+   118→    const handler = () => load();
+   119→    window.addEventListener('focus', handler);
+   120→    return () => window.removeEventListener('focus', handler);
+   121→  }, [load]);
+   122→
+   123→  const stats = useMemo(() => getBranchTableStats(activeProjectId), [tables, activeProjectId]);
+   124→
+   125→  const filtered = useMemo(() => {
+   126→    if (filter === 'ALL') return tables;
+   127→    return tables.filter(t => t.status === filter);
+   128→  }, [tables, filter]);
+   129→
+   130→  const gridClass = GRID_BY_PER_ROW[tablesPerRow] || GRID_BY_PER_ROW[6];
+   131→
+   132→  // ─── إجراءات ─────────────────────────────────────────────────────────
+   133→  const openNew = () => {
+   134→    setEditId(null);
+   135→    setForm({
+   136→      name: `${t('طاولة', 'Table', lang)} ${(tables.length || 0) + 1}`,
+   137→      seats: 4,
+   138→    });
+   139→    setDialogOpen(true);
+   140→  };
+   141→
+   142→  const openBulk = () => {
+   143→    setBulkForm({ count: 5, prefix: t('طاولة', 'Table', lang), seats: 4 });
+   144→    setBulkOpen(true);
+   145→  };
+   146→
+   147→  const openEdit = (table) => {
+   148→    setEditId(table.id);
+   149→    setForm({ name: table.name, seats: table.seats || 4 });
+   150→    setDialogOpen(true);
+   151→  };
+   152→
+   153→  const askDelete = (id) => { setDeleteId(id); setConfirmOpen(true); };
+   154→
+   155→  const save = () => {
+   156→    if (!form.name || !form.name.trim()) {
+   157→      toast.error(t('الرجاء إدخال اسم الطاولة', 'Please enter a table name', lang));
+   158→      return;
+   159→    }
+   160→    setSaving(true);
+   161→    try {
+   162→      const seats = parseInt(form.seats) || 1;
+   163→      if (editId) {
+   164→        updateTable(editId, { name: form.name.trim(), seats });
+   165→        toast.success(t('تم تحديث الطاولة', 'Table updated', lang));
+   166→      } else {
+   167→        addTable(activeProjectId, { name: form.name.trim(), seats });
+   168→        toast.success(t('تمت إضافة الطاولة', 'Table added', lang));
+   169→      }
+   170→      setDialogOpen(false);
+   171→      load();
+   172→    } catch (e) {
+   173→      toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang));
+   174→    } finally {
+   175→      setSaving(false);
+   176→    }
+   177→  };
+   178→
+   179→  // إضافة متعددة — تنشئ N طاولات بالبادئة المعطاة.
+   180→  const saveBulk = () => {
+   181→    const count = parseInt(bulkForm.count) || 0;
+   182→    if (count <= 0 || count > 200) {
+   183→      toast.error(t('عدد الطاولات يجب أن يكون بين 1 و 200', 'Count must be 1–200', lang));
+   184→      return;
+   185→    }
+   186→    const prefix = (bulkForm.prefix || t('طاولة', 'Table', lang)).trim();
+   187→    if (!prefix) {
+   188→      toast.error(t('الرجاء إدخال بادئة الاسم', 'Please enter a name prefix', lang));
+   189→      return;
+   190→    }
+   191→    const seats = parseInt(bulkForm.seats) || 1;
+   192→    setSaving(true);
+   193→    try {
+   194→      const start = (tables.length || 0) + 1;
+   195→      let created = 0;
+   196→      for (let i = 0; i < count; i++) {
+   197→        addTable(activeProjectId, { name: `${prefix} ${start + i}`, seats });
+   198→        created++;
+   199→      }
+   200→      toast.success(t(`تمت إضافة ${created} طاولات`, `Added ${created} tables`, lang));
+   201→      setBulkOpen(false);
+   202→      load();
+   203→    } catch (e) {
+   204→      toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang));
+   205→    } finally {
+   206→      setSaving(false);
+   207→    }
+   208→  };
+   209→
+   210→  const remove = () => {
+   211→    try {
+   212→      deleteTable(deleteId);
+   213→      toast.success(t('تم حذف الطاولة', 'Table deleted', lang));
+   214→      load();
+   215→    } catch (e) {
+   216→      toast.error(e?.message || t('فشل الحفظ', 'Delete failed', lang));
+   217→    }
+   218→  };
+   219→
+   220→  // حفظ عدد الطاولات في كل صف في إعدادات الفرع (async).
+   221→  const changePerRow = async (value) => {
+   222→    const v = Number(value);
+   223→    if (!PER_ROW_OPTIONS.includes(v)) return;
+   224→    setTablesPerRow(v);
+   225→    if (!activeProjectId) return;
+   226→    try {
+   227→      await saveBranchSettings(activeProjectId, { tablesPerRow: v });
+   228→      toast.success(t('تم تحديث عدد الطاولات في كل صف', 'Tables per row updated', lang));
+   229→    } catch (e) {
+   230→      toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang));
+   231→    }
+   232→  };
+   233→
+   234→  // فتح POS للطاولة: AVAILABLE أو OCCUPIED أو DRAFT.
+   235→  // للطاولات المتاحة فقط نُشغلها (occupyTable). أما DRAFT فتُفتح مباشرةً ليستأنف POS مسودتها.
+   236→  const openPOS = (table) => {
+   237→    try {
+   238→      localStorage.setItem('pos-active-table', JSON.stringify({
+   239→        tableId: table.id,
+   240→        tableName: table.name,
+   241→        branchId: activeProjectId,
+   242→        invoiceId: table.currentInvoiceId || null,
+   243→      }));
+   244→    } catch { /* ignore */ }
+   245→    if (table.status === 'AVAILABLE') {
+   246→      occupyTable(table.id, `draft-${Date.now()}`);
+   247→      load();
+   248→    }
+   249→    // لا تفعل شيئاً لـ DRAFT/OCCUPIED — POS سيقرأ المسودة/الإيصال الحالي.
+   250→    setActiveItem('pos');
+   251→  };
+   252→
+   253→  // قائمة إجراءات الطاولة (محجوزة/تنظيف)
+   254→  const handleAction = (table, action) => {
+   255→    try {
+   256→      switch (action) {
+   257→        case 'free':
+   258→          freeTable(table.id, true);
+   259→          toast.success(t('تم تحرير الطاولة (قيد التنظيف)', 'Table freed (cleaning)', lang));
+   260→          break;
+   261→        case 'cleaning-done':
+   262→          setTableAvailable(table.id);
+   263→          toast.success(t('الطاولة جاهزة (متاحة)', 'Table ready (available)', lang));
+   264→          break;
+   265→        case 'reserve':
+   266→          reserveTable(table.id);
+   267→          toast.success(t('تم حجز الطاولة', 'Table reserved', lang));
+   268→          break;
+   269→        case 'delete':
+   270→          askDelete(table.id);
+   271→          return;
+   272→        default:
+   273→          break;
+   274→      }
+   275→      load();
+   276→    } catch (e) {
+   277→      toast.error(e?.message || t('فشلت العملية', 'Action failed', lang));
+   278→    }
+   279→  };
+   280→
+   281→  // تنسيق وقت آخر تحديث للمسودة.
+   282→  const formatDraftTime = (iso) => {
+   283→    if (!iso) return '';
+   284→    try {
+   285→      const d = new Date(iso);
+   286→      if (isNaN(d.getTime())) return '';
+   287→      const hh = String(d.getHours()).padStart(2, '0');
+   288→      const mm = String(d.getMinutes()).padStart(2, '0');
+   289→      return `${hh}:${mm}`;
+   290→    } catch { return ''; }
+   291→  };
+   292→
+   293→  // ─── لا يوجد فرع محدد ─────────────────────────────────────────────
+   294→  if (!activeProjectId) {
+   295→    return (
+   296→      <ModuleLayout
+   297→        title={t('الطاولات', 'Tables', lang)}
+   298→        subtitle={t('اختر فرعاً لعرض طاولاته', 'Select a branch to view its tables', lang)}
+   299→      >
+   300→        <Card className="p-12 text-center">
+   301→          <Store className="size-12 mx-auto text-muted-foreground/50 mb-3" />
+   302→          <p className="text-muted-foreground font-medium mb-4">
+   303→            {t('الرجاء اختيار فرع أولاً', 'Please select a branch first', lang)}
+   304→          </p>
+   305→          <Button onClick={() => setActiveItem('branches')} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+   306→            <Store className="size-4" />
+   307→            {t('اختيار فرع', 'Select Branch', lang)}
+   308→          </Button>
+   309→        </Card>
+   310→      </ModuleLayout>
+   311→    );
+   312→  }
+   313→
+   314→  const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
+   315→
+   316→  // ─── عرض ───────────────────────────────────────────────────────────
+   317→  return (
+   318→    <ModuleLayout
+   319→      title={t('الطاولات', 'Tables', lang)}
+   320→      subtitle={`${branchLabel} — ${t('إدارة طاولات الفرع', 'Manage branch tables', lang)}`}
+   321→      actions={
+   322→        <div className="flex items-center gap-2">
+   323→          <Button onClick={openBulk} variant="outline" className="gap-2">
+   324→            <Layers className="size-4" /> {t('إضافة متعددة', 'Bulk Add', lang)}
+   325→          </Button>
+   326→          <Button onClick={openNew} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+   327→            <Plus className="size-4" /> {t('طاولة جديدة', 'New Table', lang)}
+   328→          </Button>
+   329→        </div>
+   330→      }
+   331→    >
+   332→      {/* شريط الإحصائيات + الفلترة + عدد الأعمدة */}
+   333→      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+   334→        <div className="flex flex-wrap items-center gap-2">
+   335→          <span className="text-sm text-muted-foreground">
+   336→            {t('الإجمالي', 'Total', lang)}:
+   337→            <span className="font-bold text-foreground ms-1">{stats.total}</span>
+   338→          </span>
+   339→          {[
+   340→            { k: 'AVAILABLE', n: stats.available, label: t('متاحة', 'Available', lang) },
+   341→            { k: 'OCCUPIED',  n: stats.occupied,  label: t('مشغولة', 'Occupied', lang) },
+   342→            { k: 'DRAFT',     n: stats.draft,     label: t('مسودة', 'Draft', lang) },
+   343→            { k: 'RESERVED',  n: stats.reserved,  label: t('محجوزة', 'Reserved', lang) },
+   344→            { k: 'CLEANING',  n: stats.cleaning,  label: t('تنظيف', 'Cleaning', lang) },
+   345→          ].map(s => (
+   346→            <span
+   347→              key={s.k}
+   348→              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${TABLE_STATUS[s.k].color}`}
+   349→            >
+   350→              {s.label}: <span className="font-bold">{s.n}</span>
+   351→            </span>
+   352→          ))}
+   353→        </div>
+   354→        <div className="sm:ms-auto flex items-center gap-2">
+   355→          <Select value={filter} onValueChange={setFilter}>
+   356→            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+   357→            <SelectContent>
+   358→              {FILTERS.map(f => (
+   359→                <SelectItem key={f.key} value={f.key}>
+   360→                  {lang === 'ar' ? f.ar : f.en}
+   361→                </SelectItem>
+   362→              ))}
+   363→            </SelectContent>
+   364→          </Select>
+   365→          <Select value={String(tablesPerRow)} onValueChange={changePerRow}>
+   366→            <SelectTrigger className="w-40 gap-1" title={t('طاولات لكل صف', 'Tables per row', lang)}>
+   367→              <LayoutGrid className="size-3.5 text-muted-foreground" />
+   368→              <SelectValue />
+   369→            </SelectTrigger>
+   370→            <SelectContent>
+   371→              {PER_ROW_OPTIONS.map(n => (
+   372→                <SelectItem key={n} value={String(n)}>{n} {t('لكل صف', '/ row', lang)}</SelectItem>
+   373→              ))}
+   374→            </SelectContent>
+   375→          </Select>
+   376→          <Button variant="outline" size="icon" onClick={load}>
+   377→            <RefreshCw className="size-4" />
+   378→          </Button>
+   379→        </div>
+   380→      </div>
+   381→
+   382→      {/* شبكة الطاولات */}
+   383→      {loading ? (
+   384→        <div className={`grid ${gridClass} gap-3`}>
+   385→          {Array.from({ length: 12 }).map((_, i) => (
+   386→            <Card key={i} className="p-4 h-32 animate-pulse bg-muted/40" />
+   387→          ))}
+   388→        </div>
+   389→      ) : filtered.length === 0 ? (
+   390→        <Card className="p-12 text-center">
+   391→          <LayoutGrid className="size-12 mx-auto text-muted-foreground/50 mb-3" />
+   392→          <p className="text-muted-foreground font-medium">
+   393→            {t('لا توجد طاولات', 'No tables found', lang)}
+   394→          </p>
+   395→          <p className="text-xs text-muted-foreground mt-1 mb-4">
+   396→            {t('أضف طاولات جديدة لهذا الفرع للبدء.', 'Add new tables to this branch to get started.', lang)}
+   397→          </p>
+   398→          <div className="flex items-center justify-center gap-2">
+   399→            <Button onClick={openBulk} variant="outline" className="gap-2">
+   400→              <Layers className="size-4" /> {t('إضافة متعددة', 'Bulk Add', lang)}
+   401→            </Button>
+   402→            <Button onClick={openNew} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+   403→              <Plus className="size-4" /> {t('طاولة جديدة', 'New Table', lang)}
+   404→            </Button>
+   405→          </div>
+   406→        </Card>
+   407→      ) : (
+   408→        <div className={`grid ${gridClass} gap-3`}>
+   409→          {filtered.map(table => {
+   410→            const status = TABLE_STATUS[table.status] || TABLE_STATUS.AVAILABLE;
+   411→            const isOccupied = table.status === 'OCCUPIED';
+   412→            const isDraft = table.status === 'DRAFT';
+   413→            const isReserved = table.status === 'RESERVED';
+   414→            const isCleaning = table.status === 'CLEANING';
+   415→            const canOpenPOS = table.status === 'AVAILABLE' || isOccupied || isDraft;
+   416→            const draftItemsCount = isDraft && table.draft?.cart ? table.draft.cart.length : 0;
+   417→            const draftTime = isDraft && table.draft?.updatedAt ? formatDraftTime(table.draft.updatedAt) : '';
+   418→            return (
+   419→              <Card
+   420→                key={table.id}
+   421→                className={`p-0 overflow-hidden border-2 transition-all hover:shadow-md ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
+   422→                onClick={() => canOpenPOS && openPOS(table)}
+   423→              >
+   424→                {/* رأس الطاولة — حالة ملونة */}
+   425→                <div className={`px-2 py-1.5 text-center text-[11px] font-bold border-b ${status.color}`}>
+   426→                  {lang === 'ar' ? status.ar : status.en}
+   427→                </div>
+   428→                {/* جسم الطاولة */}
+   429→                <div className="p-3 text-center space-y-1">
+   430→                  <div className="text-base font-bold text-foreground truncate">{table.name}</div>
+   431→                  <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+   432→                    <Users className="size-3" />
+   433→                    <span>{table.seats} {t('مقعد', 'seats', lang)}</span>
+   434→                  </div>
+   435→                  {isOccupied && table.currentInvoiceId && (
+   436→                    <div className="text-[10px] font-mono text-rose-600 truncate" dir="ltr">
+   437→                      #{String(table.currentInvoiceId).slice(-8)}
+   438→                    </div>
+   439→                  )}
+   440→                  {isDraft && (
+   441→                    <div className="space-y-0.5 pt-0.5">
+   442→                      <div className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 border border-red-200">
+   443→                        <FileEdit className="size-2.5" />
+   444→                        {t('مسودة', 'Draft', lang)}
+   445→                        <span className="ms-0.5">· {draftItemsCount} {t('صنف', 'items', lang)}</span>
+   446→                      </div>
+   447→                      {draftTime && (
+   448→                        <div className="text-[9px] text-muted-foreground/80" dir="ltr">
+   449→                          {t('آخر تحديث', 'Updated', lang)}: {draftTime}
+   450→                        </div>
+   451→                      )}
+   452→                    </div>
+   453→                  )}
+   454→                </div>
+   455→                {/* تذييل الطاولة — قائمة إجراءات */}
+   456→                <div className="border-t bg-muted/20 px-2 py-1 flex items-center justify-between">
+   457→                  {canOpenPOS ? (
+   458→                    <Button
+   459→                      size="sm"
+   460→                      className="h-6 text-[11px] gap-1 bg-emerald-600 hover:bg-emerald-700 w-full"
+   461→                      onClick={(e) => { e.stopPropagation(); openPOS(table); }}
+   462→                    >
+   463→                      {isDraft
+   464→                        ? t('متابعة المسودة', 'Resume Draft', lang)
+   465→                        : isOccupied
+   466→                          ? t('متابعة', 'Resume', lang)
+   467→                          : t('فتح', 'Open', lang)}
+   468→                      <OpenArrow className="size-3" />
+   469→                    </Button>
+   470→                  ) : (
+   471→                    <span className="text-[10px] text-muted-foreground flex-1 text-center">
+   472→                      {isReserved ? t('محجوزة', 'Reserved', lang) : t('قيد التنظيف', 'Cleaning', lang)}
+   473→                    </span>
+   474→                  )}
+   475→                  <DropdownMenu>
+   476→                    <DropdownMenuTrigger asChild>
+   477→                      <Button
+   478→                        variant="ghost" size="icon"
+   479→                        className="size-7 shrink-0"
+   480→                        onClick={(e) => e.stopPropagation()}
+   481→                      >
+   482→                        <MoreVertical className="size-3.5" />
+   483→                      </Button>
+   484→                    </DropdownMenuTrigger>
+   485→                    <DropdownMenuContent align="end" className="w-44">
+   486→                      <DropdownMenuItem onClick={() => openEdit(table)} className="gap-2 text-xs">
+   487→                        <Pencil className="size-3.5" /> {t('تعديل', 'Edit', lang)}
+   488→                      </DropdownMenuItem>
+   489→                      {isReserved && (
+   490→                        <DropdownMenuItem onClick={() => handleAction(table, 'free')} className="gap-2 text-xs">
+   491→                          <Play className="size-3.5" /> {t('تحرير', 'Free', lang)}
+   492→                        </DropdownMenuItem>
+   493→                      )}
+   494→                      {isCleaning && (
+   495→                        <DropdownMenuItem onClick={() => handleAction(table, 'cleaning-done')} className="gap-2 text-xs">
+   496→                          <Sparkles className="size-3.5" /> {t('تنظيف جاهز', 'Cleaning Done', lang)}
+   497→                        </DropdownMenuItem>
+   498→                      )}
+   499→                      {(table.status === 'AVAILABLE' || isOccupied) && (
+   500→                        <DropdownMenuItem onClick={() => handleAction(table, 'reserve')} className="gap-2 text-xs">
+   501→                          <Clock className="size-3.5" /> {t('حجز', 'Reserve', lang)}
+   502→                        </DropdownMenuItem>
+   503→                      )}
+   504→                      <DropdownMenuItem
+   505→                        onClick={() => handleAction(table, 'delete')}
+   506→                        className="gap-2 text-xs text-destructive focus:text-destructive"
+   507→                      >
+   508→                        <Trash2 className="size-3.5" /> {t('حذف', 'Delete', lang)}
+   509→                      </DropdownMenuItem>
+   510→                    </DropdownMenuContent>
+   511→                  </DropdownMenu>
+   512→                </div>
+   513→              </Card>
+   514→            );
+   515→          })}
+   516→        </div>
+   517→      )}
+   518→
+   519→      {/* ─── نافذة إضافة/تعديل طاولة ─────────────────────────────────── */}
+   520→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   521→        <DialogContent className="max-w-md">
+   522→          <DialogHeader>
+   523→            <DialogTitle>
+   524→              {editId ? t('تعديل الطاولة', 'Edit Table', lang) : t('طاولة جديدة', 'New Table', lang)}
+   525→            </DialogTitle>
+   526→          </DialogHeader>
+   527→          <div className="space-y-4 py-2">
+   528→            <div className="space-y-1.5">
+   529→              <Label>{t('اسم الطاولة', 'Table Name', lang)} *</Label>
+   530→              <Input
+   531→                value={form.name}
+   532→                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+   533→                placeholder={t('مثال: طاولة 1', 'e.g. Table 1', lang)}
+   534→              />
+   535→            </div>
+   536→            <div className="space-y-1.5">
+   537→              <Label>{t('عدد المقاعد', 'Number of Seats', lang)}</Label>
+   538→              <Input
+   539→                type="number" min="1" max="30"
+   540→                value={form.seats}
+   541→                onChange={e => setForm(f => ({ ...f, seats: e.target.value }))}
+   542→              />
+   543→            </div>
+   544→          </div>
+   545→          <DialogFooter>
+   546→            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+   547→              {t('إلغاء', 'Cancel', lang)}
+   548→            </Button>
+   549→            <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
+   550→              {saving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
+   551→            </Button>
+   552→          </DialogFooter>
+   553→        </DialogContent>
+   554→      </Dialog>
+   555→
+   556→      {/* ─── نافذة الإضافة المتعددة ───────────────────────────────────── */}
+   557→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   558→        <DialogContent className="max-w-md">
+   559→          <DialogHeader>
+   560→            <DialogTitle className="flex items-center gap-2">
+   561→              <Layers className="size-4" />
+   562→              {t('إضافة طاولات متعددة', 'Bulk Add Tables', lang)}
+   563→            </DialogTitle>
+   564→          </DialogHeader>
+   565→          <div className="space-y-4 py-2">
+   566→            <div className="space-y-1.5">
+   567→              <Label>{t('عدد الطاولات', 'Number of Tables', lang)}</Label>
+   568→              <Input
+   569→                type="number" min="1" max="200"
+   570→                value={bulkForm.count}
+   571→                onChange={e => setBulkForm(f => ({ ...f, count: e.target.value }))}
+   572→              />
+   573→            </div>
+   574→            <div className="space-y-1.5">
+   575→              <Label>{t('بادئة الاسم', 'Name Prefix', lang)}</Label>
+   576→              <Input
+   577→                value={bulkForm.prefix}
+   578→                onChange={e => setBulkForm(f => ({ ...f, prefix: e.target.value }))}
+   579→                placeholder={t('مثال: طاولة', 'e.g. Table', lang)}
+   580→              />
+   581→              <p className="text-[11px] text-muted-foreground">
+   582→                {t('سيتم إنشاء أسماء مثل:', 'Will create names like:', lang)}{' '}
+   583→                <span className="font-mono">{(bulkForm.prefix || 'طاولة').trim()} 1، {(bulkForm.prefix || 'طاولة').trim()} 2 …</span>
+   584→              </p>
+   585→            </div>
+   586→            <div className="space-y-1.5">
+   587→              <Label>{t('عدد المقاعد لكل طاولة', 'Seats per Table', lang)}</Label>
+   588→              <Input
+   589→                type="number" min="1" max="30"
+   590→                value={bulkForm.seats}
+   591→                onChange={e => setBulkForm(f => ({ ...f, seats: e.target.value }))}
+   592→              />
+   593→            </div>
+   594→          </div>
+   595→          <DialogFooter>
+   596→            <Button variant="outline" onClick={() => setBulkOpen(false)}>
+   597→              {t('إلغاء', 'Cancel', lang)}
+   598→            </Button>
+   599→            <Button onClick={saveBulk} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
+   600→              {saving ? t('جاري الحفظ...', 'Saving...', lang) : t('إضافة', 'Add', lang)}
+   601→            </Button>
+   602→          </DialogFooter>
+   603→        </DialogContent>
+   604→      </Dialog>
+   605→
+   606→      <ConfirmDialog
+   607→        open={confirmOpen}
+   608→        onOpenChange={setConfirmOpen}
+   609→        title={t('حذف الطاولة', 'Delete Table', lang)}
+   610→        description={t(
+   611→          'سيتم حذف الطاولة نهائياً. هل أنت متأكد؟',
+   612→          'This table will be permanently deleted. Are you sure?',
+   613→          lang
+   614→        )}
+   615→        onConfirm={remove}
+   616→        confirmLabel={t('حذف', 'Delete', lang)}
+   617→      />
+   618→    </ModuleLayout>
+   619→  );
+   620→}
+   621→

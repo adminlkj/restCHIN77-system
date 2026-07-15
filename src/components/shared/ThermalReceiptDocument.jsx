@@ -68,7 +68,14 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
   let appliedPayments = [];
   try {
     const notes = invoice.notes ? JSON.parse(invoice.notes) : {};
-    appliedPayments = Array.isArray(notes.payments) ? notes.payments : [];
+    const rawPayments = Array.isArray(notes.payments) ? notes.payments : [];
+    // دمج طرق الدفع المتكررة من نفس النوع في سطر واحد (مثلاً دفعتين نقداً → نقداً بمجموع المبلغ).
+    const merged = {};
+    for (const p of rawPayments) {
+      const m = p.method || p.type || 'CASH';
+      merged[m] = (merged[m] || 0) + (parseFloat(p.amount) || 0);
+    }
+    appliedPayments = Object.entries(merged).map(([method, amount]) => ({ method, amount: +amount.toFixed(2) }));
   } catch { /* ignore */ }
 
   const typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.CONSTRUCTION;

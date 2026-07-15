@@ -40,7 +40,18 @@ export default function Clients() {
   };
   useEffect(() => { load(); }, []);
 
-  const filtered = items.filter(i => !search || i.name?.toLowerCase().includes(search.toLowerCase()) || i.code?.toLowerCase().includes(search.toLowerCase()));
+  // بحث ذكي: بالاسم أو الكود أو رقم الجوال (يطابق آخر الأرقام أيضاً للراحة).
+  const filtered = items.filter(i => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    const name = String(i.name || '').toLowerCase();
+    const code = String(i.code || '').toLowerCase();
+    const phone = String(i.phone || '').toLowerCase();
+    // مطابقة آخر أرقام الجوال (مثلاً "99" تطابق "0133300199")
+    const phoneTail = phone.replace(/\D/g, '').slice(-q.replace(/\D/g, '').length);
+    const qDigits = q.replace(/\D/g, '');
+    return name.includes(q) || code.includes(q) || phone.includes(q) || (qDigits.length >= 2 && phoneTail === qDigits);
+  });
 
   const openNew = () => { setEditing(null); setForm({ ...empty, code: nextCodeFromList(items, 'CL') }); setDialogOpen(true); };
   const openEdit = (item) => { setEditing(item); setForm({ ...empty, ...item }); setDialogOpen(true); };

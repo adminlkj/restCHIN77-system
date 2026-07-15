@@ -1,0 +1,1327 @@
+     1→import React, { useState, useEffect, useMemo, useRef } from 'react';
+     2→import {
+     3→  Plus, Minus, X, Search, Printer, Receipt as ReceiptIcon, Pause,
+     4→  CreditCard, Banknote, Clock, UtensilsCrossed, LogOut,
+     5→  ShoppingCart, Trash2, Truck, ShieldCheck,
+     6→  CupSoda, Cake, Soup, FolderPlus, ArrowRight, ArrowLeft,
+     7→} from 'lucide-react';
+     8→import { Button } from '@/components/ui/button';
+     9→import { Input } from '@/components/ui/input';
+    10→import { Label } from '@/components/ui/label';
+    11→import { Card } from '@/components/ui/card';
+    12→import {
+    13→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    14→} from '@/components/ui/select';
+    15→import {
+    16→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    17→} from '@/components/ui/dialog';
+    18→import { useStore } from '@/lib/store';
+    19→import { useAuth } from '@/lib/AuthContext';
+    20→import { base44 } from '@/api/base44Client';
+    21→import {
+    22→  t, formatCurrency, formatDate, genInvoiceNo,
+    23→} from '@/lib/utils-binaa';
+    24→import { calcVAT } from '@/lib/businessEngine';
+    25→import { useCompanySettings } from '@/hooks/useCompanySettings';
+    26→import { getBranchSettings, resolveReceiptSettings } from '@/lib/branchSettings';
+    27→import {
+    28→  saveDraftToTable, getTableDraft, clearTableDraft,
+    29→} from '@/lib/tables';
+    30→import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+    31→import { toast } from 'sonner';
+    32→
+    33→// ═══════════════════════════════════════════════════════════════════════
+    34→// POS — نقطة البيع: شاشة مقسّمة (منتجات يسار / إيصال يمين) كاملة الارتفاع.
+    35→// يقرأ الطاولة النشطة من localStorage['pos-active-table'] (يضبطها Tables.jsx).
+    36→//
+    37→// المزايا الخمس:
+    38→//   1) خصم الزبائن المسجّلين (discountPercentage) — تلقائياً عند اختيار الزبون
+    39→//   2) حقل رسوم توصيل — يظهر فقط للطلبات الخارجية (SERVICE)
+    40→//   3) اختيار منصة التوصيل (DeliveryPlatform) — مع احتساب العمولة كمعلومة
+    41→//   4) حفظ تلقائي للمسودة في الطاولة (DRAFT) — مع استئناف عند العودة
+    42→//   5) إلغاء بكلمة مرور مشرف — مع استثناء المالك
+    43→//
+    44→// تنقّق المنتجات: عرض شبكة الأقسام أولاً → اختيار قسم → عرض وجباته.
+    45→// البحث يطغي على اختيار القسم ويعرض نتائج مسطّحة من كل الأقسام.
+    46→// ═══════════════════════════════════════════════════════════════════════
+    47→
+    48→// اختيار أيقونة القسم حسب الاسم (عربي/إنجليزي)
+    49→const getCategoryIcon = (catName) => {
+    50→  const n = (catName || '').toLowerCase();
+    51→  if (n.includes('مشروب') || n.includes('bever')) return CupSoda;
+    52→  if (n.includes('حلو') || n.includes('dessert')) return Cake;
+    53→  if (n.includes('مقبل') || n.includes('appet')) return Soup;
+    54→  if (n.includes('رئيسي') || n.includes('main')) return UtensilsCrossed;
+    55→  return FolderPlus;
+    56→};
+    57→
+    58→// لوحة ألوان تقدم لمسة بصرية مميزة لكل بطاقة قسم
+    59→const CATEGORY_TONES = [
+    60→  { bg: 'from-amber-400 to-orange-500',  ring: 'ring-amber-200',  icon: 'bg-white/20' },
+    61→  { bg: 'from-emerald-400 to-teal-500',  ring: 'ring-emerald-200', icon: 'bg-white/20' },
+    62→  { bg: 'from-rose-400 to-pink-500',     ring: 'ring-rose-200',   icon: 'bg-white/20' },
+    63→  { bg: 'from-blue-400 to-indigo-500',   ring: 'ring-blue-200',   icon: 'bg-white/20' },
+    64→  { bg: 'from-violet-400 to-purple-500', ring: 'ring-violet-200', icon: 'bg-white/20' },
+    65→  { bg: 'from-cyan-400 to-sky-500',      ring: 'ring-cyan-200',   icon: 'bg-white/20' },
+    66→  { bg: 'from-lime-400 to-green-500',    ring: 'ring-lime-200',   icon: 'bg-white/20' },
+    67→  { bg: 'from-fuchsia-400 to-pink-500',  ring: 'ring-fuchsia-200', icon: 'bg-white/20' },
+    68→];
+    69→const toneFor = (idx) => CATEGORY_TONES[idx % CATEGORY_TONES.length];
+    70→
+    71→// طرق الدفع المتاحة في نقطة البيع.
+    72→// الدفع الآجل (CREDIT) حصري لعملاء المنصات — لا يُعرض كزر في القسم العام.
+    73→// لا توجد محافظ إلكترونية — فقط نقداً وبطاقات (مدى/فيزا/ماستركارد/أخرى).
+    74→const PAYMENT_METHODS = [
+    75→  { key: 'CASH',       ar: 'نقداً',     en: 'Cash',       Icon: Banknote,    color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+    76→  { key: 'CARD_MADA',  ar: 'مدى',       en: 'Mada',       Icon: CreditCard,  color: 'bg-green-100 text-green-700 border-green-300' },
+    77→  { key: 'CARD_VISA',  ar: 'فيزا',      en: 'Visa',       Icon: CreditCard,  color: 'bg-blue-100 text-blue-700 border-blue-300' },
+    78→  { key: 'CARD_MC',    ar: 'ماستركارد', en: 'Mastercard', Icon: CreditCard,  color: 'bg-orange-100 text-orange-700 border-orange-300' },
+    79→  { key: 'CARD_OTHER', ar: 'بطاقة أخرى', en: 'Other Card', Icon: CreditCard,  color: 'bg-slate-100 text-slate-700 border-slate-300' },
+    80→];
+    81→
+    82→// ─── Feature 5: كلمات مرور المشرف المقبولة عند الإلغاء ───────────────
+    83→const SUPERVISOR_PASSWORDS = ['admin', '123456', 'faisal.11223344'];
+    84→const OWNER_EMAIL = 'fysl71443@gmail.com';
+    85→const MAX_CANCEL_ATTEMPTS = 3;
+    86→
+    87→// قيمة sentinel لخيار "توصيل مباشر" في القائمة المنسدلة (Radix لا يقبل قيمة فارغة)
+    88→const DIRECT_PLATFORM_VALUE = '__direct__';
+    89→
+    90→const POS_ACTIVE_TABLE_KEY = 'pos-active-table';
+    91→
+    92→function readActiveTable() {
+    93→  try {
+    94→    const raw = localStorage.getItem(POS_ACTIVE_TABLE_KEY);
+    95→    return raw ? JSON.parse(raw) : null;
+    96→  } catch { return null; }
+    97→}
+    98→
+    99→function clearActiveTable() {
+   100→  try { localStorage.removeItem(POS_ACTIVE_TABLE_KEY); } catch { /* ignore */ }
+   101→}
+   102→
+   103→export default function POS() {
+   104→  const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
+   105→  const { user } = useAuth();
+   106→  const { settings: companySettings } = useCompanySettings();
+   107→  const cashier = user?.full_name || (lang === 'ar' ? 'الكاشير' : 'Cashier');
+   108→  const isOwner = (user?.email || '').toLowerCase() === OWNER_EMAIL;
+   109→
+   110→  // ─── حالة ───────────────────────────────────────────────────────────
+   111→  const [cart, setCart] = useState([]);
+   112→  const [menuItems, setMenuItems] = useState([]);
+   113→  const [categories, setCategories] = useState([]);
+   114→  const [menuLoading, setMenuLoading] = useState(true);
+   115→  const [search, setSearch] = useState('');
+   116→  // null = اعرض شبكة الأقسام، '__all__' = اعرض كل الأصناف، categoryId = اعرض أصناف قسم محدد
+   117→  const [activeCategoryView, setActiveCategoryView] = useState(null);
+   118→  const [customers, setCustomers] = useState([]);
+   119→  const [customerId, setCustomerId] = useState('');
+   120→  const [customerName, setCustomerName] = useState('');
+   121→  // Feature 1: نخزّن كائن الزبون الكامل للوصول إلى discountPercentage و isCash
+   122→  const [customer, setCustomer] = useState(null);
+   123→  const [payments, setPayments] = useState([]); // [{ method, amount }]
+   124→  const [cashReceived, setCashReceived] = useState('');
+   125→  const [printReceipt, setPrintReceipt] = useState(null); // invoice object
+   126→  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+   127→  const [activeTable, setActiveTable] = useState(() => readActiveTable());
+   128→
+   129→  // Feature 2 & 3: نوع الإيصال (CONSTRUCTION=صالة, SERVICE=توصيل) + رسوم التوصيل + المنصة
+   130→  const [invoiceType, setInvoiceType] = useState('CONSTRUCTION'); // CONSTRUCTION=dine-in, SERVICE=delivery
+   131→  const [deliveryFee, setDeliveryFee] = useState(0);
+   132→  const [platformId, setPlatformId] = useState('');
+   133→  const [platforms, setPlatforms] = useState([]);
+   134→  const [notes, setNotes] = useState('');
+   135→
+   136→  // Feature 5: حالة حوار الإلغاء بكلمة مرور المشرف
+   137→  const [cancelPassword, setCancelPassword] = useState('');
+   138→  const [cancelAttempts, setCancelAttempts] = useState(0);
+   139→  const [cancelError, setCancelError] = useState('');
+   140→
+   141→  // مرجع يمنع تكرار تحميل المسودة عند العودة للطاولة نفسها
+   142→  const draftLoadedRef = useRef(false);
+   143→  // مرجع يمنع تشغيل الـ auto-clear عند الخروج المتعمّد (hold/cancel/print)
+   144→  const skipAutoClearRef = useRef(false);
+   145→
+   146→  // إعدادات الفرع النشط — تُحمّل async من قاعدة البيانات (BranchSetting).
+   147→  // الخريطة المدمجة (فرع + شركة) تُبنى عبر resolveReceiptSettings عند الطباعة.
+   148→  const [branchSettings, setBranchSettings] = useState({});
+   149→  useEffect(() => {
+   150→    let active = true;
+   151→    if (!activeProjectId) { setBranchSettings({}); return; }
+   152→    getBranchSettings(activeProjectId)
+   153→      .then(s => { if (active) setBranchSettings(s); })
+   154→      .catch(() => { if (active) setBranchSettings({}); });
+   155→    return () => { active = false; };
+   156→  }, [activeProjectId]);
+   157→  const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
+   158→  const tableLabel = activeTable?.tableName || t('طاولة', 'Table', lang);
+   159→
+   160→  // ─── تحميل المنتجات والزبائن والمنصات ───────────────────────────────
+   161→  useEffect(() => {
+   162→    let active = true;
+   163→    (async () => {
+   164→      setMenuLoading(true);
+   165→      try {
+   166→        // حمّل الأقسام والأصناف معاً — الأقسام مرتّبة حسب sortOrder
+   167→        const [cats, items] = await Promise.all([
+   168→          base44.entities.MenuCategory.filter({ isActive: true }),
+   169→          base44.entities.InventoryItem.filter({ isActive: true }),
+   170→        ]);
+   171→        if (!active) return;
+   172→        const sortedCats = (cats || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+   173→        setCategories(sortedCats);
+   174→        setMenuItems(Array.isArray(items) ? items : []);
+   175→      } catch (e) {
+   176→        console.warn('Menu load failed:', e);
+   177→        if (!active) return;
+   178→        setCategories([]);
+   179→        setMenuItems([]);
+   180→      } finally {
+   181→        if (active) setMenuLoading(false);
+   182→      }
+   183→
+   184→      // الزبائن (اختياري)
+   185→      try {
+   186→        const cs = await base44.entities.Client.list();
+   187→        if (active && Array.isArray(cs)) setCustomers(cs);
+   188→      } catch { /* الزبائن اختياريون */ }
+   189→
+   190→      // Feature 3: منصات التوصيل — فقط المنصات ذات العمولة (>0)
+   191→      // خيار "توصيل مباشر" يُضاف افتراضياً في القائمة المنسدلة (بلا عمولة)
+   192→      try {
+   193→        const ps = await base44.entities.DeliveryPlatform.filter({ isActive: true });
+   194→        if (active && Array.isArray(ps) && ps.length) {
+   195→          const filtered = ps.filter(p => (parseFloat(p.commissionRate) || 0) > 0);
+   196→          setPlatforms(filtered);
+   197→        } else if (active) {
+   198→          setPlatforms([]);
+   199→        }
+   200→      } catch {
+   201→        if (active) setPlatforms([]);
+   202→      }
+   203→    })();
+   204→    return () => { active = false; };
+   205→  }, []);
+   206→
+   207→  // ─── Feature 4: استئناف المسودة المحفوظة في الطاولة عند فتح POS ────
+   208→  useEffect(() => {
+   209→    if (draftLoadedRef.current) return;
+   210→    if (!activeTable?.tableId) { draftLoadedRef.current = true; return; }
+   211→    if (menuLoading) return; // انتظر تحميل القائمة والزبائن
+   212→
+   213→    const draft = getTableDraft(activeTable.tableId);
+   214→    if (draft && Array.isArray(draft.cart) && draft.cart.length > 0) {
+   215→      // منع تشغيل الـ auto-clear عند استعادة السلة
+   216→      skipAutoClearRef.current = true;
+   217→      setCart(draft.cart);
+   218→      setCustomerId(draft.customerId || '');
+   219→      setCustomerName(draft.customerName || '');
+   220→      setInvoiceType(draft.invoiceType || 'CONSTRUCTION');
+   221→      setPlatformId(draft.platformId || '');
+   222→      setDeliveryFee(typeof draft.deliveryFee === 'number' ? draft.deliveryFee : 0);
+   223→      setNotes(draft.notes || '');
+   224→      if (draft.customerId) {
+   225→        const c = (customers || []).find(c => c.id === draft.customerId);
+   226→        if (c) setCustomer(c);
+   227→      }
+   228→      toast.info(t('تم استئناف المسودة المحفوظة', 'Resumed saved draft', lang));
+   229→      // حرّر العلم بعد لحظة كافية ليتحقق الـ auto-save من السلة غير الفارغة
+   230→      setTimeout(() => { skipAutoClearRef.current = false; }, 100);
+   231→    }
+   232→    draftLoadedRef.current = true;
+   233→  }, [menuLoading, customers, activeTable?.tableId, lang]);
+   234→
+   235→  // ─── Feature 4: حفظ تلقائي للمسودة (debounced 500ms) ─────────────────
+   236→  useEffect(() => {
+   237→    if (!activeTable?.tableId) return;
+   238→
+   239→    const tid = setTimeout(() => {
+   240→      if (skipAutoClearRef.current) return;
+   241→      const discountPct = (customer && !customer.isCash)
+   242→        ? (parseFloat(customer.discountPercentage) || 0)
+   243→        : 0;
+   244→
+   245→      if (cart.length > 0) {
+   246→        // حفظ/تحديث المسودة في الطاولة — تُصبح الطاولة DRAFT تلقائياً
+   247→        try {
+   248→          saveDraftToTable(activeTable.tableId, {
+   249→            cart,
+   250→            customerId,
+   251→            customerName,
+   252→            invoiceType,
+   253→            platformId,
+   254→            deliveryFee,
+   255→            discountPercentage: discountPct,
+   256→            notes,
+   257→          });
+   258→        } catch { /* ignore */ }
+   259→      } else {
+   260→        // السلة فارغة + الطاولة لها مسودة → حرّر الطاولة
+   261→        const draft = getTableDraft(activeTable.tableId);
+   262→        if (draft) {
+   263→          try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+   264→          toast.success(t('تم تحرير الطاولة — السلة فارغة', 'Table freed — cart is empty', lang));
+   265→        }
+   266→      }
+   267→    }, 500);
+   268→
+   269→    return () => clearTimeout(tid);
+   270→  }, [
+   271→    cart, customerId, customerName, invoiceType, platformId,
+   272→    deliveryFee, notes, customer, activeTable?.tableId, lang,
+   273→  ]);
+   274→
+   275→  // ─── فلترة المنتجات ─────────────────────────────────────────────────
+   276→  // - عند البحث: تجاهل فلتر القسم واعرض نتائج مسطّحة من كل الأقسام
+   277→  // - عند اختيار قسم محدد: اعرض أصنافه فقط
+   278→  // - '__all__' أو لا شيء (مع عدم بحث): يُعالج في العرض
+   279→  const filteredMenu = useMemo(() => {
+   280→    const q = search.trim().toLowerCase();
+   281→    return menuItems.filter((item) => {
+   282→      const matchSearch = !q ||
+   283→        String(item.name || '').toLowerCase().includes(q) ||
+   284→        String(item.nameEn || '').toLowerCase().includes(q) ||
+   285→        String(item.code || '').toLowerCase().includes(q);
+   286→      if (!matchSearch) return false;
+   287→      // عند البحث، أظهر نتائج من كل الأقنام
+   288→      if (q) return true;
+   289→      // بدون بحث: اعرض فقط أصناف القسم المختار (أو الكل إن اختار "__all__")
+   290→      if (activeCategoryView === null) return false; // لا قائمة هنا — عرض الأقسام
+   291→      if (activeCategoryView === '__all__') return true;
+   292→      return item.categoryId === activeCategoryView;
+   293→    });
+   294→  }, [menuItems, activeCategoryView, search]);
+   295→
+   296→  // عدد الأصناف لكل قسم — لعرضه على بطاقة القسم
+   297→  const countByCategory = useMemo(() => {
+   298→    const m = new Map();
+   299→    menuItems.forEach((it) => {
+   300→      const k = it.categoryId || '__none__';
+   301→      m.set(k, (m.get(k) || 0) + 1);
+   302→    });
+   303→    return m;
+   304→  }, [menuItems]);
+   305→
+   306→  // هل نحن في وضع عرض شبكة الأقسام؟ (لا بحث + لا قسم مختار)
+   307→  const showCategoriesGrid = !search.trim() && activeCategoryView === null;
+   308→
+   309→  // ─── عربة التسوّق ───────────────────────────────────────────────────
+   310→  const addToCart = (item) => {
+   311→    setCart(prev => {
+   312→      const idx = prev.findIndex(c => c.itemId === item.id);
+   313→      if (idx >= 0) {
+   314→        const next = [...prev];
+   315→        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+   316→        return next;
+   317→      }
+   318→      return [...prev, {
+   319→        itemId: item.id,
+   320→        name: item.name,
+   321→        nameEn: item.nameEn || '',
+   322→        price: parseFloat(item.salePrice ?? item.unitCost) || 0,
+   323→        qty: 1,
+   324→      }];
+   325→    });
+   326→  };
+   327→
+   328→  const changeQty = (itemId, delta) => {
+   329→    setCart(prev => prev
+   330→      .map(c => c.itemId === itemId ? { ...c, qty: c.qty + delta } : c)
+   331→      .filter(c => c.qty > 0)
+   332→    );
+   333→  };
+   334→
+   335→  const setQty = (itemId, qty) => {
+   336→    const q = Math.max(0, parseInt(qty) || 0);
+   337→    if (q === 0) {
+   338→      setCart(prev => prev.filter(c => c.itemId !== itemId));
+   339→    } else {
+   340→      setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, qty: q } : c));
+   341→    }
+   342→  };
+   343→
+   344→  const removeItem = (itemId) => {
+   345→    setCart(prev => prev.filter(c => c.itemId !== itemId));
+   346→  };
+   347→
+   348→  const clearCart = () => {
+   349→    setCart([]);
+   350→    setPayments([]);
+   351→    setCashReceived('');
+   352→    setInvoiceType('CONSTRUCTION');
+   353→    setDeliveryFee(0);
+   354→    setPlatformId('');
+   355→    setNotes('');
+   356→    setCustomer(null);
+   357→    setCustomerId('');
+   358→    setCustomerName('');
+   359→  };
+   360→
+   361→  // ─── Feature 1: الخصم + Feature 2: رسوم التوصيل + Feature 3: العمولة ─
+   362→  const discountPercentage = useMemo(() => {
+   363→    if (!customer || customer.isCash) return 0;
+   364→    return parseFloat(customer.discountPercentage) || 0;
+   365→  }, [customer]);
+   366→
+   367→  const discountAmount = useMemo(
+   368→    () => +(subtotal_raw(cart) * (discountPercentage / 100)).toFixed(2),
+   369→    [cart, discountPercentage]
+   370→  );
+   371→
+   372→  const isDelivery = invoiceType === 'SERVICE';
+   373→  const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
+   374→
+   375→  // المنصة المختارة (إن وُجدت)
+   376→  const selectedPlatform = useMemo(
+   377→    () => platforms.find(p => p.id === platformId) || null,
+   378→    [platformId, platforms]
+   379→  );
+   380→
+   381→  // هل هذا طلب عبر منصة توصيل؟ (توصيل + منصة محددة وليست "توصيل مباشر")
+   382→  // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
+   383→  const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
+   384→
+   385→  // subtotal
+   386→  const subtotal = useMemo(
+   387→    () => subtotal_raw(cart),
+   388→    [cart]
+   389→  );
+   390→
+   391→  // القاعدة الخاضعة للضريبة = subtotal - discount + deliveryFee
+   392→  const vatBase = useMemo(
+   393→    () => Math.max(0, subtotal - discountAmount + effectiveDeliveryFee),
+   394→    [subtotal, discountAmount, effectiveDeliveryFee]
+   395→  );
+   396→
+   397→  const vatCalc = useMemo(() => calcVAT(vatBase, 0.15), [vatBase]);
+   398→  const total = vatCalc.total; // = vatBase + vat
+   399→
+   400→  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
+   401→  const platformCommission = useMemo(() => {
+   402→    if (!isDelivery || !selectedPlatform) return 0;
+   403→    const rate = parseFloat(selectedPlatform.commissionRate) || 0;
+   404→    if (rate <= 0) return 0;
+   405→    return +(total * (rate / 100)).toFixed(2);
+   406→  }, [isDelivery, selectedPlatform, total]);
+   407→
+   408→  const totalPaid = useMemo(
+   409→    () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
+   410→    [payments]
+   411→  );
+   412→  const change = totalPaid > total ? totalPaid - total : 0;
+   413→  // مبيعات المنصات آجلة دائماً — تُعتبر "مكتملة الدفع" تلقائياً لتمكين طباعة الإيصال
+   414→  // لكن paidAmount الفعلي = 0 (تُحصّل لاحقاً عبر كشف المنصة).
+   415→  const isFullyPaid = isPlatformSale
+   416→    ? (total > 0)
+   417→    : (totalPaid >= total && total > 0);
+   418→
+   419→  // ─── المدفوعات ──────────────────────────────────────────────────────
+   420→  const addPayment = (method, amount = null) => {
+   421→    const amt = amount !== null ? amount : parseFloat(cashReceived);
+   422→    if (!amt || amt <= 0) {
+   423→      toast.error(t('أدخل مبلغاً صحيحاً', 'Enter a valid amount', lang));
+   424→      return;
+   425→    }
+   426→    const remaining = total - totalPaid;
+   427→    if (amt > remaining + 0.01 && method !== 'CREDIT') {
+   428→      toast.info(t('المبلغ أكبر من المتبقي — الباقي للزبون', 'Amount exceeds remaining — change due', lang));
+   429→    }
+   430→    setPayments(prev => [...prev, { method, amount: +amt.toFixed(2) }]);
+   431→    setCashReceived('');
+   432→  };
+   433→
+   434→  const removePayment = (idx) => {
+   435→    setPayments(prev => prev.filter((_, i) => i !== idx));
+   436→  };
+   437→
+   438→  // ─── إجراءات ────────────────────────────────────────────────────────
+   439→  const exitToTables = () => {
+   440→    clearActiveTable();
+   441→    setActiveItem('tables');
+   442→  };
+   443→
+   444→  // طباعة طلب المطبخ (إيصال داخلي للمنتجات فقط — بلا أسعار)
+   445→  const printOrder = () => {
+   446→    if (!cart.length) {
+   447→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   448→      return;
+   449→    }
+   450→    const w = window.open('', '_blank', 'width=400,height=600');
+   451→    if (!w) {
+   452→      toast.error(t('الرجاء السماح بالنوافذ المنبثقة', 'Please allow pop-ups', lang));
+   453→      return;
+   454→    }
+   455→    const rtl = lang === 'ar';
+   456→    const itemsHtml = cart.map((c, i) => `
+   457→      <tr>
+   458→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc;">${i + 1}</td>
+   459→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; font-weight:700;">${c.name}</td>
+   460→        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; text-align:center; font-weight:700;">${c.qty}</td>
+   461→      </tr>
+   462→    `).join('');
+   463→    w.document.write(`
+   464→      <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
+   465→        <head><meta charset="utf-8"><title>${t('طلب المطبخ', 'Kitchen Order', lang)}</title>
+   466→        <style>
+   467→          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+   468→          body { font-family:'Cairo','Tahoma',sans-serif; padding:8px; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
+   469→          .h { text-align:center; font-size:18px; font-weight:800; }
+   470→          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:6px; }
+   471→          table { width:100%; border-collapse:collapse; font-size:13px; }
+   472→          th { background:#000; color:#fff; padding:6px; font-size:12px; }
+   473→          .meta { font-size:11px; color:#555; margin:4px 0 8px; }
+   474→          @page { size: 80mm auto; margin: 4mm; }
+   475→        </style></head>
+   476→        <body>
+   477→          <div class="h">${t('طلب المطبخ', 'Kitchen Order', lang)}</div>
+   478→          <div class="sub">${branchLabel} — ${tableLabel}</div>
+   479→          <div class="meta">
+   480→            ${t('التاريخ', 'Date', lang)}: ${formatDate(new Date().toISOString(), lang)} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+   481→            ${t('الكاشير', 'Cashier', lang)}: ${cashier}
+   482→          </div>
+   483→          <table>
+   484→            <thead><tr><th>#</th><th>${t('الصنف', 'Item', lang)}</th><th>${t('الكمية', 'Qty', lang)}</th></tr></thead>
+   485→            <tbody>${itemsHtml}</tbody>
+   486→          </table>
+   487→          <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
+   488→        </body>
+   489→      </html>
+   490→    `);
+   491→    w.document.close();
+   492→    w.focus();
+   493→    toast.success(t('تم إرسال طلب المطبخ للطباعة', 'Kitchen order sent to printer', lang));
+   494→  };
+   495→
+   496→  // تعليق الطلب — يحفظ المسودة في الطاولة (DRAFT) ويعود لشاشة الطاولات
+   497→  const holdInvoice = () => {
+   498→    if (!cart.length) {
+   499→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   500→      return;
+   501→    }
+   502→    // حفظ نهائي للمسودة قبل الخروج (تُصبح الطاولة DRAFT)
+   503→    if (activeTable?.tableId) {
+   504→      try {
+   505→        saveDraftToTable(activeTable.tableId, {
+   506→          cart,
+   507→          customerId,
+   508→          customerName,
+   509→          invoiceType,
+   510→          platformId,
+   511→          deliveryFee,
+   512→          discountPercentage,
+   513→          notes,
+   514→        });
+   515→      } catch { /* ignore */ }
+   516→    }
+   517→    // منع الـ auto-clear من تحرير الطاولة عند إفراغ السلة
+   518→    skipAutoClearRef.current = true;
+   519→    toast.success(t('تم تعليق الطلب — يمكن استئنافه من الطاولة', 'Order held — can be resumed from the table', lang));
+   520→    clearActiveTable();
+   521→    setActiveTable(null);
+   522→    clearCart();
+   523→    setActiveItem('tables');
+   524→  };
+   525→
+   526→  // ─── Feature 5: فتح حوار الإلغاء بكلمة مرور المشرف ─────────────────
+   527→  const openCancelDialog = () => {
+   528→    if (!cart.length) {
+   529→      exitToTables();
+   530→      return;
+   531→    }
+   532→    setCancelPassword('');
+   533→    setCancelAttempts(0);
+   534→    setCancelError('');
+   535→    setConfirmCancelOpen(true);
+   536→  };
+   537→
+   538→  const performCancel = () => {
+   539→    skipAutoClearRef.current = true;
+   540→    if (activeTable?.tableId) {
+   541→      try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+   542→    }
+   543→    clearCart();
+   544→    setConfirmCancelOpen(false);
+   545→    toast.info(t('تم إلغاء الطلب', 'Order cancelled', lang));
+   546→    clearActiveTable();
+   547→    setActiveTable(null);
+   548→    setActiveItem('tables');
+   549→  };
+   550→
+   551→  const submitCancelPassword = () => {
+   552→    // المالك لا يحتاج كلمة مرور
+   553→    if (isOwner) {
+   554→      performCancel();
+   555→      return;
+   556→    }
+   557→    if (SUPERVISOR_PASSWORDS.includes(cancelPassword)) {
+   558→      performCancel();
+   559→      return;
+   560→    }
+   561→    // كلمة مرور خاطئة
+   562→    const nextAttempts = cancelAttempts + 1;
+   563→    if (nextAttempts >= MAX_CANCEL_ATTEMPTS) {
+   564→      setConfirmCancelOpen(false);
+   565→      toast.error(t('تجاوزت المحاولات المسموحة — تم إغلاق النافذة', 'Max attempts exceeded — dialog closed', lang));
+   566→      return;
+   567→    }
+   568→    setCancelAttempts(nextAttempts);
+   569→    setCancelError(t('كلمة المرور غير صحيحة', 'Incorrect password', lang));
+   570→    setCancelPassword('');
+   571→  };
+   572→
+   573→  // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
+   574→  const handlePrintReceipt = async () => {
+   575→    if (!cart.length) {
+   576→      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+   577→      return;
+   578→    }
+   579→    if (!isFullyPaid) {
+   580→      toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
+   581→      return;
+   582→    }
+   583→
+   584→    // بناء الإيصال
+   585→    const year = new Date().getFullYear();
+   586→    const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
+   587→    const lineItems = cart.map(c => ({
+   588→      description: c.name,
+   589→      descriptionEn: c.nameEn || '',
+   590→      qty: c.qty,
+   591→      unitPrice: c.price,
+   592→      total: +(c.price * c.qty).toFixed(2),
+   593→    }));
+   594→    // إعدادات الإيصال المدمجة (فرع + شركة) — تُرفق للإيصال للطباعة المستقبلية
+   595→    // resolveReceiptSettings الآن async — نستخدم await
+   596→    const branchReceiptSettings = activeProjectId
+   597→      ? await resolveReceiptSettings(activeProjectId, companySettings)
+   598→      : companySettings;
+   599→    const platformName = isDelivery
+   600→      ? (selectedPlatform?.name || (platformId ? '' : t('توصيل مباشر', 'Direct Delivery', lang)))
+   601→      : '';
+   602→    const invoice = {
+   603→      invoiceNo,
+   604→      invoiceType, // CONSTRUCTION=صالة / SERVICE=توصيل
+   605→      projectId: activeProjectId || '',
+   606→      projectName: activeProjectName || branchLabel,
+   607→      clientId: customerId || '',
+   608→      clientName: customerName || t('زبون نقدي', 'Cash Customer', lang),
+   609→      date: new Date().toISOString(),
+   610→      lineItems,
+   611→      subtotal: +subtotal.toFixed(2),
+   612→      // Feature 1: خصم الزبون
+   613→      discountPercentage,
+   614→      discountAmount,
+   615→      // Feature 2: رسوم التوصيل
+   616→      deliveryFee: effectiveDeliveryFee,
+   617→      vatRate: 0.15,
+   618→      vatAmount: vatCalc.vat,
+   619→      totalAmount: total,
+   620→      // مبيعات المنصات آجلة دائماً — paidAmount=0 و status=PARTIALLY_PAID
+   621→      // تُحصّل لاحقاً عبر كشف/تسوية المنصة.
+   622→      paidAmount: isPlatformSale ? 0 : totalPaid,
+   623→      status: isPlatformSale ? 'PARTIALLY_PAID' : (isFullyPaid ? 'PAID' : 'PARTIALLY_PAID'),
+   624→      description: isPlatformSale
+   625→        ? `${t('طلب منصة', 'Platform Order')}: ${platformName}`
+   626→        : `${t('طاولة', 'Table', lang)}: ${tableLabel}`,
+   627→      // Feature 3: المنصة والعمولة (للمعلومة فقط)
+   628→      platformId: isDelivery ? platformId : '',
+   629→      platformName,
+   630→      platformCommission,
+   631→      notes: JSON.stringify({
+   632→        tableId: activeTable?.tableId || '',
+   633→        tableName: tableLabel,
+   634→        payments: isPlatformSale ? [] : payments,
+   635→        cashier,
+   636→        platform: isDelivery ? { platformId, platformName, platformCommission } : null,
+   637→        isPlatformSale,
+   638→        deliveryFee: effectiveDeliveryFee,
+   639→        discountPercentage,
+   640→        items: lineItems,
+   641→        branchSettings: branchReceiptSettings,
+   642→      }),
+   643→      cashier,
+   644→      tableNo: tableLabel,
+   645→      branchSettings: branchReceiptSettings,
+   646→    };
+   647→
+   648→    // محاولة الحفظ على الخادم
+   649→    let saved = null;
+   650→    let backendOk = false;
+   651→    try {
+   652→      saved = await base44.entities.SalesInvoice.create(invoice);
+   653→      backendOk = true;
+   654→    } catch (e) {
+   655→      console.warn('SalesInvoice save failed (preview-only):', e);
+   656→    }
+   657→
+   658→    // Feature 4: تحرير الطاولة + مسح المسودة عند إتمام البيع
+   659→    skipAutoClearRef.current = true;
+   660→    if (activeTable?.tableId) {
+   661→      try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+   662→    }
+   663→
+   664→    // فتح معاينة الإيصال الحراري
+   665→    setPrintReceipt(saved || invoice);
+   666→
+   667→    if (backendOk) {
+   668→      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
+   669→    } else {
+   670→      toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
+   671→    }
+   672→
+   673→    // تنظيف
+   674→    clearCart();
+   675→  };
+   676→
+   677→  // ─── عرض ───────────────────────────────────────────────────────────
+   678→  return (
+   679→    <div className="h-full flex flex-col overflow-hidden">
+   680→      {/* الرأس العلوي */}
+   681→      <div className="shrink-0 border-b bg-white px-4 py-2.5 flex items-center gap-3">
+   682→        <div className="flex items-center gap-2">
+   683→          <div
+   684→            className="size-9 rounded-lg flex items-center justify-center text-white shrink-0"
+   685→            style={{ background: branchSettings.primaryColor || '#d97706' }}
+   686→          >
+   687→            <UtensilsCrossed className="size-5" />
+   688→          </div>
+   689→          <div className="leading-tight">
+   690→            <div className="font-bold text-foreground text-sm">{branchLabel}</div>
+   691→            <div className="text-[11px] text-muted-foreground">
+   692→              {branchSettings.posTerminalId && (
+   693→                <span dir="ltr" className="font-mono">{branchSettings.posTerminalId}</span>
+   694→              )}
+   695→            </div>
+   696→          </div>
+   697→        </div>
+   698→
+   699→        <div className="h-8 w-px bg-border mx-1" />
+   700→
+   701→        <div className="flex items-center gap-2 text-sm">
+   702→          <span className="text-muted-foreground">{t('الطاولة', 'Table', lang)}:</span>
+   703→          <span className="font-bold text-foreground bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
+   704→            {tableLabel}
+   705→          </span>
+   706→        </div>
+   707→
+   708→        <div className="h-8 w-px bg-border mx-1" />
+   709→
+   710→        <div className="flex items-center gap-2 text-sm">
+   711→          <span className="text-muted-foreground">{t('الكاشير', 'Cashier', lang)}:</span>
+   712→          <span className="font-semibold text-foreground">{cashier}</span>
+   713→        </div>
+   714→
+   715→        <div className="flex-1" />
+   716→
+   717→        <Button
+   718→          variant="outline"
+   719→          size="sm"
+   720→          onClick={exitToTables}
+   721→          className="gap-1.5"
+   722→        >
+   723→          <LogOut className="size-4" />
+   724→          {t('خروج', 'Exit', lang)}
+   725→        </Button>
+   726→      </div>
+   727→
+   728→      {/* الجسم: شبكة منقسمة */}
+   729→      <div className="flex-1 min-h-0 flex overflow-hidden">
+   730→        {/* ─── الجزء الأيمن: المنتجات (يسار في RTL) ─── */}
+   731→        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50">
+   732→          {/* شريط البحث */}
+   733→          <div className="shrink-0 p-3 border-b bg-white">
+   734→            <div className="relative">
+   735→              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   736→              <Input
+   737→                value={search}
+   738→                onChange={e => setSearch(e.target.value)}
+   739→                placeholder={t('ابحث عن صنف...', 'Search items...', lang)}
+   740→                className="ps-9 h-10"
+   741→              />
+   742→            </div>
+   743→          </div>
+   744→
+   745→          {/* محتوى المنتجات: شبكة الأقسام أو شبكة الأصناف */}
+   746→          <div className="flex-1 overflow-y-auto p-3">
+   747→            {menuLoading ? (
+   748→              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   749→                {Array.from({ length: 8 }).map((_, i) => (
+   750→                  <Card key={i} className="h-28 animate-pulse bg-muted/40" />
+   751→                ))}
+   752→              </div>
+   753→            ) : showCategoriesGrid ? (
+   754→              /* ───── عرض شبكة الأقسام ───── */
+   755→              <div className="space-y-3">
+   756→                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   757→                  <FolderPlus className="size-4" />
+   758→                  {t('اختر قسماً لتصفّح وجباته', 'Select a category to browse its items', lang)}
+   759→                </div>
+   760→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+   761→                  {/* بطاقة "كل الأصناف" */}
+   762→                  <button
+   763→                    type="button"
+   764→                    onClick={() => setActiveCategoryView('__all__')}
+   765→                    className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white p-4 h-32 flex flex-col items-start justify-between text-start shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all active:scale-[0.98] ring-2 ring-slate-200 hover:ring-slate-400"
+   766→                  >
+   767→                    <div className="size-10 rounded-lg bg-white/20 flex items-center justify-center">
+   768→                      <UtensilsCrossed className="size-6" />
+   769→                    </div>
+   770→                    <div className="leading-tight">
+   771→                      <div className="font-bold text-base">{t('كل الأصناف', 'All Items', lang)}</div>
+   772→                      <div className="text-[11px] text-white/80">{t('تصفّح الكل', 'Browse all', lang)}</div>
+   773→                    </div>
+   774→                    <span className="absolute end-2 top-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+   775→                      {menuItems.length}
+   776→                    </span>
+   777→                  </button>
+   778→
+   779→                  {categories.map((cat, idx) => {
+   780→                    const Icon = getCategoryIcon(cat.name || cat.nameEn);
+   781→                    const tone = toneFor(idx);
+   782→                    const count = countByCategory.get(cat.id) || 0;
+   783→                    return (
+   784→                      <button
+   785→                        key={cat.id}
+   786→                        type="button"
+   787→                        onClick={() => setActiveCategoryView(cat.id)}
+   788→                        className={`group relative overflow-hidden rounded-xl bg-gradient-to-br ${tone.bg} text-white p-4 h-32 flex flex-col items-start justify-between text-start shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all active:scale-[0.98] ring-2 ${tone.ring} hover:ring-offset-2`}
+   789→                      >
+   790→                        <div className={`size-10 rounded-lg ${tone.icon} flex items-center justify-center`}>
+   791→                          <Icon className="size-6" />
+   792→                        </div>
+   793→                        <div className="leading-tight">
+   794→                          <div className="font-bold text-base line-clamp-1">{cat.name}</div>
+   795→                          {cat.nameEn && (
+   796→                            <div dir="ltr" className="text-[11px] text-white/80 line-clamp-1 text-start">{cat.nameEn}</div>
+   797→                          )}
+   798→                        </div>
+   799→                        <span className="absolute end-2 top-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+   800→                          {count}
+   801→                        </span>
+   802→                      </button>
+   803→                    );
+   804→                  })}
+   805→                </div>
+   806→              </div>
+   807→            ) : filteredMenu.length === 0 ? (
+   808→              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+   809→                <ShoppingCart className="size-12 mb-2 opacity-50" />
+   810→                <p className="text-sm">{t('لا توجد أصناف', 'No items found', lang)}</p>
+   811→              </div>
+   812→            ) : (
+   813→              <div className="space-y-3">
+   814→                {/* زر الرجوع للأقسام (يُخفى أثناء البحث) */}
+   815→                {!search.trim() && (
+   816→                  <button
+   817→                    type="button"
+   818→                    onClick={() => setActiveCategoryView(null)}
+   819→                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md px-3 py-1.5 transition-colors"
+   820→                  >
+   821→                    {lang === 'ar' ? <ArrowRight className="size-4" /> : <ArrowLeft className="size-4" />}
+   822→                    {t('رجوع للأقسام', 'Back to Categories', lang)}
+   823→                  </button>
+   824→                )}
+   825→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+   826→                  {filteredMenu.map(item => {
+   827→                    const price = parseFloat(item.salePrice ?? item.unitCost) || 0;
+   828→                    return (
+   829→                      <Card
+   830→                        key={item.id}
+   831→                        onClick={() => addToCart(item)}
+   832→                        className="p-3 cursor-pointer hover:shadow-md hover:border-emerald-400 transition-all active:scale-[0.98] flex flex-col gap-1"
+   833→                      >
+   834→                        <div className="flex items-start justify-between gap-1">
+   835→                          <div className="font-bold text-sm text-foreground leading-tight line-clamp-2">
+   836→                            {item.name}
+   837→                          </div>
+   838→                        </div>
+   839→                        {item.nameEn && (
+   840→                          <div dir="ltr" className="text-[10px] text-muted-foreground line-clamp-1 text-start">
+   841→                            {item.nameEn}
+   842→                          </div>
+   843→                        )}
+   844→                        <div className="mt-auto pt-1 flex items-center justify-between">
+   845→                          <span className="text-[10px] text-muted-foreground font-mono">{item.code}</span>
+   846→                          <span className="font-bold text-emerald-700 text-sm">
+   847→                            {formatCurrency(price, lang)}
+   848→                          </span>
+   849→                        </div>
+   850→                      </Card>
+   851→                    );
+   852→                  })}
+   853→                </div>
+   854→              </div>
+   855→            )}
+   856→          </div>
+   857→        </div>
+   858→
+   859→        {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
+   860→        <div className="w-[400px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
+   861→          {/* رأس الإيصال: زبون + طاولة + نوع الطلب */}
+   862→          <div className="shrink-0 p-3 border-b bg-slate-50 space-y-2">
+   863→            <div className="flex items-center gap-2">
+   864→              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+   865→                {t('الزبون', 'Customer', lang)}:
+   866→              </Label>
+   867→              <Select
+   868→                value={customerId || '__cash__'}
+   869→                onValueChange={(v) => {
+   870→                  if (v === '__cash__') {
+   871→                    setCustomerId('');
+   872→                    setCustomerName('');
+   873→                    setCustomer(null);
+   874→                  } else {
+   875→                    const c = customers.find(c => c.id === v);
+   876→                    setCustomerId(v);
+   877→                    setCustomerName(c?.name || '');
+   878→                    setCustomer(c || null);
+   879→                  }
+   880→                }}
+   881→              >
+   882→                <SelectTrigger className="h-8 text-xs">
+   883→                  <SelectValue placeholder={t('زبون نقدي', 'Cash Customer', lang)} />
+   884→                </SelectTrigger>
+   885→                <SelectContent>
+   886→                  <SelectItem value="__cash__">{t('زبون نقدي', 'Cash Customer', lang)}</SelectItem>
+   887→                  {customers.map(c => (
+   888→                    <SelectItem key={c.id} value={c.id}>
+   889→                      {c.name}
+   890→                      {!c.isCash && c.discountPercentage > 0
+   891→                        ? ` — ${t('خصم', 'Discount', lang)} ${c.discountPercentage}%`
+   892→                        : ''}
+   893→                    </SelectItem>
+   894→                  ))}
+   895→                </SelectContent>
+   896→              </Select>
+   897→              {/* Feature 1: شارة الخصم بجانب اسم الزبون */}
+   898→              {customer && !customer.isCash && discountPercentage > 0 && (
+   899→                <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5 whitespace-nowrap">
+   900→                  {t(`خصم ${discountPercentage}%`, `${discountPercentage}% off`, lang)}
+   901→                </span>
+   902→              )}
+   903→            </div>
+   904→            {!customerId && (
+   905→              <Input
+   906→                value={customerName}
+   907→                onChange={e => setCustomerName(e.target.value)}
+   908→                placeholder={t('اسم الزبون (اختياري)', 'Customer name (optional)', lang)}
+   909→                className="h-8 text-xs"
+   910→              />
+   911→            )}
+   912→
+   913→            {/* Feature 2 & 3: نوع الطلب (صالة/توصيل) + حقول التوصيل */}
+   914→            <div className="grid grid-cols-2 gap-2">
+   915→              <Button
+   916→                variant={invoiceType === 'CONSTRUCTION' ? 'default' : 'outline'}
+   917→                onClick={() => {
+   918→                  setInvoiceType('CONSTRUCTION');
+   919→                  // عند العودة للصالة: لا حاجة لرسوم التوصيل أو المنصة
+   920→                  setDeliveryFee(0);
+   921→                  setPlatformId('');
+   922→                }}
+   923→                className={`h-8 text-xs gap-1.5 ${invoiceType === 'CONSTRUCTION' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
+   924→              >
+   925→                <UtensilsCrossed className="size-3.5" />
+   926→                {t('صالة', 'Dine-in', lang)}
+   927→              </Button>
+   928→              <Button
+   929→                variant={invoiceType === 'SERVICE' ? 'default' : 'outline'}
+   930→                onClick={() => setInvoiceType('SERVICE')}
+   931→                className={`h-8 text-xs gap-1.5 ${invoiceType === 'SERVICE' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+   932→              >
+   933→                <Truck className="size-3.5" />
+   934→                {t('توصيل', 'Delivery', lang)}
+   935→              </Button>
+   936→            </div>
+   937→
+   938→            {isDelivery && (
+   939→              <>
+   940→                <Input
+   941→                  type="number" min="0" step="0.01"
+   942→                  value={deliveryFee === 0 ? '' : deliveryFee}
+   943→                  onChange={e => setDeliveryFee(parseFloat(e.target.value) || 0)}
+   944→                  placeholder={t('رسوم التوصيل', 'Delivery Fee', lang)}
+   945→                  className="h-8 text-xs"
+   946→                />
+   947→                <Select
+   948→                  value={platformId || DIRECT_PLATFORM_VALUE}
+   949→                  onValueChange={(v) => setPlatformId(v === DIRECT_PLATFORM_VALUE ? '' : v)}
+   950→                >
+   951→                  <SelectTrigger className="h-8 text-xs">
+   952→                    <SelectValue placeholder={t('اختر منصة التوصيل', 'Select delivery platform', lang)} />
+   953→                  </SelectTrigger>
+   954→                  <SelectContent>
+   955→                    <SelectItem value={DIRECT_PLATFORM_VALUE}>
+   956→                      {t('توصيل مباشر (بدون عمولة)', 'Direct delivery (no commission)', lang)}
+   957→                    </SelectItem>
+   958→                    {platforms.map(p => (
+   959→                      <SelectItem key={p.id} value={p.id}>
+   960→                        {p.name}{p.commissionRate > 0 ? ` (${p.commissionRate}%)` : ''}
+   961→                      </SelectItem>
+   962→                    ))}
+   963→                  </SelectContent>
+   964→                </Select>
+   965→                {selectedPlatform && selectedPlatform.commissionRate > 0 && (
+   966→                  <div className="text-[11px] text-muted-foreground italic">
+   967→                    {t(
+   968→                      `عمولة المنصة (${selectedPlatform.commissionRate}%): ${formatCurrency(platformCommission, lang)} — تُحتسب في كشف المنصة`,
+   969→                      `Platform commission (${selectedPlatform.commissionRate}%): ${formatCurrency(platformCommission, lang)} — tracked in platform statement`,
+   970→                      lang
+   971→                    )}
+   972→                  </div>
+   973→                )}
+   974→              </>
+   975→            )}
+   976→
+   977→            <div className="flex items-center justify-between text-xs text-muted-foreground">
+   978→              <span>{t('الطاولة', 'Table', lang)}: <span className="font-bold text-foreground">{tableLabel}</span></span>
+   979→              <span>{t('الكاشير', 'Cashier', lang)}: <span className="font-bold text-foreground">{cashier}</span></span>
+   980→            </div>
+   981→          </div>
+   982→
+   983→          {/* قائمة الأصناف */}
+   984→          <div className="flex-1 min-h-0 overflow-y-auto">
+   985→            {cart.length === 0 ? (
+   986→              <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-6">
+   987→                <ShoppingCart className="size-10 mb-2 opacity-40" />
+   988→                <p className="text-sm text-center">
+   989→                  {t('السلة فارغة — اضغط على صنف لإضافته', 'Cart is empty — tap an item to add it', lang)}
+   990→                </p>
+   991→              </div>
+   992→            ) : (
+   993→              <div className="divide-y">
+   994→                {cart.map((item, idx) => (
+   995→                  <div key={item.itemId} className="p-2.5 hover:bg-slate-50">
+   996→                    <div className="flex items-start gap-2">
+   997→                      <span className="text-[11px] text-muted-foreground font-mono mt-0.5 shrink-0">
+   998→                        {idx + 1}.
+   999→                      </span>
+  1000→                      <div className="flex-1 min-w-0">
+  1001→                        <div className="font-semibold text-sm text-foreground truncate">{item.name}</div>
+  1002→                        <div className="flex items-center gap-2 mt-1">
+  1003→                          <div className="flex items-center gap-1">
+  1004→                            <Button
+  1005→                              variant="outline" size="icon"
+  1006→                              className="size-6"
+  1007→                              onClick={() => changeQty(item.itemId, -1)}
+  1008→                            >
+  1009→                              <Minus className="size-3" />
+  1010→                            </Button>
+  1011→                            <Input
+  1012→                              value={item.qty}
+  1013→                              onChange={e => setQty(item.itemId, e.target.value)}
+  1014→                              className="h-6 w-10 text-center text-xs px-1"
+  1015→                            />
+  1016→                            <Button
+  1017→                              variant="outline" size="icon"
+  1018→                              className="size-6"
+  1019→                              onClick={() => changeQty(item.itemId, 1)}
+  1020→                            >
+  1021→                              <Plus className="size-3" />
+  1022→                            </Button>
+  1023→                          </div>
+  1024→                          <span className="text-xs text-muted-foreground">
+  1025→                            {formatCurrency(item.price, lang)} × {item.qty}
+  1026→                          </span>
+  1027→                        </div>
+  1028→                      </div>
+  1029→                      <div className="text-end shrink-0">
+  1030→                        <div className="font-bold text-sm text-foreground">
+  1031→                          {formatCurrency(item.price * item.qty, lang)}
+  1032→                        </div>
+  1033→                        <Button
+  1034→                          variant="ghost" size="icon"
+  1035→                          className="size-6 text-destructive hover:text-destructive mt-0.5"
+  1036→                          onClick={() => removeItem(item.itemId)}
+  1037→                        >
+  1038→                          <X className="size-3" />
+  1039→                        </Button>
+  1040→                      </div>
+  1041→                    </div>
+  1042→                  </div>
+  1043→                ))}
+  1044→              </div>
+  1045→            )}
+  1046→          </div>
+  1047→
+  1048→          {/* الملخّص المالي */}
+  1049→          <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
+  1050→            <div className="flex items-center justify-between text-sm">
+  1051→              <span className="text-muted-foreground">{t('المجموع الفرعي', 'Subtotal', lang)}</span>
+  1052→              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
+  1053→            </div>
+  1054→            {/* Feature 1: بند الخصم */}
+  1055→            {discountAmount > 0 && (
+  1056→              <div className="flex items-center justify-between text-sm text-rose-700">
+  1057→                <span>{t(`خصم (${discountPercentage}%)`, `Discount (${discountPercentage}%)`, lang)}</span>
+  1058→                <span>-{formatCurrency(discountAmount, lang)}</span>
+  1059→              </div>
+  1060→            )}
+  1061→            {/* Feature 2: بند رسوم التوصيل */}
+  1062→            {isDelivery && effectiveDeliveryFee > 0 && (
+  1063→              <div className="flex items-center justify-between text-sm text-blue-700">
+  1064→                <span>{t('رسوم توصيل', 'Delivery Fee', lang)}</span>
+  1065→                <span>+{formatCurrency(effectiveDeliveryFee, lang)}</span>
+  1066→              </div>
+  1067→            )}
+  1068→            <div className="flex items-center justify-between text-sm">
+  1069→              <span className="text-muted-foreground">{t('ضريبة القيمة المضافة (15%)', 'VAT (15%)', lang)}</span>
+  1070→              <span className="font-medium">{formatCurrency(vatCalc.vat, lang)}</span>
+  1071→            </div>
+  1072→            {/* Feature 3: عمولة المنصة (معلومة فقط) */}
+  1073→            {isDelivery && platformCommission > 0 && (
+  1074→              <div className="flex items-center justify-between text-xs text-amber-700 italic">
+  1075→                <span>{t(`عمولة المنصة (${selectedPlatform?.commissionRate}%)`, `Platform commission (${selectedPlatform?.commissionRate}%)`, lang)}</span>
+  1076→                <span>{formatCurrency(platformCommission, lang)}</span>
+  1077→              </div>
+  1078→            )}
+  1079→            <div className="flex items-center justify-between text-base font-bold border-t pt-2">
+  1080→              <span>{t('الإجمالي', 'Total', lang)}</span>
+  1081→              <span className="text-emerald-700">{formatCurrency(total, lang)}</span>
+  1082→            </div>
+  1083→
+  1084→            {/* المدفوعات المطبّقة */}
+  1085→            {payments.length > 0 && !isPlatformSale && (
+  1086→              <div className="bg-white rounded-md border p-2 space-y-1">
+  1087→                <div className="text-[11px] font-semibold text-muted-foreground">
+  1088→                  {t('المدفوعات المطبّقة', 'Applied Payments', lang)}:
+  1089→                </div>
+  1090→                {payments.map((p, i) => {
+  1091→                  const m = PAYMENT_METHODS.find(m => m.key === p.method);
+  1092→                  return (
+  1093→                    <div key={i} className="flex items-center justify-between text-xs">
+  1094→                      <span className="flex items-center gap-1">
+  1095→                        {m && <m.Icon className="size-3" />}
+  1096→                        {m ? (lang === 'ar' ? m.ar : m.en) : p.method}
+  1097→                      </span>
+  1098→                      <span className="flex items-center gap-1">
+  1099→                        <span className="font-medium">{formatCurrency(p.amount, lang)}</span>
+  1100→                        <Button
+  1101→                          variant="ghost" size="icon"
+  1102→                          className="size-5 text-destructive"
+  1103→                          onClick={() => removePayment(i)}
+  1104→                        >
+  1105→                          <X className="size-3" />
+  1106→                        </Button>
+  1107→                      </span>
+  1108→                    </div>
+  1109→                  );
+  1110→                })}
+  1111→                <div className="flex items-center justify-between text-xs font-semibold border-t pt-1">
+  1112→                  <span>{t('المدفوع', 'Paid', lang)}</span>
+  1113→                  <span>{formatCurrency(totalPaid, lang)}</span>
+  1114→                </div>
+  1115→                {change > 0 && (
+  1116→                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-700">
+  1117→                    <span>{t('الباقي للزبون', 'Change', lang)}</span>
+  1118→                    <span>{formatCurrency(change, lang)}</span>
+  1119→                  </div>
+  1120→                )}
+  1121→              </div>
+  1122→            )}
+  1123→
+  1124→            {/* تنبيه: طلب منصة — آجل التحصيل */}
+  1125→            {isPlatformSale && (
+  1126→              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-1">
+  1127→                <div className="flex items-center gap-2 text-blue-800 font-semibold text-xs">
+  1128→                  <Clock className="size-4" />
+  1129→                  {t('طلب منصة — آجل التحصيل', 'Platform Order — Deferred Payment')}
+  1130→                </div>
+  1131→                <div className="text-[11px] text-blue-700">
+  1132→                  {t('سيُحصّل مبلغ هذا الطلب لاحقاً عبر كشف تسوية المنصة', 'This order will be collected later via the platform settlement statement', lang)}
+  1133→                </div>
+  1134→                {platformCommission > 0 && (
+  1135→                  <div className="text-[11px] text-blue-700">
+  1136→                    {t('عمولة المنصة', 'Platform Commission')}: <strong>{formatCurrency(platformCommission, lang)}</strong>
+  1137→                  </div>
+  1138→                )}
+  1139→                <div className="text-[11px] text-blue-700">
+  1140→                  {t('المستحق بعد العمولة', 'Net after commission')}: <strong>{formatCurrency(total - platformCommission, lang)}</strong>
+  1141→                </div>
+  1142→              </div>
+  1143→            )}
+  1144→
+  1145→            {/* المبلغ المستلم + طرق الدفع — تُخفى لطلبات المنصات (آجلة) */}
+  1146→            {!isPlatformSale && (
+  1147→            <>
+  1148→            {/* الدفع نقداً — مع إدخال المبلغ */}
+  1149→            <div className="grid grid-cols-2 gap-2">
+  1150→              <Input
+  1151→                type="number" min="0" step="0.01"
+  1152→                value={cashReceived}
+  1153→                onChange={e => setCashReceived(e.target.value)}
+  1154→                placeholder={t('المبلغ المستلم', 'Amount received', lang)}
+  1155→                className="h-9"
+  1156→              />
+  1157→              <Button
+  1158→                onClick={() => addPayment('CASH')}
+  1159→                className="h-9 bg-emerald-600 hover:bg-emerald-700 gap-1"
+  1160→              >
+  1161→                <Banknote className="size-4" /> {t('نقداً', 'Cash', lang)}
+  1162→              </Button>
+  1163→            </div>
+  1164→
+  1165→            {/* الدفع بالبطاقات — مدى / فيزا / ماستركارد / أخرى */}
+  1166→            <div className="text-[10px] font-semibold text-muted-foreground pt-1">
+  1167→              {t('الدفع بالبطاقة', 'Card Payment', lang)}
+  1168→            </div>
+  1169→            <div className="grid grid-cols-4 gap-1.5">
+  1170→              {[
+  1171→                { key: 'CARD_MADA',  ar: 'مدى',       en: 'Mada',       cls: 'border-green-300 text-green-700 hover:bg-green-50' },
+  1172→                { key: 'CARD_VISA',  ar: 'فيزا',      en: 'Visa',       cls: 'border-blue-300 text-blue-700 hover:bg-blue-50' },
+  1173→                { key: 'CARD_MC',    ar: 'ماستركارد', en: 'Mastercard', cls: 'border-orange-300 text-orange-700 hover:bg-orange-50' },
+  1174→                { key: 'CARD_OTHER', ar: 'أخرى',      en: 'Other',      cls: 'border-slate-300 text-slate-700 hover:bg-slate-50' },
+  1175→              ].map(card => (
+  1176→                <Button
+  1177→                  key={card.key}
+  1178→                  variant="outline"
+  1179→                  onClick={() => {
+  1180→                    const remaining = +(total - totalPaid).toFixed(2);
+  1181→                    if (remaining > 0) addPayment(card.key, remaining);
+  1182→                    else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+  1183→                  }}
+  1184→                  className={`h-9 gap-1 text-xs ${card.cls}`}
+  1185→                >
+  1186→                  <CreditCard className="size-3.5" /> {lang === 'ar' ? card.ar : card.en}
+  1187→                </Button>
+  1188→              ))}
+  1189→            </div>
+  1190→            </>
+  1191→            )}
+  1192→
+  1193→            {/* أزرار الإجراءات */}
+  1194→            <div className="grid grid-cols-2 gap-2 pt-1">
+  1195→              <Button
+  1196→                onClick={printOrder}
+  1197→                variant="outline"
+  1198→                className="h-10 gap-1.5"
+  1199→                disabled={!cart.length}
+  1200→              >
+  1201→                <Printer className="size-4" />
+  1202→                {t('طباعة الطلب', 'Print Order', lang)}
+  1203→              </Button>
+  1204→              <Button
+  1205→                onClick={handlePrintReceipt}
+  1206→                className="h-10 gap-1.5 bg-amber-600 hover:bg-amber-700"
+  1207→                disabled={!cart.length || !isFullyPaid}
+  1208→              >
+  1209→                <ReceiptIcon className="size-4" />
+  1210→                {t('طباعة الإيصال', 'Print Receipt', lang)}
+  1211→              </Button>
+  1212→              <Button
+  1213→                onClick={holdInvoice}
+  1214→                variant="outline"
+  1215→                className="h-9 gap-1.5 text-xs"
+  1216→                disabled={!cart.length}
+  1217→              >
+  1218→                <Pause className="size-3.5" />
+  1219→                {t('تعليق', 'Hold', lang)}
+  1220→              </Button>
+  1221→              <Button
+  1222→                onClick={openCancelDialog}
+  1223→                variant="outline"
+  1224→                className="h-9 gap-1.5 text-xs text-destructive hover:text-destructive"
+  1225→              >
+  1226→                <Trash2 className="size-3.5" />
+  1227→                {t('إلغاء', 'Cancel', lang)}
+  1228→              </Button>
+  1229→            </div>
+  1230→          </div>
+  1231→        </div>
+  1232→      </div>
+  1233→
+  1234→      {/* معاينة الإيصال الحراري */}
+  1235→      <ReceiptPrintDialog
+  1236→        open={!!printReceipt}
+  1237→        onOpenChange={(o) => {
+  1238→          setPrintReceipt(o ? printReceipt : null);
+  1239→          if (!o) {
+  1240→            // عند إغلاق المعاينة — تحرير الطاولة (إن لم تُحرّر) والعودة لشاشة الطاولات
+  1241→            skipAutoClearRef.current = true;
+  1242→            if (activeTable?.tableId) {
+  1243→              try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+  1244→            }
+  1245→            clearActiveTable();
+  1246→            setActiveTable(null);
+  1247→            setActiveItem('tables');
+  1248→          }
+  1249→        }}
+  1250→        invoice={printReceipt}
+  1251→      />
+  1252→
+  1253→      {/* Feature 5: تأكيد الإلغاء بكلمة مرور مشرف */}
+  1254→      <Dialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+  1255→        <DialogContent className="max-w-sm">
+  1256→          <DialogHeader>
+  1257→            <DialogTitle className="flex items-center gap-2">
+  1258→              <ShieldCheck className="size-5 text-amber-600" />
+  1259→              {t('تأكيد الإلغاء — يتطلب صلاحية مشرف', 'Confirm Cancel — Supervisor Required', lang)}
+  1260→            </DialogTitle>
+  1261→          </DialogHeader>
+  1262→
+  1263→          {isOwner ? (
+  1264→            <div className="space-y-3">
+  1265→              <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2.5">
+  1266→                {t('المالك — لا يحتاج كلمة مرور', 'Owner — no password required', lang)}
+  1267→              </p>
+  1268→              <p className="text-xs text-muted-foreground">
+  1269→                {t(
+  1270→                  'سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟',
+  1271→                  'The cart will be cleared and the table freed. Are you sure?',
+  1272→                  lang
+  1273→                )}
+  1274→              </p>
+  1275→            </div>
+  1276→          ) : (
+  1277→            <div className="space-y-2">
+  1278→              <p className="text-xs text-muted-foreground">
+  1279→                {t(
+  1280→                  'سيتم إفراغ السلة وتحرير الطاولة. يتطلب هذا الإجراء صلاحية مشرف.',
+  1281→                  'The cart will be cleared and the table freed. This action requires supervisor authority.',
+  1282→                  lang
+  1283→                )}
+  1284→              </p>
+  1285→              <Label className="text-xs font-semibold">{t('كلمة مرور المشرف', 'Supervisor Password', lang)}</Label>
+  1286→              <Input
+  1287→                type="password"
+  1288→                value={cancelPassword}
+  1289→                onChange={e => { setCancelPassword(e.target.value); setCancelError(''); }}
+  1290→                onKeyDown={e => { if (e.key === 'Enter') submitCancelPassword(); }}
+  1291→                placeholder="••••••••"
+  1292→                autoFocus
+  1293→                className="h-9"
+  1294→              />
+  1295→              {cancelError && (
+  1296→                <p className="text-xs text-destructive font-medium">{cancelError}</p>
+  1297→              )}
+  1298→              <p className="text-[11px] text-muted-foreground">
+  1299→                {t(
+  1300→                  `المحاولات المتبقية: ${MAX_CANCEL_ATTEMPTS - cancelAttempts}`,
+  1301→                  `Attempts remaining: ${MAX_CANCEL_ATTEMPTS - cancelAttempts}`,
+  1302→                  lang
+  1303→                )}
+  1304→              </p>
+  1305→            </div>
+  1306→          )}
+  1307→
+  1308→          <DialogFooter className="gap-2">
+  1309→            <Button variant="outline" onClick={() => setConfirmCancelOpen(false)}>
+  1310→              {t('تراجع', 'Back', lang)}
+  1311→            </Button>
+  1312→            <Button variant="destructive" onClick={submitCancelPassword}>
+  1313→              <Trash2 className="size-4" />
+  1314→              {t('تأكيد الإلغاء', 'Confirm Cancel', lang)}
+  1315→            </Button>
+  1316→          </DialogFooter>
+  1317→        </DialogContent>
+  1318→      </Dialog>
+  1319→    </div>
+  1320→  );
+  1321→}
+  1322→
+  1323→// ─── مساعد حسابي داخلي للمجموع الفرعي (يستخدم قبل تعريف الميمو) ──────
+  1324→function subtotal_raw(cartArr) {
+  1325→  return cartArr.reduce((s, c) => s + (c.price * c.qty), 0);
+  1326→}
+  1327→

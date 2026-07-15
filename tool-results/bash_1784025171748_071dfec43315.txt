@@ -1,0 +1,270 @@
+- MenuManagement.jsx: Full CRUD for categories (cards + add/edit/delete/reorder) and menu items (table + add/edit/delete + search + filter by category). CSV import with preview dialog (validates each row, auto-skips invalid, bulkCreate in 50-row chunks). CSV export of current filtered items. CSV template download with sample rows. Live profit margin preview in item dialog. Items write both salePrice and unitCost (backward compat).
+- POS.jsx: Two-level navigation — categories grid (large gradient cards with icon, name ar+en, item count) → click category → items grid filtered by categoryId. "كل الأصناف" card shows all. Back button returns to categories. Search overrides category selection and shows flat results across all items. Uses salePrice ?? unitCost for prices. All 5 existing POS features (discount, delivery fee, platform, auto-save draft, cancel with password) preserved. Split-screen layout preserved. Payment methods unchanged (CASH + 4 card types, no WALLET).
+- Cycles/permissions: 'menu' added to READY_TABS, added as 4th tab to inventory-cycle with UtensilsCrossed icon, imported and mapped in CycleScreen.jsx TAB_CONTENT, registered in MODULES (group: 'settings'), granted to RESTAURANT_MANAGER + PROJECT_MANAGER roles (OWNER has '*' already).
+- Lint: PASS — 0 errors, 0 warnings (after removing one unused import).
+- Dev server: running cleanly on port 3000; HMR applied to POS.jsx and MenuManagement.jsx without errors.
+- Constraints honored: Did NOT modify base44Client.js, any *Engine.js files, ThermalReceiptDocument.jsx, ReceiptPrintDialog.jsx, tables.js, branchSettings.js. Used t(ar,en,lang) for all UI strings. Kept split-screen POS layout. Kept all 5 payment methods (no WALLET).
+
+---
+Task ID: SETTINGS-TRANSFORM
+Agent: general-purpose
+Task: Transform Settings section — async branchSettings, receipt hierarchy, branch settings UI
+
+Work Log:
+- Read worklog.md (previous tasks 3-B through MENU-POS) and verified state of files
+- Read /home/z/my-project/restaurant-system/src/lib/branchSettings.js — confirmed all 5 functions are now async (return Promises): getBranchSettings, setBranchSettings, resolveReceiptSettings, autoCreatePOS, deleteBranchSettings
+- Confirmed base44Client.js uses `entities: new Proxy({}, ...)` so `base44.entities.BranchSetting` is automatically available without explicit registration
+
+Step 1 — Updated all callers to handle async branchSettings:
+
+  src/pages/Branches.jsx (550 → 580 lines):
+    * Added `settingsMap` state (object: branchId → settings) and a useEffect that loads settings for ALL branches in parallel via Promise.all after items load
+    * Card display now reads from `settingsMap[item.id] || {}` instead of sync `getBranchSettings(item.id)`
+    * `openEdit(item)`: uses cached `settingsMap[item.id]` for immediate form fill, then loads fresh from DB async via `.then()` and updates form + settingsMap
+    * `save()`: now `await`s `setBranchSettings(...)`, `await`s `autoCreatePOS(...)`, `await`s `setBranchSettings(...)` for new branch — chain is sequential (create Project → autoCreatePOS → setBranchSettings)
+    * `remove()`: now `await`s `deleteBranchSettings(deleteId)` and removes from settingsMap locally
+    * Updated module header comment to reflect database-backed storage instead of localStorage
+
+  src/pages/POS.jsx (1320 → 1333 lines):
+    * Replaced `const branchSettings = useMemo(() => activeProjectId ? getBranchSettings(activeProjectId) : {}, [activeProjectId]);` with `const [branchSettings, setBranchSettings] = useState({});` + useEffect that calls `getBranchSettings(activeProjectId).then(setBranchSettings)` with active-flag cleanup
+    * No name conflict — POS.jsx only imports `getBranchSettings, resolveReceiptSettings` (not `setBranchSettings`), so the new React state setter `setBranchSettings` is unambiguous
+    * In `handlePrintReceipt`: changed `const branchReceiptSettings = activeProjectId ? resolveReceiptSettings(activeProjectId, companySettings) : companySettings;` to `const branchReceiptSettings = activeProjectId ? await resolveReceiptSettings(activeProjectId, companySettings) : companySettings;` (handlePrintReceipt is already async)
+
+  src/components/shared/ReceiptPrintDialog.jsx:
+    * Replaced `const settings = useMemo(() => { const branchId = ...; if (!branchId) return companySettings; return resolveReceiptSettings(branchId, companySettings); }, [...])` with `const [settings, setSettings] = useState(companySettings);` + useEffect that calls `resolveReceiptSettings(branchId, companySettings).then(setSettings).catch(() => setSettings(companySettings))`
+    * Removed unused `useMemo` from React import (kept `useRef, useState, useEffect`)
+
+  src/pages/Tables.jsx:
+    * Renamed imported `setBranchSettings` → `saveBranchSettings` to avoid shadowing the new React state setter `setBranchSettings` (state declaration was added above the early-return for `!activeProjectId` so hooks ordering is preserved)
+    * Moved branchSettings state + useEffect to top of component (right after tablesPerRow state) so it's before the early return — satisfies Rules of Hooks
+    * `tablesPerRow` load effect: replaced sync `getBranchSettings(activeProjectId)` with async `.then()` chain
+    * `changePerRow()`: now `async`, `await`s `saveBranchSettings(activeProjectId, { tablesPerRow: v })`
+    * Card header now reads `branchSettings.branchName` from React state instead of sync call
+
+Step 2 — Updated receipt hierarchy in src/components/shared/ThermalReceiptDocument.jsx:
+    * Header now explicitly numbered with comments (1–7) matching the requested hierarchy:
+      1. Branch logo (settings.logoUrl)
+      2. Company name (settings.companyName) — fontSize bumped 15 → 16, fontWeight 800, lineHeight 1.3 (LARGE BOLD as main heading)
+      3. Company name English (settings.companyNameEn) — fontSize 9, color #555 (small subtitle)
+      4. Branch name (settings.branchName) — fontSize bumped 10 → 12, fontWeight 700, with "فرع:" / "Branch:" prefix (medium subtitle)
+      5. VAT number (settings.vatNumber)
+      6. Phone (settings.phone)
+      7. Address + City (settings.address + settings.city joined with " - ")
+    * Added a thin dotted divider (· × 28) between branch name and contact details to visually separate the hierarchy levels
+    * The actual hierarchy logic lives in branchSettings.js's `resolveReceiptSettings` (already implemented by orchestrator): companyName is kept from companySettings and NOT overridden by branchName
+
+Step 3 — Simplified src/components/settings/CompanySettingsCard.jsx:
+    * Removed bank details section entirely (bankName, bankAccountName, bankBranch, bankAccountNumber, iban, swiftCode fields removed from UI)
+    * Added explanatory subtitle: "اسم الشركة موحّد لكل الفروع. البيانات الأخرى هنا تُستخدم كقيم افتراضية للفروع التي لا تملك قيمها الخاصة."
+    * Reorganized into 4 clear sections with headers:
+      - هوية الشركة (Company Identity): companyName, companyNameEn, vatNumber, crNumber
+      - شعار الشركة (Company Logo): logoUrl with preview (NEW field — was missing before)
+      - بيانات الاتصال (Contact Info Default): address, city, phone, email, website — kept as FALLBACK defaults (subtitle explains)
+      - ألوان افتراضية للفروع (Default Branch Colors): primaryColor, accentColor (NEW — added ColorField helper component)
+    * Added `Image as ImageIcon` and `Save, Loader2` icons from lucide-react
+    * Added reusable ColorField component (color picker + hex input side-by-side)
+
+Step 4 — Created src/components/settings/BranchSettingsCard.jsx (NEW, ~445 lines):
+    * Loads all branches via `base44.entities.Project.list('-created_date', 200)`
+    * Branch selector (shadcn Select) at top + Refresh button
+    * Loads selected branch's settings async via `getBranchSettings(selectedBranchId)` in useEffect with active-flag cleanup
+    * 4 form sections:
+      - هوية الفرع (Branch Identity): branchName (ar), branchNameEn, managerName, posTerminalId (read-only, auto-generated, bg-muted font-mono)
+      - شعار الفرع (Branch Logo): file upload via `base44.integrations.Core.UploadFile({ file })` + hidden file input + URL fallback field + live image preview (size-20 rounded border)
+      - بيانات الاتصال (Contact Info): phone (with Phone icon), phone2, city, address (with MapPin icon), vatNumber (placeholder = company VAT)
+      - ألوان الفرع (Branch Colors): primaryColor, accentColor via ColorField
+    * Save button calls `await setBranchSettings(selectedBranchId, {...})` with try/catch + toast
+    * Receipt Header Preview section at bottom — live `ReceiptHeaderPreview` component that renders the receipt header exactly as ThermalReceiptDocument will (logo → company name 18px BOLD → company name En → branch name 13px with "فرع:" prefix → dotted divider → VAT → phone → address)
+    * Preview uses branchSettings (form) merged with companySettings (from useCompanySettings hook) — same merge logic as `resolveReceiptSettings`
+    * Loading state: spinner while branches load; spinner while settings load on branch switch
+    * Empty state: friendly message when no branches exist ("لا توجد فروع بعد. أنشئ فرعاً أولاً من شاشة الفروع.")
+    * Imports: React hooks + useRef, lucide-react icons (Store, Loader2, Save, Upload, RefreshCw, Image as ImageIcon, CreditCard, Eye, Phone, MapPin, User, Palette), shadcn Card/Button/Input/Label/Select, base44, useStore, useToast, t, useCompanySettings, getBranchSettings/setBranchSettings/DEFAULT_BRANCH_SETTINGS from branchSettings
+
+Step 5 — Updated src/pages/Settings.jsx:
+    * Tabs now: عام (General) | بيان الشركة (Company) | إعدادات الفروع (Branch Settings) | الطباعة والإيصال (Print) | حول النظام (About)
+    * Removed "التحكم المالي" (Fiscal Control) tab and its `FiscalControlCard` import
+    * Removed `CalendarClock` icon import (was used for fiscal tab)
+    * Added `Store` icon import for the new Branch Settings tab
+    * Added `import BranchSettingsCard from '@/components/settings/BranchSettingsCard'`
+    * Added new SECTIONS entry: `{ key: 'branches', ar: 'إعدادات الفروع', en: 'Branch Settings', Icon: Store }`
+    * Added render: `{tab === 'branches' && <BranchSettingsCard />}`
+
+Verification:
+- Ran `bun run lint`: PASS — 0 errors, 0 warnings (after fixing one JSX comment syntax error in ThermalReceiptDocument.jsx where I'd omitted the closing `}` on the header comment)
+- Validated all 8 modified/created files via @babel/parser: all OK
+- Checked /home/z/my-project/dev.log: dev server (Vite, port 3000) compiles cleanly ("✓ Compiled in 6.5s" / "✓ Compiled in 6.7s"); only pre-existing error in log is "EADDRINUSE: address already in use :::3000" from a duplicate dev server attempt (not from my changes)
+- Confirmed no remaining sync calls to async branchSettings functions — grep shows all usages either `await` or `.then()`
+
+Stage Summary:
+- branchSettings.js: async, database-backed (already done by orchestrator — untouched)
+- Updated callers: Branches.jsx (settingsMap + await all 4 async calls), POS.jsx (useState + useEffect + await resolveReceiptSettings), Tables.jsx (useState + useEffect + aliased import to avoid shadowing), ReceiptPrintDialog.jsx (useState + useEffect)
+- Receipt hierarchy: company name unified under branch logo — company name 16px BOLD as main heading, branch name 12px with "فرع:" prefix as subtitle, dotted divider before contact details
+- New BranchSettingsCard: full branch settings editor with file upload, color pickers, read-only POS terminal ID, and live receipt header preview that mirrors ThermalReceiptDocument exactly
+- CompanySettingsCard: bank details section removed; logo + color fields added; address/city/phone kept as fallback defaults with explanatory subtitle
+- Settings.jsx: Fiscal Control tab removed; Branch Settings tab added
+- Lint: PASS — 0 errors, 0 warnings
+- Dev server: running cleanly on port 3000; HMR compiled successfully
+- Constraints honored: did NOT modify branchSettings.js, base44Client.js, any *Engine.js files, or tables.js. Used t(ar,en,lang) for all UI strings. Loading states (spinners) and error handling (try/catch + toast) added for all async operations.
+
+---
+Task ID: SECTIONS-2-5
+Agent: general-purpose
+Task: Transform sections 2-5 (Products, Purchasing, Expenses, Employees) for restaurant
+
+Work Log:
+
+**Section 2 — Products (MenuManagement.jsx + base44Client.js)**
+- MenuManagement.jsx: Removed `reorderLevel` from EMPTY_ITEM, from saveItem() data payload, and from CSV import payload (confirmImport). Updated `quantity` field label to "الكمية المتاحة (اختياري) / Available Qty (optional)" with placeholder explaining it can be left empty. Removed the `reorderLevel` Input from the add/edit item dialog.
+- MenuManagement.jsx: Added a prominent "متاح اليوم / Available Today" quick-toggle in the items table — a Switch component (with Eye/EyeOff icon + localized "متاح/مخفي" label) that lets restaurants toggle item availability with one click without opening the edit dialog. New `toggleAvailable(it)` handler calls InventoryItem.update with toast feedback. Replaced the old static "نشط/معطّل" Badge column. Added `Eye, EyeOff` icons to lucide-react imports.
+- base44Client.js: Removed `reorderLevel: N` from all 22 seed InventoryItem entries (regex sweep, 22 substitutions; verified 0 remaining `reorderLevel` references in the file). `quantity` kept as initial stock.
+- POS.jsx: Verified via grep that the construction-era `CATEGORIES` array and `DEMO_MENU` constant were already removed by the prior MENU-POS task (no matches found). No action needed.
+
+**Section 3 — Purchasing (cycles.js, permissions.js, SupplierInvoices.jsx, SupplierInvoiceDocument.jsx, ContextBar.jsx, NotificationCenter.jsx)**
+- cycles.js: Removed `purchase-requests`, `purchase-orders`, `goods-receipts` tabs from the `procurement-cycle`. Now procurement-cycle has only 2 tabs: `supplier-invoices` (renamed ar/en: "فواتير المشتريات / Purchase Invoices") and `supplier-payments` ("سداد الموردين"). Added a comment explaining the simplification. Also removed the three keys from `READY_TABS`. Removed now-unused `ClipboardList` import. (`Package` import kept — still used by partners-cycle and inventory-cycle.)
+- permissions.js: Removed `purchase-requests`, `purchase-orders`, `goods-receipts` from the MODULES array (3 entries deleted). Renamed `supplier-invoices` module label to "فواتير المشتريات / Purchase Invoices". Removed these 3 keys from the module lists of RESTAURANT_MANAGER, ACCOUNTANT, PROJECT_MANAGER, PROCUREMENT roles. (OWNER has '*' so unaffected.)
+- SupplierInvoices.jsx: Full rewrite of the form (396 → 410 lines). Removed `goodsReceiptId`/`receiptNo`/`purchaseOrderId`/`orderNo`/`warehouseId`/`warehouseName`/`projectId`/`projectName` from the EMPTY form and from all related UI/logic. Removed the entire `onReceipt()` handler (no more "must link to goods receipt" requirement). Removed the loading of PurchaseOrder and GoodsReceipt entities. Added loading of `branches` (Project.list) and `inventoryItems` (InventoryItem.list). Added `branchId`/`branchName` to the EMPTY form with a branch Select dropdown. Added a full line-items subsystem: `lineItems` array, `blankLine()`, `updateLine()`, `onInventoryItemPick()` (auto-fills name + cost price from InventoryItem), `addLine()`, `removeLine()`. baseAmount (subtotal) is now computed from line items via `useMemo`. The form requires at least one line with value > 0. The dialog now has a max-w-3xl width to accommodate the line items table. Updated the table header column from "الطلب/Order" to "الفرع/Branch" (displaying `item.branchName || item.projectName` for backward compat). Updated export columns and document title to "فاتورة شراء / Purchase Invoice".
+- SupplierInvoiceDocument.jsx: Updated document title to "فاتورة شراء / Purchase Invoice". Replaced `projectName` info row with `branchName || projectName` info row labeled "الفرع / Branch". Removed `orderNo` and `receiptNo` info rows. Added a line-items table that renders when `invoice.lineItems` is non-empty (with columns: #, Item, Qty, Unit Price, Total). Falls back to description-only display when no line items (backward compat for legacy invoices).
+- ContextBar.jsx: Changed the quick-nav button key from `'purchase-orders'` to `'supplier-invoices'` (label "مشتريات/Purchases" kept).
+- NotificationCenter.jsx: Updated the "pending purchase order" notification: title changed from "أمر شراء معلق" to "فاتورة شراء معلقة", and the `go` action now navigates to `'supplier-invoices'` instead of `'purchase-orders'`.
+- Did NOT delete PurchaseRequests.jsx, PurchaseOrders.jsx, GoodsReceipts.jsx files — kept them in src/pages/. Their imports and TAB_CONTENT entries remain in CycleScreen.jsx but are never rendered (no cycle references them anymore).
+
+**Section 4 — Expenses (utils-binaa.js, ExpenseDialog.jsx, ExpenseTypePicker.jsx, Expenses.jsx)**
+- utils-binaa.js — EXPENSE_CATEGORIES: Added `UTILITIES` (كهرباء ومياه), `MARKETING` (تسويق). Renamed `SUBCONTRACTOR` → `SERVICE_PROVIDER`. Removed `ELECTRICITY` and `WATER` (consolidated into UTILITIES). Final list: 18 categories (RENT, MAINTENANCE, UTILITIES, SALARIES, INSURANCE, OFFICE, GOV_FEES, TRAVEL, SERVICE_PROVIDER, DELIVERY, CONSUMABLES, FUEL, MARKETING, HOSPITALITY, TRANSPORT, SERVICES, PERMITS, OTHER). Added `LEGACY_CATEGORY_ALIASES` map (SUBCONTRACTOR→SERVICE_PROVIDER, ELECTRICITY→UTILITIES, WATER→UTILITIES) and `resolveExpenseCategory(key)` function for backward-compat display of legacy data.
+- utils-binaa.js — EXPENSE_TYPES: Removed `PROJECT` type entirely. Renamed `EQUIPMENT` → `MAINTENANCE` (ar: "صيانة المعدات", en: "Equipment Maintenance", icon: Wrench, accountRole: EXPENSE_EQUIPMENT preserved). Added 3 new types: `RENT` (icon Building2, accountRole EXPENSE_GENERAL), `UTILITIES` (icon Waves, accountRole EXPENSE_GENERAL), `MARKETING` (icon Megaphone, accountRole EXPENSE_ADMIN). Final list: 8 types. Updated `getExpenseType(key)` with backward-compat: legacy `PROJECT` → maps to `COMPANY` type; legacy `EQUIPMENT` → maps to `MAINTENANCE` type.
+- utils-binaa.js — RESTAURANT_POSITIONS: Added new exported constant with 11 restaurant job titles (CASHIER/كاشير, CHEF/طاهي, SOUS_CHEF/مساعد طاهي, WAITER/نادل, BRANCH_MANAGER/مدير فرع, ACCOUNTANT/محاسب, CLEANER/عامل نظافة, DELIVERY/موصل طلبات, BARISTA/باريستا, HOST/مضيف, OTHER/أخرى).
+- ExpenseTypePicker.jsx: Added `Wrench, Waves, Megaphone` to lucide-react imports. Updated ICONS map to include the new icons (and removed `Truck` reference which would have caused a ReferenceError since `Truck` is no longer imported — EQUIPMENT was the only type using it).
+- ExpenseDialog.jsx: Added `branches = projects || []` alias (Project entity is reused for branches). Added `pickBranch(id)` handler that sets `branchId`/`branchName` AND `projectId`/`projectName` (for OperationEngine backward compatibility — businessEngine._buildExpensePayload reads `data.projectId`). Added an always-visible branch Select dropdown in the form (not gated by `typeDef.fields`). Removed the `typeDef.fields.includes('project')` block that previously rendered the projectId Select (no type has 'project' field anymore since PROJECT was removed).
+- Expenses.jsx: Updated EMPTY form — replaced `projectId`/`projectName` with `branchId`/`branchName`. Updated `buildDefaultForm()` to default `expenseType: 'COMPANY'` (no more PROJECT branch) and set `branchId`/`branchName` from activeProjectId/activeProjectName (also sets projectId/projectName for engine). Updated exportColumns: replaced "مرتبط بـ / Linked to" with "الفرع / Branch" showing `r.branchName || r.projectName`. Updated table header + row accordingly. Used `resolveExpenseCategory()` for category display (handles legacy SUBCONTRACTOR/ELECTRICITY/WATER keys gracefully).
+
+**Section 5 — Employees (Employees.jsx + utils-binaa.js)**
+- Employees.jsx: Added `branchId`/`branchName` to the EMPTY form. Added `branches` state, loaded via `Promise.all([Employee.list, Project.list])`. Added `onBranch(id)` handler. Added `positionLabel(val)` helper that resolves a position key (e.g., BRANCH_MANAGER) to its localized label, falling back to the raw value for legacy free-text data. Changed the `position` form field from a free-text Input to a Select dropdown using RESTAURANT_POSITIONS, with a legacy-value notice when the existing value isn't a known key. Added a branch Select dropdown in the form (next to position). Updated `openNew()` to default `branchId`/`branchName` from the currently active branch (activeProjectId/activeProjectName). Updated the SmartEntityCard subtitle to use `positionLabel()` and show branchName. Added a "الفرع / Branch" row to the card meta. Updated exportColumns to include a Branch column and use the positionLabel resolver for the Position column. Imported `RESTAURANT_POSITIONS` from utils-binaa.
+- utils-binaa.js: Added `RESTAURANT_POSITIONS` constant (see Section 4 above).
+
+Stage Summary:
+- Products: reorderLevel removed from form, table, save payload, CSV import payload, and all 22 seed menu items. quantity is now optional with explanatory placeholder. New "متاح اليوم" quick-toggle (Switch + Eye/EyeOff) in the items table enables one-click daily availability toggling. POS.jsx already had CATEGORIES/DEMO_MENU removed by prior task.
+- Purchasing: procurement-cycle simplified to 2 tabs (supplier-invoices + supplier-payments). 3 construction tabs removed from cycles.js + permissions.js + READY_TABS. SupplierInvoices.jsx rewritten with branchId selector + full line-items subsystem (InventoryItem lookup OR free text). SupplierInvoiceDocument.jsx updated to show branch + line items. ContextBar + NotificationCenter quick-navs repointed to supplier-invoices. Page files (PurchaseRequests/PurchaseOrders/GoodsReceipts) preserved, just unlinked from navigation.
+- Expenses: PROJECT type removed; EQUIPMENT renamed to MAINTENANCE; 3 new types added (RENT, UTILITIES, MARKETING). EXPENSE_CATEGORIES updated (UTILITIES, MARKETING added; SUBCONTRACTOR→SERVICE_PROVIDER renamed; ELECTRICITY/WATER consolidated). Legacy aliases + resolver for backward-compat display. projectId field removed from form, replaced with always-visible branchId Select. businessEngine untouched — branchId is mirrored to projectId in pickBranch() for engine compatibility.
+- Employees: branchId/branchName added to form with branch Select dropdown. position field converted from free-text Input to Select using new RESTAURANT_POSITIONS constant (11 restaurant roles). positionLabel() helper handles legacy free-text values. Card subtitle + meta + export columns updated to show branch and resolved position labels.
+- Lint: PASS — `bun run lint` exits 0 with 0 errors. 3 pre-existing warnings (ExpenseDialog `subcontractors` unused arg, Expenses `openEdit`/`askDelete` unused — all were unused before this task too). All 13 modified files pass @babel/parser syntax check. Dev server runs cleanly on port 3000 (HTTP 200, multiple "✓ Compiled" messages, no fatal errors). Only dev.log error is the pre-existing EADDRINUSE from a duplicate dev server attempt (not from these changes).
+- Constraints honored: did NOT modify branchSettings.js, any *Engine.js (postingEngine, ledgerEngine, financialEngine, businessEngine, auditEngine, workflowEngine, validationEngine), zatcaQr.js, standardChart.js, tables.js, POS.jsx, ThermalReceiptDocument.jsx, or ReceiptPrintDialog.jsx. Did NOT delete any page files. Used t(ar, en, lang) for all UI strings. All backend calls wrapped in try/catch with toast fallbacks. Backward compatibility preserved via legacy aliases (EXPENSE_CATEGORIES, EXPENSE_TYPES, positionLabel, branchName||projectName display).
+
+---
+Task ID: SECTIONS-6-8
+Agent: general-purpose
+Task: Link POS to accounting engine + simplify accounting + restaurant reports
+
+Work Log:
+
+**Section 6 — POS ↔ OperationEngine (src/pages/POS.jsx)**
+- Imported `OperationEngine` from `@/lib/businessEngine` (alongside existing `calcVAT`).
+- Imported `CheckCircle2` from lucide-react for the auto-post indicator.
+- Rewrote the save path in `handlePrintReceipt()`:
+  1. Build `draftInvoice = { ...invoice, status: 'DRAFT' }` and call `OperationEngine.createSalesInvoice(draftInvoice, [], customers)` — passes the loaded `customers` state for client-name resolution; `[]` for projects (no projects in restaurant context).
+  2. If `createSalesInvoice` throws (e.g. preview-mode mock backend), fall back to `base44.entities.SalesInvoice.create(invoice)` directly so the receipt still saves.
+  3. If `saved.id` exists, immediately call `OperationEngine.approveSalesInvoice(saved.id)` — this is what posts the journal entry (Debit: RECEIVABLES / Credit: REVENUE + VAT_PAYABLE) on the production server. Wrapped in try/catch so preview-mode failures don't block the receipt.
+  4. For non-platform sales: call `base44.entities.SalesInvoice.update(saved.id, { status: 'PAID', paidAmount: total })` and patch the local `saved` object. Platform sales stay APPROVED (deferred collection, per existing logic).
+- Added a visible "ترحيل تلقائي إلى المحاسبة / Auto-post to accounting" indicator (emerald pill with CheckCircle2 icon) that appears below the print-receipt button when the cart is non-empty and fully paid — so the cashier knows the sale will be journalized.
+
+**Section 7 — Accounting simplified (src/lib/cycles.js + src/lib/permissions.js)**
+- cycles.js accounting-cycle: removed `fixed-assets` (الأصول والإهلاك) and `audit` (المراجعة والتدقيق) tabs. Remaining tabs: `chart-accounts`, `accounting`, `cost-centers`, `fiscal-years`. Added explanatory comment.
+- cycles.js READY_TABS: removed `'fixed-assets'` and `'audit'` from the accounting section.
+- permissions.js ACCOUNTANT role: removed `'fixed-assets'` and `'audit'` from its `modules` list (OWNER still has '*' so unaffected). MODULES registry entries for both keys retained (harmless; pages preserved on disk per instructions).
+
+**Section 8 — Restaurant reports**
+
+cycles.js reports-cycle:
+- Removed: `report-projects`, `report-inventory` from tabs.
+- Kept: `report-income`, `report-balance`, `report-cashflow`, `report-ledger`, `report-trial`, `report-vat`, `report-partners`, `report-employees`.
+- Added 4 NEW restaurant report tabs:
+  - `report-daily-sales` (المبيعات اليومية / Daily Sales) — CalendarDays icon
+  - `report-top-items` (الأصناف الأكثر مبيعاً / Top Selling Items) — TrendingUp icon
+  - `report-payments` (طرق الدفع / Payment Methods) — Wallet icon
+  - `report-branches` (تقرير الفروع / Branch Comparison) — PieChart icon
+- READY_TABS updated: removed `report-projects`, `report-inventory`; added the 4 new keys.
+
+New report files (each loads SalesInvoice.list, filters by date range client-side, parses `invoice.notes` JSON for items/payments):
+
+1. src/pages/DailySalesReport.jsx (~270 lines):
+   - Date picker (defaults to today).
+   - 4 summary cards: total sales, orders count, avg order value, total VAT.
+   - Hourly breakdown table (24 rows, 00:00-23:59) with orders count, revenue, and a horizontal bar chart showing the share of each hour relative to peak hour.
+   - Payment-method breakdown table: count, amount, percent (cash/mada/visa/mc/other, normalized from notes.payments).
+   - Empty state when no sales on the selected day.
+
+2. src/pages/TopItemsReport.jsx (~210 lines):
+   - Date range picker (defaults to last 30 days).
+   - 3 summary cards: items sold, total quantity, total revenue.
+   - Horizontal bar chart (recharts) of top 10 items by quantity.
+   - Detailed table: rank, item name (ar+en from notes.items[].description/descriptionEn), qty sold, total revenue, avg price, revenue share %.
+   - Sorted by quantity desc; empty state when no data.
+
+3. src/pages/PaymentsReport.jsx (~240 lines):
+   - Date range picker (defaults to last 30 days).
+   - 3 summary cards: total collected, transactions count, methods used.
+   - Donut chart (recharts PieChart with innerRadius=40) showing payment-method distribution with custom colors per method (cash=emerald, mada=green, visa=blue, mc=orange, other=slate).
+   - Detailed table: method (with colored icon badge), count, amount, percent — plus totals row.
+   - PAYMENT_META constant maps each POS payment key to localized ar/en label + color + lucide icon.
+
+4. src/pages/BranchReport.jsx (~210 lines):
+   - Date range picker (defaults to last 30 days).
+   - 3 summary cards: branches count, total orders, total revenue.
+   - Horizontal bar chart (recharts) of revenue by branch.
+   - Detailed table: rank, branch name (from invoice.projectName), orders count, revenue, avg order, revenue share % — plus totals row.
+   - Empty state when no sales in period.
+
+CycleScreen.jsx:
+- Added imports for the 4 new report pages.
+- Added 4 new entries to TAB_CONTENT map: `report-daily-sales`, `report-top-items`, `report-payments`, `report-branches`.
+
+permissions.js:
+- Added 4 new module entries to MODULES array (group: 'reports'): `report-daily-sales`, `report-top-items`, `report-payments`, `report-branches`.
+- Added the 4 keys to all 5 roles that have 'reports' access: RESTAURANT_MANAGER, ACCOUNTANT, PROJECT_MANAGER, HR, VIEWER. (OWNER has '*' so already covered; CASHIER/PROCUREMENT/OPERATOR don't have reports access — unchanged.)
+- Note: `canAccess()` already falls back to `modules.includes('reports')` for any `report-*` key, so the explicit entries enable fine-grained per-report restrictions in the future.
+
+Stage Summary:
+- POS: linked to OperationEngine — `handlePrintReceipt` now creates invoice as DRAFT via `OperationEngine.createSalesInvoice(draft, [], customers)`, then auto-approves via `OperationEngine.approveSalesInvoice(id)` (posts JE: Dr RECEIVABLES / Cr REVENUE + VAT_PAYABLE), then marks non-platform sales as PAID. Fallback to direct `base44.entities.SalesInvoice.create(invoice)` if OperationEngine fails (preview mode). Visible "ترحيل تلقائي إلى المحاسبة" indicator pill below the print button.
+- Accounting: simplified — removed `fixed-assets` and `audit` from accounting-cycle tabs + READY_TABS + ACCOUNTANT role modules. 4 tabs remain (chart-accounts, accounting, cost-centers, fiscal-years). Page files preserved.
+- Reports: 4 new restaurant reports (DailySalesReport, TopItemsReport, PaymentsReport, BranchReport) added to reports-cycle + READY_TABS + CycleScreen TAB_CONTENT + permissions MODULES + 5 roles. Removed `report-projects` and `report-inventory` from navigation (page files preserved). 2 recharts-powered visualizations (bar chart in TopItems & BranchReport, donut in PaymentsReport). All 4 reports parse `invoice.notes` JSON for line items + payments, with empty states and full try/catch + toast error handling.
+- Lint: PASS — `bun run lint` exits 0 with 0 errors. 40 pre-existing warnings (unchanged from before this task — all in unrelated files like ProjectWorkspace, Dashboard, etc.). My 4 new report files contribute 0 warnings.
+- Dev server: Vite on port 3000 continues to compile cleanly ("✓ Compiled in 6.5s" / "6.7s" / "7s" etc., all HTTP 200). No new errors introduced.
+- Constraints honored: did NOT modify any `*Engine.js` files (businessEngine.js untouched — only imported from), `base44Client.js`, `branchSettings.js`, `tables.js`, `standardChart.js`, `zatcaQr.js`, `ThermalReceiptDocument.jsx`, or `ReceiptPrintDialog.jsx`. Used `t(ar,en,lang)` for all UI strings. All 5 POS features preserved (discount, delivery, platform, auto-save draft, cancel with password). Backend-down handled gracefully (try/catch + fallback + empty states).
+
+---
+Task ID: ACCOUNTING-FIX
+Agent: general-purpose
+Task: Fix accounting engine — payment-method-aware JEs + inventory debit + branchId + discounts
+
+Work Log:
+- Read /home/z/my-project/worklog.md (prior tasks 3-B / 4 / 5-A / 5-B)
+- Read base44/functions/postOperation/entry.ts (1621 lines after edits)
+- Added 3 new accounts to the ACCOUNTS map (after RETENTION_PAYABLE):
+    SALES_DISCOUNT:       { code: '4420', name: 'خصم مبيعات' }                       // contra-revenue
+    CARD_SETTLEMENT:      { code: '1114', name: 'نقدية بطاقات البيع (POS)' }          // for card payments
+    PLATFORM_RECEIVABLE:  { code: '1115', name: 'مستحقات منصات التوصيل' }             // for platform sales
+- Rewrote buildSalesInvoiceJE — payment-method-aware (cash/card/platform/credit), pure/mixed logic, backward-compat fallback to RECEIVABLES when no payment info. Adds branchId to every line. Adds SALES_DISCOUNT debit line when discountAmount > 0.
+- Rewrote buildSupplierInvoiceJE — debits INVENTORY_MATERIALS (resolveAccount('INVENTORY_MATERIALS')) instead of EXPENSE_PURCHASE. Credits CASH (resolveAccount('CASH')) when paidAmount ≥ totalAmount (paid immediately), otherwise PAYABLES. Adds branchId to every line.
+- Added branchId parameter + per-line branchId to buildPurchaseOrderJE and buildExpenseJE.
+- Updated approveSalesInvoice: parses inv.notes (JSON) to extract { payments[], isPlatformSale, platform.platformName }; passes explicit named args (invoiceNo, subtotal, discountAmount, vatAmount, totalAmount, etc.) plus payments/isPlatformSale/platformName/branchId (= inv.projectId) to buildSalesInvoiceJE.
+- Updated approveSupplierInvoice (else branch): now calls buildSupplierInvoiceJE({ ...inv, branchId: inv.projectId || inv.branchId || '' }, accounts).
+- Updated createExpense: both buildExpenseJE calls now pass branchId: payload.projectId || payload.branchId || ''.
+
+Accounting note on discount handling (IMPORTANT — deviation from spec code):
+- The task spec's code snippet credits Revenue with `netRevenue = subtotal - discount` AND adds a separate discount debit line. That combination does NOT balance (Debit = totalAmount + discount; Credit = (subtotal - discount) + vatAmount; they only balance when discount = 0).
+- The spec's stated intent was: "Debit (Cash + Discount) = Credit (Revenue + VAT)" — this is the standard GROSS method: credit Revenue at subtotal (gross), debit Discount as a contra-revenue line, debit Cash at totalAmount. With subtotal = gross pre-discount, totalAmount = (subtotal - discount) + vat, this balances: totalAmount + discount = subtotal + vatAmount. ✓
+- I implemented the balanced version: Credit Revenue = subtotal (gross), Debit Discount = discountAmount, Debit Cash/Card/Receivable = totalAmount, Credit VAT = vatAmount. This matches the spec's stated balance requirement.
+- CAVEAT: createSalesInvoice currently computes totalAmount = subtotal + vat via calcVAT (does NOT subtract discount). For the discount line to balance correctly, the front-end must either (a) send subtotal as the gross amount AND have totalAmount recomputed elsewhere to reflect (subtotal - discount + vat), OR (b) the data pipeline must be updated so that discount flows into totalAmount. If the existing data model doesn't subtract discount from totalAmount, the JE will not balance when discount > 0. Recommend follow-up: update createSalesInvoice / updateSalesInvoice to subtract discountAmount from totalAmount.
+
+Verification:
+- `bun run lint` — passes (exit 0, 0 errors). No new errors introduced.
+- `node -e "require('fs').readFileSync('base44/functions/postOperation/entry.ts', 'utf8')"` — File readable.
+- `bun build base44/functions/postOperation/entry.ts --no-bundle` — transpiles cleanly to JS, no TS syntax errors. Imports + ACCOUNTS map + all function bodies parse without error.
+
+Stage Summary:
+- buildSalesInvoiceJE: payment-method-aware (cash/card/platform/credit) — Dr CASH for cash, Dr CARD_SETTLEMENT for cards, Dr PLATFORM_RECEIVABLE for platform sales, Dr RECEIVABLES only for credit sales. Adds SALES_DISCOUNT contra-revenue debit line when discountAmount > 0.
+- buildSupplierInvoiceJE: debits INVENTORY_MATERIALS (1131) instead of EXPENSE_PURCHASE; credits CASH when paidAmount ≥ totalAmount, otherwise PAYABLES.
+- branchId: added to all JE lines in buildSalesInvoiceJE, buildSupplierInvoiceJE, buildPurchaseOrderJE, buildExpenseJE. Callers (approveSalesInvoice, approveSupplierInvoice, createExpense) pass inv.projectId / payload.projectId as branchId.
+- New accounts added to ACCOUNTS map: SALES_DISCOUNT (4420), CARD_SETTLEMENT (1114), PLATFORM_RECEIVABLE (1115).
+- Discount handling: contra-revenue debit line (gross method) — Revenue credited at full subtotal, discount debited separately.
+- Backward compat preserved: when notes can't be parsed or payments[] is empty, buildSalesInvoiceJE defaults to RECEIVABLES (CLIENT party) — same as previous behavior.
+- Framework functions (runOperation, autoPostJE, buildJE, resolveAccount) untouched.
+- Follow-up recommended: ensure createSalesInvoice subtracts discountAmount from totalAmount so discount JEs balance correctly.

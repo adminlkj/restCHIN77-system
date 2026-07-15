@@ -1,0 +1,549 @@
+     1→     1→---
+     2→     2→Task ID: 3-B
+     3→     3→Agent: general-purpose (terminology updater)
+     4→     4→Task: Update UI terminology across 21 page files from construction to restaurant labels
+     5→     5→
+     6→     6→Work Log:
+     7→     7→- Read worklog.md (file did not exist; created with this entry)
+     8→     8→- Updated the following 21 files in src/pages/:
+     9→     9→  1. Projects.jsx
+    10→    10→  2. ProjectWorkspace.jsx
+    11→    11→  3. Contracts.jsx
+    12→    12→  4. ClientPayments.jsx
+    13→    13→  5. PurchaseRequests.jsx
+    14→    14→  6. PurchaseOrders.jsx
+    15→    15→  7. GoodsReceipts.jsx
+    16→    16→  8. SupplierInvoices.jsx
+    17→    17→  9. Subcontractors.jsx
+    18→    18→  10. SubcontractorWorkspace.jsx
+    19→    19→  11. SubContractsAll.jsx
+    20→    20→  12. SubcontractorInvoicesAll.jsx
+    21→    21→  13. SubPaymentsAll.jsx
+    22→    22→  14. SubPenaltiesAll.jsx
+    23→    23→  15. ProjectReports.jsx
+    24→    24→  16. CostCenters.jsx
+    25→    25→  17. Timesheets.jsx
+    26→    26→  18. BOQ.jsx
+    27→    27→  19. StockMovements.jsx
+    28→    28→  20. Warehouses.jsx
+    29→    29→  21. Settings.jsx
+    30→    30→- Applied terminology map inside t('ar','en',lang) calls and static Arabic/English labels:
+    31→    31→  - مشروع/المشاريع → طلب/الطلبات ; Project(s) → Order(s)
+    32→    32→  - فاتورة/فواتير → إيصال/إيصالات ; Invoice(s) → Receipt(s)
+    33→    33→  - عميل/العملاء → زبون/الزبائن ; Client(s) → Customer(s)
+    34→    34→  - مقاول باطن / مقاولو الباطن → مورّد خدمات / مورّدو الخدمات ; Subcontractor(s) → Service Provider(s)
+    35→    35→  - المقاول → مورّد الخدمات ; (the) Contractor → Service Provider
+    36→    36→  - مقاولات → مطاعم ; Construction → Restaurant
+    37→    37→  - عقد الباطن → اتفاقية الخدمة ; Subcontract → Service Agreement
+    38→    38→  - مستخلص المقاول → كشف حساب مورّد الخدمات ; Subcontractor Statement → Service Provider Statement
+    39→    39→  - جدول الكميات → قائمة المكوّنات ; BOQ / Bill of Quantities → Ingredients List
+    40→    40→  - مركز التكلفة → قسم المطعم ; Cost Center → Restaurant Section
+    41→    41→  - موقع المشروع / المشروع - الموقع → عنوان الطلب / الطلب - الموقع ; Project Location / Project - Site → Order Location / Order - Site
+    42→    42→- Preserved all entity names (Project, SalesInvoice, Subcontractor, Client, etc.) — base44.entities.X calls untouched
+    43→    43→- Preserved all variable names / form field names (projectId, clientName, invoiceNo, contractValue, subcontractorId, etc.)
+    44→    44→- Preserved all import statements and all src/lib/* engines
+    45→    45→- Preserved "فاتورة مورد" / "Supplier Invoice" labels (no change per map) — including in SupplierInvoices.jsx where context is clearly supplier invoices
+    46→    46→- Preserved general "عقد"/"Contract" labels (not in map, only "عقد الباطن", "عقد تأجير" mapped)
+    47→    47→- Left code comments unchanged except where they did not need changes
+    48→    48→- Ran `bun run lint` — 8 pre-existing errors (ThermalReceiptDocument, ClientPayments, Dashboard, Expenses, SupplierPayments unused imports) — NO new errors introduced
+    49→    49→- Checked /home/z/my-project/dev.log: only pre-existing error is `Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx"` (from Task 3-A, not this task). All 21 of my page HMR updates applied cleanly with no syntax errors.
+    50→    50→
+    51→    51→Stage Summary:
+    52→    52→- 21 files updated with restaurant terminology (all files in scope were edited; none skipped)
+    53→    53→- Lint status: pass — only 8 pre-existing errors, no new errors from this task
+    54→    54→- Dev server status: running cleanly for all edited files; pre-existing SalesInvoices.jsx ReceiptPrintDialog import error remains from Task 3-A
+    55→    55→
+    56→    56→---
+    57→    57→Task ID: 5
+    58→    58→Agent: main (orchestrator)
+    59→    59→Task: المرحلة 5 — تحديث الأذونات والمسمّيات الوظيفية في permissions.js
+    60→    60→
+    61→    61→Work Log:
+    62→    62→- تحديث تسميات الوحدات (MODULES) من مقاولات إلى مطاعم: projects→orders, sales→receipts, boq→ingredients list, sub-registry→service providers registry, cost-centers→restaurant sections, clients→customers
+    63→    63→- تحديث دور "مدير مشاريع" → "مدير فرع" (PROJECT_MANAGER)
+    64→    64→- الحفاظ على كل المفاتيح (keys) والمجموعات (groups) وقوائم الـ modules لكل دور
+    65→    65→- لم تُمَس قواعد resolveUserModules / canAccess / hasPermission
+    66→    66→
+    67→    67→Stage Summary:
+    68→    68→- permissions.js محدّث بالكامل بمصطلحات المطاعم
+    69→    69→- لا أخطاء lint جديدة (7 أخطاء موجودة مسبقاً)
+    70→    70→- الـ HMR يعمل بنجاح
+    71→    71→
+    72→    72→---
+    73→    73→Task ID: 6
+    74→    74→Agent: main (orchestrator)
+    75→    75→Task: المرحلة 6 — تحديث الحالات والتسميات الموحّدة في utils-binaa.js
+    76→    76→
+    77→    77→Work Log:
+    78→    78→- تحديث PROJECT_STATUS: تخطيط→قيد التحضير، نشط→مفتوح، مكتمل→مُسلّم (مع الحفاظ على المفاتيح PLANNING/ACTIVE/COMPLETED)
+    79→    79→- تحديث INVOICE_STATUS: معتمدة→معتمد، مرسلة→مرسل، مدفوعة→مدفوع، متأخرة→متأخر، ملغاة→ملغي (للتوافق مع الإيصالات المفردة)
+    80→    80→- تحديث EXPENSE_CATEGORIES: مقاول باطن→مورّد خدمات
+    81→    81→- تحديث EXPENSE_TYPES: مصروف مشروع→مصروف طلب
+    82→    82→- لم تُمَس الدوال الرياضية (formatCurrency, formatNumber, genInvoiceNo) ولا RIYAL_SYMBOL ولا STATUS_TONE
+    83→    83→
+    84→    84→Stage Summary:
+    85→    85→- utils-binaa.js محدّث بالكامل بمصطلحات المطاعم
+    86→    86→- لا أخطاء lint جديدة
+    87→    87→- الـ HMR يعمل بنجاح
+    88→    88→
+    89→    89→---
+    90→    90→Task ID: 7
+    91→    91→Agent: main (orchestrator)
+    92→    92→Task: المرحلة 7 — التحقق الشامل والتغليف
+    93→    93→
+    94→    94→Work Log:
+    95→    95→- التحقق من المحركات المحاسبية بـ md5sum: كل الـ 11 ملف (postingEngine, ledgerEngine, financialEngine, businessEngine, auditEngine, workflowEngine, validationEngine, standardChart, rentalBilling, partyStatement, zatcaQr) متطابقة 100% مع النسخة الأصلية — لم تُمَس إطلاقاً
+    96→    96→- التحقق بـ Agent Browser:
+    97→    97→  * العنوان: "نظام إدارة المطاعم - إيصالات حرارية" ✓
+    98→    98→  * الشريط الجانبي: "نظام المطاعم / نظام إدارة المطاعم" ✓
+    99→    99→  * زر لوحة المبيعات: "لوحة المبيعات" ✓
+   100→   100→  * KPIs: "طلبات نشطة"، "المعدات المتاحة"، "اتفاقيات التجهيزات النشطة"، "إيصالات مدفوعة" ✓
+   101→   101→  * أزرار سريعة: "إيصال بيع"، "اتفاقية تجهيزات" ✓
+   102→   102→  * دورة "الطلبات والمبيعات" تظهر كعنوان ✓
+   103→   103→- اختبار استيراد المكونات الجديدة بـ eval: ReceiptPrintDialog OK، ThermalReceiptDocument OK، RestaurantLogo OK
+   104→   104→- اختبار استيراد SalesInvoices.jsx: OK (يستخدم ReceiptPrintDialog بنجاح)
+   105→   105→- ضغط المشروع إلى /home/z/my-project/restaurant-system.zip (749KB، 328 ملف، بدون node_modules)
+   106→   106→
+   107→   107→Stage Summary:
+   108→   108→- كل المراحل السبع مكتملة بنجاح
+   109→   109→- المحركات المحاسبية محمية 100% (متحقق بـ md5sum)
+   110→   110→- المشروع معبأ في restaurant-system.zip جاهز للتنزيل
+   111→   111→- الخادم يعمل على المنفذ 3000 (HTTP 200)
+   112→   112→- 7 أخطاء lint موجودة مسبقاً (لم تُدخل أي أخطاء جديدة)
+   113→   113→- ملاحظة: الـ backend غير متصل في بيئة المعاينة، لذا شاشات البيانات تظهر فارغة — لكن الواجهات والتسميات وقالب الإيصال الحراري كلها صحيحة
+   114→   114→
+   115→   115→---
+   116→   116→Task ID: POS-1
+   117→   117→Agent: general-purpose (POS screens builder)
+   118→   118→Task: Build Branches.jsx, Tables.jsx, POS.jsx screens for restaurant POS system
+   119→   119→
+   120→   120→Work Log:
+   121→   121→- Read worklog.md and existing libs (branchSettings.js, tables.js, store.jsx, businessEngine.js, ReceiptPrintDialog.jsx, ThermalReceiptDocument.jsx, App.jsx, Sidebar.jsx, cycles.js)
+   122→   122→- Created src/pages/Branches.jsx (~330 lines):
+   123→   123→  * Branch CRUD via base44.entities.Project.list/create/update/delete
+   124→   124→  * On create: auto-creates POS terminal (autoCreatePOS), 10 default tables (createDefaultTables), and branch settings (setBranchSettings) — all in one flow
+   125→   125→  * Grid of branch cards: name, code, status badge, location, phone, POS terminal ID, table count (with available/occupied breakdown)
+   126→   126→  * Branch settings editor (logo URL, phone, phone2, address, city, vatNumber, managerName, primaryColor, accentColor, branchNameEn) — visible only in edit mode
+   127→   127→  * Click a branch card → setProjectContext(branch.id, branch.name) + setActiveItem('tables')
+   128→   128→  * Delete: cleans up via deleteBranchSettings(id) + deleteBranchTables(id) + Project.delete(id)
+   129→   129→  * Empty state with "لا توجد فروع بعد" message
+   130→   130→  * Graceful try/catch for backend-down
+   131→   131→- Created src/pages/Tables.jsx (~330 lines):
+   132→   132→  * Visual grid (2 cols mobile, 4 cols tablet, 6 cols desktop) using getBranchTables()
+   133→   133→  * Status badges colored using TABLE_STATUS (AVAILABLE/OCCUPIED/RESERVED/CLEANING)
+   134→   134→  * Header with branch name + stats badges (متاحة/مشغولة/محجوزة/تنظيف)
+   135→   135→  * If !activeProjectId → prompt to select a branch (button → setActiveItem('branches'))
+   136→   136→  * Click AVAILABLE/OCCUPIED table → occupyTable + localStorage('pos-active-table') + setActiveItem('pos')
+   137→   137→  * RESERVED/CLEANING tables → dropdown menu (تعديل، تحرير، تنظيف جاهز، حذف)
+   138→   138→  * "Add Table" button → dialog with name + seats
+   139→   139→  * Toolbar: filter by status (ALL/AVAILABLE/OCCUPIED/RESERVED/CLEANING), refresh
+   140→   140→  * Auto-refresh on window focus
+   141→   141→- Created src/pages/POS.jsx (~620 lines):
+   142→   142→  * Split-screen layout: products left (~60%), invoice right (400px fixed)
+   143→   143→  * Full-height (h-full flex flex-col overflow-hidden) — no page scroll
+   144→   144→  * Header: branch name + POS terminal ID | Table name | Cashier (from useAuth) | [Exit]
+   145→   145→  * Left panel: search bar, category tabs (MATERIAL/CONSUMABLE/SPARE_PART/TOOL/FIXED_ASSET with Arabic labels: أطباق رئيسية/مشروبات/مقبلات/حلويات/أخرى), product cards grid (responsive)
+   146→   146→  * Right panel: customer selector (default "زبون نقدي"), table name, cashier, items list with +/- qty controls, subtotal/VAT 15%/total, multi-payment section
+   147→   147→  * Payment methods: نقداً (cash, uses Amount Received input) / بطاقة (card, fills remaining) / محفظة (wallet) / آجل (credit)
+   148→   148→  * Multi-payment: list of applied payments with remove (×) buttons; sum shown; change auto-calculated when paid > total
+   149→   149→  * Action buttons: طباعة الطلب (kitchen order — window.open with items only), طباعة الإيصال (creates SalesInvoice + opens ReceiptPrintDialog), تعليق (Hold — frees table + exits to Tables), إلغاء (Cancel — confirms if cart not empty)
+   150→   150→  * Invoice creation flow:
+   151→   151→    1. Build invoice object with genInvoiceNo, lineItems, subtotal, vatRate=0.15, vatAmount via calcVAT, totalAmount, paidAmount, status PAID/PARTIALLY_PAID, notes JSON with tableId/tableName/payments/cashier/branchSettings
+   152→   152→    2. Try base44.entities.SalesInvoice.create(invoice) — backendOk flag
+   153→   153→    3. Always freeTable(tableId, false) → AVAILABLE
+   154→   154→    4. Open ReceiptPrintDialog with saved invoice (or unsaved invoice object on backend-down)
+   155→   155→    5. Toast success (or warning "تعذر الحفظ على الخادم — معاينة فقط" on backend-down)
+   156→   156→    6. Clear cart + clear localStorage('pos-active-table')
+   157→   157→  * Loads menu from base44.entities.InventoryItem.filter({isActive:true}); falls back to DEMO_MENU (8 items: برجر، بطاطس، بيبسي، بيتزا، شاي، قهوة، كيك، سلطة) on backend-down
+   158→   158→  * Reads active table from localStorage 'pos-active-table' (set by Tables.jsx); clears on exit/cancel/complete
+   159→   159→  * Uses getBranchSettings for branch color/logo, useCompanySettings for base receipt data, resolveReceiptSettings(activeProjectId, companySettings) attached to invoice object for future receipt rendering
+   160→   160→- Used existing ReceiptPrintDialog (no modification) — passes the created invoice object
+   161→   161→- Used existing ConfirmDialog, ModuleLayout, TableToolbar (no modification)
+   162→   162→- Used base44.entities.Project/SalesInvoice/InventoryItem/Client (no schema changes)
+   163→   163→- Wired the 3 new screens into App.jsx STANDALONE map (branches, tables, pos) — minimal change
+   164→   164→- Added a "نقطة البيع" (Point of Sale) button to Sidebar.jsx (top section, beside Dashboard) that calls setActiveItem('branches') — this is the entry point to the POS flow
+   165→   165→- Fixed 6 unused-import lint errors (formatCurrency in Branches.jsx; RIYAL_SYMBOL, getBranchTables, occupyTable, getTable in POS.jsx; resolveReceiptSettings now actually used to compute branch receipt settings attached to invoice)
+   166→   166→- Issues encountered:
+   167→   167→  * eslint-plugin-unused-imports was missing from node_modules — installed it via `bun add -d eslint-plugin-unused-imports`
+   168→   168→  * Lint initially flagged 5 unused imports in POS.jsx and 1 in Branches.jsx — all fixed; final lint shows only the 7 pre-existing errors (ClientPayments, Dashboard, Expenses, SupplierPayments)
+   169→   169→
+   170→   170→Stage Summary:
+   171→   171→- 3 new screen files created: src/pages/Branches.jsx, src/pages/Tables.jsx, src/pages/POS.jsx
+   172→   172→- 2 supporting files minimally edited: src/App.jsx (added 3 STANDALONE entries + 3 imports), src/components/layout/Sidebar.jsx (added 1 POS entry button + UtensilsCrossed icon import)
+   173→   173→- Lint status: PASS — only 7 pre-existing errors remain (ClientPayments, Dashboard, Expenses, SupplierPayments); 0 new errors from this task
+   174→   174→- Dev server status: running cleanly on port 3000 (HTTP 200); HMR successfully applied to all 3 new files (Branches.jsx, Tables.jsx, POS.jsx) with no errors
+   175→   175→- All 3 screens use only existing components (ModuleLayout, ConfirmDialog, shadcn/ui, ReceiptPrintDialog) and libs (branchSettings, tables, businessEngine, store, utils-binaa, AuthContext, useCompanySettings)
+   176→   176→- No files modified under src/lib/*Engine.js, src/lib/zatcaQr.js, src/lib/standardChart.js
+   177→   177→- ReceiptPrintDialog.jsx and ThermalReceiptDocument.jsx NOT modified — only imported and used
+   178→   178→- Projects.jsx, SalesInvoices.jsx, and all other existing pages NOT modified
+   179→   179→
+   180→   180→---
+   181→   181→Task ID: POS-2
+   182→   182→Agent: main (orchestrator)
+   183→   183→Task: ربط النظام — تحديث cycles.js, ReceiptPrintDialog, ThermalReceiptDocument لدعم الفروع
+   184→   184→
+   185→   185→Work Log:
+   186→   186→- تحديث cycles.js: إضافة 'pos', 'tables', 'branches' إلى READY_TABS
+   187→   187→- تحديث ReceiptPrintDialog.jsx: استخدام resolveReceiptSettings(branchId, companySettings) لدمج إعدادات الفرع مع إعدادات الشركة الأم — الأولوية للفرع
+   188→   188→- تحديث ThermalReceiptDocument.jsx: إضافة حقل "فرع: [اسم الفرع]" يظهر أسفل اسم المطعم عند وجود إعدادات فرع
+   189→   189→- التحقق من المحركات بـ md5sum: كل الـ 11 ملف متطابقة 100% مع الأصل
+   190→   190→- اختبار بـ Agent Browser: شاشة "إدارة الفروع" تظهر بنجاح، نموذج "فرع جديد" يعمل، البحث والفلتر ظاهران
+   191→   191→- اختبار استيراد كل الوحدات الجديدة: Branches OK, Tables OK, POS OK, branchSettings OK, tables lib OK
+   192→   192→
+   193→   193→Stage Summary:
+   194→   194→- النظام متكامل: نقطة بيع → فروع → طاولات → إيصالات حرارية ببيانات الفرع
+   195→   195→- المحركات المحاسبية محمية 100%
+   196→   196→- لا أخطاء lint جديدة (7 أخطاء موجودة مسبقاً فقط)
+   197→   197→- الخادم يعمل بـ HTTP 200، HMR يعمل بدون أخطاء fatal
+   198→   198→
+   199→   199→---
+   200→   200→Task ID: POS-FEATURES
+   201→   201→Agent: general-purpose
+   202→   202→Task: Add 5 features to POS.jsx (discount, delivery fee, platform, auto-save draft, cancel with password)
+   203→   203→
+   204→   204→Work Log:
+   205→   205→- Read /home/z/my-project/worklog.md (Tasks 3-B, 5, 6, 7, POS-1, POS-2) and existing POS.jsx (831 lines)
+   206→   206→- Read /home/z/my-project/restaurant-system/src/lib/tables.js (TABLE_STATUS.DRAFT, saveDraftToTable, getTableDraft, markTableOccupied, clearTableDraft, getBranchDraftTables) and src/api/base44Client.js (mock DeliveryPlatform list, Client with discountPercentage + isCash, OWNER_USER email = fysl71443@gmail.com)
+   207→   207→- Verified ThermalReceiptDocument.jsx TYPE_LABEL: CONSTRUCTION=صالة/Dine-in, SERVICE=توصيل/Delivery — used SERVICE for delivery type
+   208→   208→- Rewrote /home/z/my-project/restaurant-system/src/pages/POS.jsx (831 → 1206 lines) with all 5 features:
+   209→   209→
+   210→   210→  Feature 1 (Customer Discount):
+   211→   211→  - Added `customer` state (full client object, not just id+name)
+   212→   212→  - Updated customer Select onValueChange to setCustomer(c) alongside customerId/customerName
+   213→   213→  - Added `discountPercentage` useMemo (0 if customer.isCash or no customer, else customer.discountPercentage)
+   214→   214→  - Added `discountAmount` useMemo = subtotal * (discountPercentage / 100)
+   215→   215→  - Recomputed VAT on (subtotal - discountAmount + deliveryFee): vatBase = max(0, subtotal - discountAmount + effectiveDeliveryFee); vatCalc = calcVAT(vatBase, 0.15); total = vatCalc.total
+   216→   216→  - Added discount line in totals panel ("خصم (10%): -6.00") shown only when discountAmount > 0
+   217→   217→  - Added discount badge next to customer Select ("خصم 10%") shown when customer && !customer.isCash && discountPercentage > 0
+   218→   218→  - Each customer option in dropdown now shows " — خصم X%" suffix when non-cash with discount
+   219→   219→
+   220→   220→  Feature 2 (Delivery Fee):
+   221→   221→  - Added `invoiceType` state ('CONSTRUCTION' default, 'SERVICE' for delivery)
+   222→   222→  - Added `deliveryFee` state (number, default 0)
+   223→   223→  - Added a two-button toggle in the right panel header: "صالة" (CONSTRUCTION, amber) vs "توصيل" (SERVICE, blue, with Truck icon)
+   224→   224→  - When invoiceType === 'SERVICE': show delivery fee Input (type=number, placeholder "رسوم التوصيل")
+   225→   225→  - `effectiveDeliveryFee` = isDelivery ? deliveryFee : 0 (excluded for dine-in)
+   226→   226→  - VAT applies to (subtotal - discountAmount + effectiveDeliveryFee) — delivery fee added BEFORE VAT
+   227→   227→  - Added delivery fee line in totals panel ("رسوم توصيل: +10.00") shown only when isDelivery && effectiveDeliveryFee > 0
+   228→   228→  - deliveryFee included in invoice object
+   229→   229→  - Switching back to "صالة" auto-resets deliveryFee=0 and platformId=''
+   230→   230→
+   231→   231→  Feature 3 (Platform Selection):
+   232→   232→  - Added `platforms` state, loaded via base44.entities.DeliveryPlatform.filter({ isActive: true }) alongside menu/customers
+   233→   233→  - Filter out platforms with commissionRate <= 0 from loaded list (they're covered by the synthetic "توصيل مباشر" option)
+   234→   234→  - Platform dropdown shown only when invoiceType === 'SERVICE', after the delivery fee input
+   235→   235→  - First option: "توصيل مباشر (بدون عمولة)" with value DIRECT_PLATFORM_VALUE='__direct__' sentinel (Radix Select needs non-empty value)
+   236→   236→  - Each platform option shows name + commissionRate% (e.g., "هنقرستيشن (15%)")
+   237→   237→  - `selectedPlatform` useMemo finds the selected platform by id
+   238→   238→  - `platformCommission` = isDelivery && selectedPlatform ? total * commissionRate/100 : 0
+   239→   239→  - Commission shown as info text below the Select (italic, amber): "عمولة المنصة (15%): X — تُحتسب في كشف المنصة" — NOT subtracted from total
+   240→   240→  - invoice object includes platformId, platformName, platformCommission
+   241→   241→  - notes JSON includes platform: { platformId, platformName, platformCommission }
+   242→   242→
+   243→   243→  Feature 4 (Auto-save Draft):
+   244→   244→  - Added `draftLoadedRef` and `skipAutoClearRef` refs
+   245→   245→  - Mount useEffect: when activeTable?.tableId exists and menuLoading=false, calls getTableDraft(activeTable.tableId); if draft with non-empty cart found, restores cart/customerId/customerName/invoiceType/platformId/deliveryFee/notes/customer into state, shows toast "تم استئناف المسودة المحفوظة"
+   246→   246→  - Auto-save useEffect (debounced 500ms via setTimeout): watches [cart, customerId, customerName, invoiceType, platformId, deliveryFee, notes, customer, activeTable?.tableId, lang]
+   247→   247→    - If cart.length > 0: calls saveDraftToTable(activeTable.tableId, {...}) → table becomes DRAFT (red) automatically
+   248→   248→    - If cart.length === 0 && getTableDraft returns existing draft: calls clearTableDraft(activeTable.tableId) → table returns to AVAILABLE, shows toast "تم تحرير الطاولة — السلة فارغة"
+   249→   249→  - skipAutoClearRef.current = true set during intentional exits (holdInvoice, performCancel, handlePrintReceipt, ReceiptPrintDialog onOpenChange) to prevent the auto-clear from firing during state cleanup
+   250→   250→  - holdInvoice now saves the draft to the table (table stays DRAFT, can be resumed later from Tables screen) instead of freeing it
+   251→   251→
+   252→   252→  Feature 5 (Cancel with Supervisor Password):
+   253→   253→  - Added SUPERVISOR_PASSWORDS = ['admin', '123456', 'faisal.11223344'], OWNER_EMAIL = 'fysl71443@gmail.com', MAX_CANCEL_ATTEMPTS = 3
+   254→   254→  - Added `cancelPassword`, `cancelAttempts`, `cancelError` state
+   255→   255→  - `isOwner` derived from user.email comparison (case-insensitive)
+   256→   256→  - Replaced simple confirm Dialog with password prompt Dialog titled "تأكيد الإلغاء — يتطلب صلاحية مشرف" (with ShieldCheck icon)
+   257→   257→  - For owner (isOwner=true): shows emerald note "المالك — لا يحتاج كلمة مرور" + confirmation text, no password input
+   258→   258→  - For non-owner: shows password Input (type=password, autoFocus, Enter key submits) + error area + attempts-remaining counter
+   259→   259→  - submitCancelPassword: if isOwner → performCancel; else if SUPERVISOR_PASSWORDS.includes(password) → performCancel; else increment attempts, show "كلمة المرور غير صحيحة", clear input; if attempts >= 3 → close dialog + toast error
+   260→   260→  - performCancel: sets skipAutoClearRef, calls clearTableDraft(tableId), clearCart, closes dialog, toast "تم إلغاء الطلب", clears activeTable + navigates to tables
+   261→   261→  - openCancelDialog: if cart is empty → just exitToTables; else open the password dialog
+   262→   262→
+   263→   263→  Invoice object (handlePrintReceipt) now includes: invoiceType, discountPercentage, discountAmount, deliveryFee, platformId, platformName, platformCommission
+   264→   264→  notes JSON updated to: { tableId, tableName, payments, cashier, platform, deliveryFee, discountPercentage, items: lineItems, branchSettings }
+   265→   265→  handlePrintReceipt now calls clearTableDraft(activeTable.tableId) instead of freeTable on success
+   266→   266→  ReceiptPrintDialog onOpenChange also uses clearTableDraft instead of freeTable
+   267→   267→
+   268→   268→  Imports updated:
+   269→   269→  - Removed: `freeTable` (no longer used)
+   270→   270→  - Added: `saveDraftToTable, getTableDraft, clearTableDraft` from '@/lib/tables'
+   271→   271→  - Added: `Truck`, `ShieldCheck` from 'lucide-react'
+   272→   272→  - Added: `useRef` to React imports
+   273→   273→
+   274→   274→  Constraints honored:
+   275→   275→  - Did NOT modify any file under src/lib/*Engine.js, src/lib/zatcaQr.js, src/lib/standardChart.js (verified by md5sum unchanged)
+   276→   276→  - Did NOT modify ThermalReceiptDocument.jsx, ReceiptPrintDialog.jsx, Tables.jsx, base44Client.js
+   277→   277→  - Used t(ar, en, lang) for all UI strings
+   278→   278→  - Kept the existing split-screen layout (products left, invoice right 400px)
+   279→   279→  - Used existing shadcn/ui components (Button, Input, Label, Card, Select, Dialog)
+   280→   280→
+   281→   281→Stage Summary:
+   282→   282→- 5 features added:
+   283→   283→  1. Customer discount (auto-applied from client.discountPercentage, non-cash only, VAT after discount)
+   284→   284→  2. Delivery fee field (only for SERVICE invoiceType, added before VAT)
+   285→   285→  3. Platform selection (loaded from DeliveryPlatform API, commission tracked for statement only)
+   286→   286→  4. Auto-save draft (debounced 500ms, table becomes DRAFT, resumes on mount)
+   287→   287→  5. Cancel with supervisor password (3 attempts max, owner exempted, accepts admin/123456/faisal.11223344)
+   288→   288→- Lint status: PASS — `bun run lint` returns 0 errors, 0 warnings (only pre-existing 7 errors in other files were visible before this task; after this task they remain unchanged)
+   289→   289→- Dev server status: running cleanly on port 3000; HMR successfully applied to /src/pages/POS.jsx multiple times (8:14:15, 8:14:40, 8:15:17, 8:18:15, 8:18:25, 8:18:34) with NO errors in /home/z/my-project/dev.log
+   290→   290→- Syntax validated via @babel/parser (Syntax OK)
+   291→   291→- Final file size: 1206 lines (was 831)
+   292→   292→
+   293→   293→---
+   294→   294→Task ID: TABLES-PLATFORMS
+   295→   295→Agent: general-purpose
+   296→   296→Task: Update Tables.jsx (DRAFT red, configurable columns, bulk create) + Create DeliveryPlatforms.jsx + wire into cycles/permissions
+   297→   297→
+   298→   298→Work Log:
+   299→   299→- Read /home/z/my-project/worklog.md (POS-1, POS-2, POS-FEATURES history)
+   300→   300→- Read existing files: Tables.jsx (423 lines), tables.js (TABLE_STATUS.DRAFT already exists with red color), branchSettings.js, base44Client.js (DeliveryPlatform seed + SalesInvoice with platformCommission field), cycles.js, CycleScreen.jsx, permissions.js, utils-binaa.js
+   301→   301→- Verified existing libs: getBranchSettings/setBranchSettings, getBranchTableStats returns draft count, saveDraftToTable/getTableDraft/clearTableDraft/getBranchDraftTables, TableToolbar/ConfirmDialog/ModuleLayout shadcn components
+   302→   302→- Updated /home/z/my-project/restaurant-system/src/pages/Tables.jsx (423 → 530 lines):
+   303→   303→  * Change 1 (DRAFT in red): TABLE_STATUS[table.status] already maps DRAFT automatically. Added 'DRAFT' entry to FILTERS array ({ key: 'DRAFT', ar: 'مسودة', en: 'Draft' }). Added DRAFT count badge to stats row ({ k: 'DRAFT', n: stats.draft, label: t('مسودة', 'Draft', lang) }) using TABLE_STATUS.DRAFT.color. Added `isDraft` derivation. Added 'DRAFT' to canOpenPOS: `const canOpenPOS = table.status === 'AVAILABLE' || isOccupied || isDraft;`. For DRAFT tables button shows t('متابعة المسودة', 'Resume Draft', lang). In openPOS, the `if (table.status === 'AVAILABLE')` branch is unchanged — DRAFT tables are left alone (no occupyTable call); POS.jsx will load the draft via getTableDraft on mount.
+   304→   304→  * Change 2 (Configurable columns): Added PER_ROW_OPTIONS = [3,4,5,6,8] and GRID_BY_PER_ROW mapping. Added tablesPerRow state (default 6) read from getBranchSettings(activeProjectId).tablesPerRow in a useEffect. Added a Select dropdown in toolbar (next to filter Select) showing "طاولات لكل صف" with options like "3 /每 صف". On change calls changePerRow(value) which sets state + persists via setBranchSettings(activeProjectId, { tablesPerRow: v }). Replaced all hardcoded `grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6` with `grid ${gridClass}` where gridClass is dynamic.
+   305→   305→  * Change 3 (Draft info on card): For DRAFT tables, shows a red badge "مسودة · N صنف" (with FileEdit icon) where N = table.draft.cart.length, plus "آخر تحديث: HH:MM" derived from table.draft.updatedAt via formatDraftTime helper.
+   306→   306→  * Change 4 (Bulk create): Added "إضافة متعددة" / "Bulk Add" button (Layers icon) next to "طاولة جديدة". Opens a bulkOpen dialog with 3 fields: count (number 1-200), prefix (text, default "طاولة"), seats (number 1-30). Shows a preview hint "سيتم إنشاء أسماء مثل: طاولة 1، طاولة 2 …". saveBulk() loops count times calling addTable(activeProjectId, { name: `${prefix} ${start+i}`, seats }) starting from tables.length+1.
+   307→   307→  * Imports updated: Added `Layers, FileEdit` to lucide-react. Added `setBranchSettings` to '@/lib/branchSettings' import (alongside existing getBranchSettings).
+   308→   308→  * Empty-state card now also shows Bulk Add button alongside New Table.
+   309→   309→- Created /home/z/my-project/restaurant-system/src/pages/DeliveryPlatforms.jsx (~480 lines):
+   310→   310→  * Layout: ModuleLayout with title "منصات التوصيل" / "Delivery Platforms", subtitle "إدارة منصات التوصيل وكشوفات العمولات". Two-section view toggle (Platforms | Statements) using inline-flex rounded tabs.
+   311→   311→  * Section 1 (Platforms CRUD): Loaded via Promise.all([base44.entities.DeliveryPlatform.list('-created_date', 500), base44.entities.SalesInvoice.list('-created_date', 1000)]). Search box filters by name/nameEn/code. Each platform rendered as a rose-accented Card (border-t-4 border-t-rose-500) showing: name + nameEn, code (mono), commission rate (rose-700), phone, active Badge (emerald/slate), notes (line-clamp-2). Actions per card: كشف (statement detail) | Edit | Delete (destructive). "إضافة منصة" button (rose-600) opens a Dialog with fields: code (auto PL-XXXX via nextCodeFromList, readOnly+bg-muted), commissionRate (number 0-100 step 0.01), name (ar, required), nameEn (en, ltr), phone, isActive (Switch toggle), notes (Textarea). save() calls base44.entities.DeliveryPlatform.create/update. delete() via ConfirmDialog.
+   312→   312→  * Section 2 (Platform Statements): Date range filter (from/to date inputs + Clear button) applied via filterByDate helper. 6 SummaryCards (slate/emerald/rose/teal/blue/amber tones) showing totals: Total Orders, Revenue, Commissions, Net Payable, Paid, Pending. Main table (shadcn Table) with columns: Platform | Orders | Revenue | Commission | Net | Paid | Pending | Actions. Each row's actions include "كشف تفصيلي" (Eye icon) opening a 4xl Dialog showing all invoices for that platform with invoice no, date, customer, total, commission, status badge; and "تسوية" (DollarSign icon) which marks unpaid/partial invoices as PAID (paidAmount=totalAmount + status='PAID' + appended notes with settlement date). settlePlatform() is disabled when pending<=0 or settling=true.
+   313→   313→  * Statements calculations: For each platform, invoices are filtered by platformId === platform.id || platformName === platform.name (fallback for legacy data). revenue = Σ totalAmount, commission = Σ platformCommission, net = revenue - commission, paid = Σ paidAmount, pending = max(0, net - paid).
+   314→   314→  * TableToolbar wired in for CSV export + print of statements (columns: Platform, Code, Orders, Revenue, Commission, Net, Paid, Pending). Subheading shows date range or "كل الفترات".
+   315→   315→  * Empty/loading states handled gracefully. try/catch around all backend calls with toast.error on failure.
+   316→   316→  * Helper components: SummaryCard({icon,label,value,tone}) and DetailStat({label,value}).
+   317→   317→  * Imports: React hooks, lucide-react icons (Plus, Pencil, Trash2, RefreshCw, Bike, FileText, DollarSign, TrendingUp, Calculator, Eye, Search), shadcn Card/CardContent/Button/Input/Label/Textarea/Dialog/Table/Badge/Switch, base44, useStore, t/formatCurrency/formatDate/nextCodeFromList from utils-binaa, ModuleLayout, ConfirmDialog, TableToolbar, sonner toast.
+   318→   318→- Updated /home/z/my-project/restaurant-system/src/lib/cycles.js:
+   319→   319→  * Added 'platforms' to READY_TABS set.
+   320→   320→  * Added new tab to partners-cycle (الزبائن والموردون): { key: 'platforms', ar: 'منصات التوصيل', en: 'Delivery Platforms', Icon: Bike }. Bike was already imported from lucide-react on line 13.
+   321→   321→- Updated /home/z/my-project/restaurant-system/src/pages/CycleScreen.jsx:
+   322→   322→  * Added import: `import DeliveryPlatforms from '@/pages/DeliveryPlatforms';` (alphabetically after Suppliers).
+   323→   323→  * Added to TAB_CONTENT map: `platforms: <DeliveryPlatforms />,` (between suppliers and inventory).
+   324→   324→- Updated /home/z/my-project/restaurant-system/src/lib/permissions.js:
+   325→   325→  * Added to MODULES array (after suppliers, before warehouses): `{ key: 'platforms', ar: 'منصات التوصيل', en: 'Delivery Platforms', group: 'settings' }`.
+   326→   326→  * Added 'platforms' to RESTAURANT_MANAGER modules array (after 'suppliers').
+   327→   327→  * Added 'platforms' to ACCOUNTANT modules array (after 'suppliers').
+   328→   328→  * OWNER already has modules: '*' (absolute access).
+   329→   329→- Ran `bun run lint`: initial run flagged 5 unused-import errors for Select/SelectContent/SelectItem/SelectTrigger/SelectValue in DeliveryPlatforms.jsx (I had imported them initially but used Switch instead of Select for the isActive toggle). Removed the unused Select import block. Final lint run: 0 errors, 0 warnings — PASS.
+   330→   330→- Verified syntax via @babel/parser on all 5 modified files: all OK.
+   331→   331→- Checked /home/z/my-project/dev.log: HMR successfully applied to /src/pages/Tables.jsx (8:24:44 PM), /src/pages/CycleScreen.jsx (multiple HMR updates 8:27-8:29), and /src/pages/DeliveryPlatforms.jsx (8:30:45 PM). No fatal errors. The only error in dev.log is the pre-existing "Port 3000 already in use" from a second `bun run dev` attempt (not from my changes).
+   332→   332→
+   333→   333→Stage Summary:
+   334→   334→- Tables.jsx: DRAFT tables now display in red, included in stats badges, filterable via DRAFT filter option, clickable to resume draft (button says "متابعة المسودة"), and show draft item count + last updated time on the card. Added configurable tables-per-row (3/4/5/6/8) persisted to branchSettings.tablesPerRow with a LayoutGrid-icon dropdown in the toolbar. Added bulk table creation dialog (count + prefix + seats) that creates N tables with auto-incrementing names.
+   335→   335→- DeliveryPlatforms.jsx: Created with full CRUD (card grid + add/edit/delete dialogs using base44.entities.DeliveryPlatform) and platform statements section (date-range filter, 6 summary cards, shadcn Table with per-platform orders/revenue/commission/net/paid/pending, detailed invoice dialog per platform, and a تسوية action that marks pending invoices as PAID). TableToolbar wired for CSV/print export.
+   336→   336→- Cycles/permissions: 'platforms' added to READY_TABS, added as third tab to partners-cycle (الزبائن والموردون) with Bike icon, imported and mapped in CycleScreen.jsx TAB_CONTENT, registered in MODULES (group: 'settings'), and granted to RESTAURANT_MANAGER + ACCOUNTANT roles (OWNER has '*' already).
+   337→   337→- Lint status: PASS — `bun run lint` returns 0 errors, 0 warnings. One round of fixes needed (removed 5 unused Select imports from DeliveryPlatforms.jsx).
+   338→   338→- Dev server status: running cleanly on port 3000; HMR applied to all changed files (Tables.jsx, DeliveryPlatforms.jsx, CycleScreen.jsx) without errors.
+   339→   339→- Constraints honored: Did NOT modify POS.jsx, base44Client.js, tables.js, or any *Engine.js files. Used t(ar,en,lang) for all UI strings. All backend calls wrapped in try/catch with toast error fallbacks.
+   340→   340→
+   341→   341→---
+   342→   342→Task ID: MENU-POS
+   343→   343→Agent: general-purpose
+   344→   344→Task: Create MenuManagement.jsx (categories + items + CSV import) + Redesign POS product grid (categories → items)
+   345→   345→
+   346→   346→Work Log:
+   347→   347→- Read /home/z/my-project/worklog.md (Tasks 3-B, 5, 6, 7, POS-1, POS-2, POS-FEATURES, TABLES-PLATFORMS history)
+   348→   348→- Read POS.jsx (1240 lines), base44Client.js seed (MenuCategory + InventoryItem with costPrice/salePrice/unitCost), Inventory.jsx (for CRUD patterns), DeliveryPlatforms.jsx (for tabs/dialog patterns), ModuleLayout/TableToolbar/ConfirmDialog, utils-binaa (t/formatCurrency/nextCodeFromList), cycles.js, CycleScreen.jsx, permissions.js
+   349→   349→- Verified seed data: 4 MenuCategory entries (cat-mains, cat-appetizers, cat-beverages, cat-desserts) + 22 InventoryItem entries each linked to a categoryId with costPrice/salePrice and unitCost=salePrice for backward compat
+   350→   350→
+   351→   351→- Created /home/z/my-project/restaurant-system/src/pages/MenuManagement.jsx (1098 lines):
+   352→   352→  * Layout: ModuleLayout with title "إدارة القائمة" + subtitle, Refresh button in actions
+   353→   353→  * Two Tabs (Tabs/TabsList/TabsTrigger/TabsContent from shadcn):
+   354→   354→    - "الأقسام" (Categories): card grid with name (ar), nameEn, code, items count badge, active status badge, sort order, up/down reorder + edit/delete buttons. "إضافة قسم" button opens Dialog with code (auto CAT-XXXX via nextCodeFromList, readOnly+bg-muted), name (ar) *, nameEn, sortOrder (auto-incremented), isActive Switch. Edit dialog reuses same form. Delete via ConfirmDialog with guard: refuses if items linked to category (toast.error). moveCategory(idx, dir) swaps sortOrder with adjacent category via two parallel update() calls.
+   355→   355→    - "الوجبات" (Menu Items): toolbar with search input + category filter Select + "نموذج CSV" (download template) + "استيراد من ملف" (file picker) + "تصدير" (export CSV) + "إضافة وجبة" buttons. 4 summary cards (Total Items, Categories, Active Items, Total Profit Margin). shadcn Table with columns: code, name+nameEn, category badge, costPrice (سعر الشراء), salePrice (سعر البيع) in emerald, profit margin (sale-cost) colored green/red, status badge, actions (edit/delete).
+   356→   356→  * Add/Edit Item Dialog (max-w-2xl): code (auto M-XXXX), categoryId * (Select from categories), name (ar) *, nameEn, costPrice (سعر الشراء), salePrice (سعر البيع) *, unit, quantity, reorderLevel, isActive Switch, notes Input. Live preview of expected profit margin below prices. Validation: name required, categoryId required, salePrice required and > 0. saveItem also writes unitCost=salePrice for backward compat (POS.jsx reads salePrice ?? unitCost).
+   357→   357→  * CSV Import: hidden <input type="file" accept=".csv,.json"> with ref. handleFileImport reads file as UTF-8, parses CSV via parseCSV() (splits lines on \n, headers from line 0, values from comma). Normalizes categoryId by matching id/name/nameEn/code. Shows ImportPreview Dialog with shadcn Table: #, code, name, nameEn, categoryId (matched → emerald name, unmatched → rose), costPrice, salePrice, unit, status badge (OK / Skipped). Rows missing name OR valid category are auto-skipped during bulk insert. confirmImport chunks in 50s, calls base44.entities.InventoryItem.bulkCreate(slice), counts okCount/failCount, toasts summary, reloads data. importing state disables Cancel button.
+   358→   358→  * CSV Export: itemsToCSV(rows) builds CSV string with BOM, downloadTextFile('menu-items.csv'). Uses current filteredItems (respects search+filter).
+   359→   359→  * CSV Template download: 2 sample rows (one mains + one beverages) using actual category IDs from loaded categories.
+   360→   360→  * Imports: React hooks + useRef, lucide-react icons (Plus, Pencil, Trash2, Upload, Download, FileSpreadsheet, UtensilsCrossed, FolderPlus, Search, RefreshCw, ArrowUp, ArrowDown, AlertCircle), shadcn Card/CardContent/Button/Input/Label/Select/Switch/Dialog/Tabs/Table/Badge, base44, useStore, t/formatCurrency/nextCodeFromList from utils-binaa, ModuleLayout, ConfirmDialog, sonner toast. Removed unused `genCode` import after first lint pass.
+   361→   361→
+   362→   362→- Modified /home/z/my-project/restaurant-system/src/pages/POS.jsx (1240 → 1319 lines):
+   363→   363→  * Imports: added CupSoda, Cake, Soup, FolderPlus, ArrowRight, ArrowLeft from lucide-react.
+   364→   364→  * Removed: CATEGORIES array (MATERIAL/CONSUMABLE/SPARE_PART/TOOL/FIXED_ASSET flat list), DEMO_MENU array (8 hard-coded demo items). When backend has no items, the grid simply shows the empty state.
+   365→   365→  * Added: getCategoryIcon(catName) helper (returns CupSoda/Cake/Soup/UtensilsCrossed/FolderPlus based on Arabic/English keyword match), CATEGORY_TONES palette (8 gradient backgrounds), toneFor(idx) cycle helper.
+   366→   366→  * Added state: const [categories, setCategories] = useState([]); const [activeCategoryView, setActiveCategoryView] = useState(null); (null = categories grid, '__all__' = all items, categoryId = items of that category). Removed old activeCategory state entirely.
+   367→   367→  * Updated load useEffect: Promise.all([MenuCategory.filter({isActive:true}), InventoryItem.filter({isActive:true})]) — cats sorted by sortOrder asc, items set as-is. No DEMO_MENU fallback (clean empty state instead).
+   368→   368→  * Updated filteredMenu useMemo: when search has text → matches across ALL items by name/nameEn/code (ignores category filter); when no search + activeCategoryView is null → empty (categories grid renders instead); when no search + activeCategoryView is '__all__' → all items; when no search + activeCategoryView is a categoryId → items where categoryId === activeCategoryView.
+   369→   369→  * Added countByCategory useMemo (Map of categoryId → count for category card badges).
+   370→   370→  * Added showCategoriesGrid boolean: !search.trim() && activeCategoryView === null.
+   371→   371→  * Updated addToCart: uses parseFloat(item.salePrice ?? item.unitCost) || 0 (prefers salePrice, falls back to unitCost for backward compat with any legacy items).
+   372→   372→  * Replaced product section: removed the CATEGORIES tab bar (the small horizontal buttons). Search bar stands alone at top. Below it, conditional rendering:
+   373→   373→    + Loading → 8 pulse skeleton cards in 4-col grid
+   374→   374→    + showCategoriesGrid → "All Items" card (slate-700→slate-900 gradient, UtensilsCrossed icon, total menuItems count badge) followed by category cards. Each category card: large 132px height, gradient bg (tone.bg), white icon box (CupSoda/Cake/Soup/etc per name), Arabic name bold + English name muted, item count badge top-end, ring-2 hover effect, active:scale-[0.98] tap effect. Grid responsive: 2 cols mobile, 3 tablet, 4 desktop, 5 xl.
+   375→   375→    + Empty → centered ShoppingCart icon + "لا توجد أصناف"
+   376→   376→    + Items grid → optional back button ("← رجوع للأقسام", amber themed, hidden during search since search shows flat results across categories) + 5-col responsive grid of item Cards. Cards unchanged design (name bold, nameEn muted, code mono, emerald price) but price uses parseFloat(item.salePrice ?? item.unitCost).
+   377→   377→  * Kept ALL existing POS features intact: split-screen layout (products left, invoice right 400px), 5 payment methods (CASH/CARD_MADA/CARD_VISA/CARD_MC/CARD_OTHER — no WALLET), customer discount, delivery fee, platform selection + commission tracking, auto-save draft to table (DRAFT), cancel with supervisor password, ReceiptPrintDialog, kitchen order print.
+   378→   378→  * Did NOT touch: base44Client.js, any *Engine.js, ThermalReceiptDocument.jsx, ReceiptPrintDialog.jsx, tables.js, branchSettings.js.
+   379→   379→
+   380→   380→- Updated /home/z/my-project/restaurant-system/src/lib/cycles.js:
+   381→   381→  * Added 'menu' to READY_TABS set (after 'platforms').
+   382→   382→  * Added new tab to inventory-cycle (المخازن والمكوّنات): { key: 'menu', ar: 'إدارة القائمة', en: 'Menu Management', Icon: UtensilsCrossed }. UtensilsCrossed already imported on line 13. Tab appended as 4th tab (after warehouses/stock-movements/inventory).
+   383→   383→
+   384→   384→- Updated /home/z/my-project/restaurant-system/src/pages/CycleScreen.jsx:
+   385→   385→  * Added import: `import MenuManagement from '@/pages/MenuManagement';` (alphabetically after DeliveryPlatforms).
+   386→   386→  * Added to TAB_CONTENT map: `menu: <MenuManagement />,` (between 'stock-movements' and 'users').
+   387→   387→
+   388→   388→- Updated /home/z/my-project/restaurant-system/src/lib/permissions.js:
+   389→   389→  * Added to MODULES array (after 'platforms', before 'warehouses'): `{ key: 'menu', ar: 'إدارة القائمة', en: 'Menu Management', group: 'settings' }`.
+   390→   390→  * Added 'menu' to RESTAURANT_MANAGER modules array (after 'platforms').
+   391→   391→  * Added 'menu' to PROJECT_MANAGER modules array (after 'clients').
+   392→   392→  * OWNER already has modules: '*' (absolute access).
+   393→   393→  * (Did NOT add to ACCOUNTANT — menu management is operational, not accounting. CASHIER also excluded — cashiers sell, not edit menu.)
+   394→   394→
+   395→   395→- Lint: First run flagged 1 error (unused `genCode` import in MenuManagement.jsx). Removed the import. Second run: PASS — `bun run lint` returns 0 errors, 0 warnings.
+   396→   396→- Syntax: Validated all 5 modified files via @babel/parser — all OK.
+   397→   397→- Dev log: HMR successfully applied to /src/pages/POS.jsx (multiple updates 10:06-10:09) and /src/pages/MenuManagement.jsx (10:13:42 PM). No fatal errors, no warnings, no error stack traces in dev.log after changes.
+   398→   398→
+   399→   399→Stage Summary:
+   400→   400→- MenuManagement.jsx: Full CRUD for categories (cards + add/edit/delete/reorder) and menu items (table + add/edit/delete + search + filter by category). CSV import with preview dialog (validates each row, auto-skips invalid, bulkCreate in 50-row chunks). CSV export of current filtered items. CSV template download with sample rows. Live profit margin preview in item dialog. Items write both salePrice and unitCost (backward compat).
+   401→   401→- POS.jsx: Two-level navigation — categories grid (large gradient cards with icon, name ar+en, item count) → click category → items grid filtered by categoryId. "كل الأصناف" card shows all. Back button returns to categories. Search overrides category selection and shows flat results across all items. Uses salePrice ?? unitCost for prices. All 5 existing POS features (discount, delivery fee, platform, auto-save draft, cancel with password) preserved. Split-screen layout preserved. Payment methods unchanged (CASH + 4 card types, no WALLET).
+   402→   402→- Cycles/permissions: 'menu' added to READY_TABS, added as 4th tab to inventory-cycle with UtensilsCrossed icon, imported and mapped in CycleScreen.jsx TAB_CONTENT, registered in MODULES (group: 'settings'), granted to RESTAURANT_MANAGER + PROJECT_MANAGER roles (OWNER has '*' already).
+   403→   403→- Lint: PASS — 0 errors, 0 warnings (after removing one unused import).
+   404→   404→- Dev server: running cleanly on port 3000; HMR applied to POS.jsx and MenuManagement.jsx without errors.
+   405→   405→- Constraints honored: Did NOT modify base44Client.js, any *Engine.js files, ThermalReceiptDocument.jsx, ReceiptPrintDialog.jsx, tables.js, branchSettings.js. Used t(ar,en,lang) for all UI strings. Kept split-screen POS layout. Kept all 5 payment methods (no WALLET).
+   406→   406→
+   407→   407→---
+   408→   408→Task ID: SETTINGS-TRANSFORM
+   409→   409→Agent: general-purpose
+   410→   410→Task: Transform Settings section — async branchSettings, receipt hierarchy, branch settings UI
+   411→   411→
+   412→   412→Work Log:
+   413→   413→- Read worklog.md (previous tasks 3-B through MENU-POS) and verified state of files
+   414→   414→- Read /home/z/my-project/restaurant-system/src/lib/branchSettings.js — confirmed all 5 functions are now async (return Promises): getBranchSettings, setBranchSettings, resolveReceiptSettings, autoCreatePOS, deleteBranchSettings
+   415→   415→- Confirmed base44Client.js uses `entities: new Proxy({}, ...)` so `base44.entities.BranchSetting` is automatically available without explicit registration
+   416→   416→
+   417→   417→Step 1 — Updated all callers to handle async branchSettings:
+   418→   418→
+   419→   419→  src/pages/Branches.jsx (550 → 580 lines):
+   420→   420→    * Added `settingsMap` state (object: branchId → settings) and a useEffect that loads settings for ALL branches in parallel via Promise.all after items load
+   421→   421→    * Card display now reads from `settingsMap[item.id] || {}` instead of sync `getBranchSettings(item.id)`
+   422→   422→    * `openEdit(item)`: uses cached `settingsMap[item.id]` for immediate form fill, then loads fresh from DB async via `.then()` and updates form + settingsMap
+   423→   423→    * `save()`: now `await`s `setBranchSettings(...)`, `await`s `autoCreatePOS(...)`, `await`s `setBranchSettings(...)` for new branch — chain is sequential (create Project → autoCreatePOS → setBranchSettings)
+   424→   424→    * `remove()`: now `await`s `deleteBranchSettings(deleteId)` and removes from settingsMap locally
+   425→   425→    * Updated module header comment to reflect database-backed storage instead of localStorage
+   426→   426→
+   427→   427→  src/pages/POS.jsx (1320 → 1333 lines):
+   428→   428→    * Replaced `const branchSettings = useMemo(() => activeProjectId ? getBranchSettings(activeProjectId) : {}, [activeProjectId]);` with `const [branchSettings, setBranchSettings] = useState({});` + useEffect that calls `getBranchSettings(activeProjectId).then(setBranchSettings)` with active-flag cleanup
+   429→   429→    * No name conflict — POS.jsx only imports `getBranchSettings, resolveReceiptSettings` (not `setBranchSettings`), so the new React state setter `setBranchSettings` is unambiguous
+   430→   430→    * In `handlePrintReceipt`: changed `const branchReceiptSettings = activeProjectId ? resolveReceiptSettings(activeProjectId, companySettings) : companySettings;` to `const branchReceiptSettings = activeProjectId ? await resolveReceiptSettings(activeProjectId, companySettings) : companySettings;` (handlePrintReceipt is already async)
+   431→   431→
+   432→   432→  src/components/shared/ReceiptPrintDialog.jsx:
+   433→   433→    * Replaced `const settings = useMemo(() => { const branchId = ...; if (!branchId) return companySettings; return resolveReceiptSettings(branchId, companySettings); }, [...])` with `const [settings, setSettings] = useState(companySettings);` + useEffect that calls `resolveReceiptSettings(branchId, companySettings).then(setSettings).catch(() => setSettings(companySettings))`
+   434→   434→    * Removed unused `useMemo` from React import (kept `useRef, useState, useEffect`)
+   435→   435→
+   436→   436→  src/pages/Tables.jsx:
+   437→   437→    * Renamed imported `setBranchSettings` → `saveBranchSettings` to avoid shadowing the new React state setter `setBranchSettings` (state declaration was added above the early-return for `!activeProjectId` so hooks ordering is preserved)
+   438→   438→    * Moved branchSettings state + useEffect to top of component (right after tablesPerRow state) so it's before the early return — satisfies Rules of Hooks
+   439→   439→    * `tablesPerRow` load effect: replaced sync `getBranchSettings(activeProjectId)` with async `.then()` chain
+   440→   440→    * `changePerRow()`: now `async`, `await`s `saveBranchSettings(activeProjectId, { tablesPerRow: v })`
+   441→   441→    * Card header now reads `branchSettings.branchName` from React state instead of sync call
+   442→   442→
+   443→   443→Step 2 — Updated receipt hierarchy in src/components/shared/ThermalReceiptDocument.jsx:
+   444→   444→    * Header now explicitly numbered with comments (1–7) matching the requested hierarchy:
+   445→   445→      1. Branch logo (settings.logoUrl)
+   446→   446→      2. Company name (settings.companyName) — fontSize bumped 15 → 16, fontWeight 800, lineHeight 1.3 (LARGE BOLD as main heading)
+   447→   447→      3. Company name English (settings.companyNameEn) — fontSize 9, color #555 (small subtitle)
+   448→   448→      4. Branch name (settings.branchName) — fontSize bumped 10 → 12, fontWeight 700, with "فرع:" / "Branch:" prefix (medium subtitle)
+   449→   449→      5. VAT number (settings.vatNumber)
+   450→   450→      6. Phone (settings.phone)
+   451→   451→      7. Address + City (settings.address + settings.city joined with " - ")
+   452→   452→    * Added a thin dotted divider (· × 28) between branch name and contact details to visually separate the hierarchy levels
+   453→   453→    * The actual hierarchy logic lives in branchSettings.js's `resolveReceiptSettings` (already implemented by orchestrator): companyName is kept from companySettings and NOT overridden by branchName
+   454→   454→
+   455→   455→Step 3 — Simplified src/components/settings/CompanySettingsCard.jsx:
+   456→   456→    * Removed bank details section entirely (bankName, bankAccountName, bankBranch, bankAccountNumber, iban, swiftCode fields removed from UI)
+   457→   457→    * Added explanatory subtitle: "اسم الشركة موحّد لكل الفروع. البيانات الأخرى هنا تُستخدم كقيم افتراضية للفروع التي لا تملك قيمها الخاصة."
+   458→   458→    * Reorganized into 4 clear sections with headers:
+   459→   459→      - هوية الشركة (Company Identity): companyName, companyNameEn, vatNumber, crNumber
+   460→   460→      - شعار الشركة (Company Logo): logoUrl with preview (NEW field — was missing before)
+   461→   461→      - بيانات الاتصال (Contact Info Default): address, city, phone, email, website — kept as FALLBACK defaults (subtitle explains)
+   462→   462→      - ألوان افتراضية للفروع (Default Branch Colors): primaryColor, accentColor (NEW — added ColorField helper component)
+   463→   463→    * Added `Image as ImageIcon` and `Save, Loader2` icons from lucide-react
+   464→   464→    * Added reusable ColorField component (color picker + hex input side-by-side)
+   465→   465→
+   466→   466→Step 4 — Created src/components/settings/BranchSettingsCard.jsx (NEW, ~445 lines):
+   467→   467→    * Loads all branches via `base44.entities.Project.list('-created_date', 200)`
+   468→   468→    * Branch selector (shadcn Select) at top + Refresh button
+   469→   469→    * Loads selected branch's settings async via `getBranchSettings(selectedBranchId)` in useEffect with active-flag cleanup
+   470→   470→    * 4 form sections:
+   471→   471→      - هوية الفرع (Branch Identity): branchName (ar), branchNameEn, managerName, posTerminalId (read-only, auto-generated, bg-muted font-mono)
+   472→   472→      - شعار الفرع (Branch Logo): file upload via `base44.integrations.Core.UploadFile({ file })` + hidden file input + URL fallback field + live image preview (size-20 rounded border)
+   473→   473→      - بيانات الاتصال (Contact Info): phone (with Phone icon), phone2, city, address (with MapPin icon), vatNumber (placeholder = company VAT)
+   474→   474→      - ألوان الفرع (Branch Colors): primaryColor, accentColor via ColorField
+   475→   475→    * Save button calls `await setBranchSettings(selectedBranchId, {...})` with try/catch + toast
+   476→   476→    * Receipt Header Preview section at bottom — live `ReceiptHeaderPreview` component that renders the receipt header exactly as ThermalReceiptDocument will (logo → company name 18px BOLD → company name En → branch name 13px with "فرع:" prefix → dotted divider → VAT → phone → address)
+   477→   477→    * Preview uses branchSettings (form) merged with companySettings (from useCompanySettings hook) — same merge logic as `resolveReceiptSettings`
+   478→   478→    * Loading state: spinner while branches load; spinner while settings load on branch switch
+   479→   479→    * Empty state: friendly message when no branches exist ("لا توجد فروع بعد. أنشئ فرعاً أولاً من شاشة الفروع.")
+   480→   480→    * Imports: React hooks + useRef, lucide-react icons (Store, Loader2, Save, Upload, RefreshCw, Image as ImageIcon, CreditCard, Eye, Phone, MapPin, User, Palette), shadcn Card/Button/Input/Label/Select, base44, useStore, useToast, t, useCompanySettings, getBranchSettings/setBranchSettings/DEFAULT_BRANCH_SETTINGS from branchSettings
+   481→   481→
+   482→   482→Step 5 — Updated src/pages/Settings.jsx:
+   483→   483→    * Tabs now: عام (General) | بيان الشركة (Company) | إعدادات الفروع (Branch Settings) | الطباعة والإيصال (Print) | حول النظام (About)
+   484→   484→    * Removed "التحكم المالي" (Fiscal Control) tab and its `FiscalControlCard` import
+   485→   485→    * Removed `CalendarClock` icon import (was used for fiscal tab)
+   486→   486→    * Added `Store` icon import for the new Branch Settings tab
+   487→   487→    * Added `import BranchSettingsCard from '@/components/settings/BranchSettingsCard'`
+   488→   488→    * Added new SECTIONS entry: `{ key: 'branches', ar: 'إعدادات الفروع', en: 'Branch Settings', Icon: Store }`
+   489→   489→    * Added render: `{tab === 'branches' && <BranchSettingsCard />}`
+   490→   490→
+   491→   491→Verification:
+   492→   492→- Ran `bun run lint`: PASS — 0 errors, 0 warnings (after fixing one JSX comment syntax error in ThermalReceiptDocument.jsx where I'd omitted the closing `}` on the header comment)
+   493→   493→- Validated all 8 modified/created files via @babel/parser: all OK
+   494→   494→- Checked /home/z/my-project/dev.log: dev server (Vite, port 3000) compiles cleanly ("✓ Compiled in 6.5s" / "✓ Compiled in 6.7s"); only pre-existing error in log is "EADDRINUSE: address already in use :::3000" from a duplicate dev server attempt (not from my changes)
+   495→   495→- Confirmed no remaining sync calls to async branchSettings functions — grep shows all usages either `await` or `.then()`
+   496→   496→
+   497→   497→Stage Summary:
+   498→   498→- branchSettings.js: async, database-backed (already done by orchestrator — untouched)
+   499→   499→- Updated callers: Branches.jsx (settingsMap + await all 4 async calls), POS.jsx (useState + useEffect + await resolveReceiptSettings), Tables.jsx (useState + useEffect + aliased import to avoid shadowing), ReceiptPrintDialog.jsx (useState + useEffect)
+   500→   500→- Receipt hierarchy: company name unified under branch logo — company name 16px BOLD as main heading, branch name 12px with "فرع:" prefix as subtitle, dotted divider before contact details
+   501→   501→- New BranchSettingsCard: full branch settings editor with file upload, color pickers, read-only POS terminal ID, and live receipt header preview that mirrors ThermalReceiptDocument exactly
+   502→   502→- CompanySettingsCard: bank details section removed; logo + color fields added; address/city/phone kept as fallback defaults with explanatory subtitle
+   503→   503→- Settings.jsx: Fiscal Control tab removed; Branch Settings tab added
+   504→   504→- Lint: PASS — 0 errors, 0 warnings
+   505→   505→- Dev server: running cleanly on port 3000; HMR compiled successfully
+   506→   506→- Constraints honored: did NOT modify branchSettings.js, base44Client.js, any *Engine.js files, or tables.js. Used t(ar,en,lang) for all UI strings. Loading states (spinners) and error handling (try/catch + toast) added for all async operations.
+   507→   507→
+   508→   508→---
+   509→   509→Task ID: SECTIONS-2-5
+   510→   510→Agent: general-purpose
+   511→   511→Task: Transform sections 2-5 (Products, Purchasing, Expenses, Employees) for restaurant
+   512→   512→
+   513→   513→Work Log:
+   514→   514→
+   515→   515→**Section 2 — Products (MenuManagement.jsx + base44Client.js)**
+   516→   516→- MenuManagement.jsx: Removed `reorderLevel` from EMPTY_ITEM, from saveItem() data payload, and from CSV import payload (confirmImport). Updated `quantity` field label to "الكمية المتاحة (اختياري) / Available Qty (optional)" with placeholder explaining it can be left empty. Removed the `reorderLevel` Input from the add/edit item dialog.
+   517→   517→- MenuManagement.jsx: Added a prominent "متاح اليوم / Available Today" quick-toggle in the items table — a Switch component (with Eye/EyeOff icon + localized "متاح/مخفي" label) that lets restaurants toggle item availability with one click without opening the edit dialog. New `toggleAvailable(it)` handler calls InventoryItem.update with toast feedback. Replaced the old static "نشط/معطّل" Badge column. Added `Eye, EyeOff` icons to lucide-react imports.
+   518→   518→- base44Client.js: Removed `reorderLevel: N` from all 22 seed InventoryItem entries (regex sweep, 22 substitutions; verified 0 remaining `reorderLevel` references in the file). `quantity` kept as initial stock.
+   519→   519→- POS.jsx: Verified via grep that the construction-era `CATEGORIES` array and `DEMO_MENU` constant were already removed by the prior MENU-POS task (no matches found). No action needed.
+   520→   520→
+   521→   521→**Section 3 — Purchasing (cycles.js, permissions.js, SupplierInvoices.jsx, SupplierInvoiceDocument.jsx, ContextBar.jsx, NotificationCenter.jsx)**
+   522→   522→- cycles.js: Removed `purchase-requests`, `purchase-orders`, `goods-receipts` tabs from the `procurement-cycle`. Now procurement-cycle has only 2 tabs: `supplier-invoices` (renamed ar/en: "فواتير المشتريات / Purchase Invoices") and `supplier-payments` ("سداد الموردين"). Added a comment explaining the simplification. Also removed the three keys from `READY_TABS`. Removed now-unused `ClipboardList` import. (`Package` import kept — still used by partners-cycle and inventory-cycle.)
+   523→   523→- permissions.js: Removed `purchase-requests`, `purchase-orders`, `goods-receipts` from the MODULES array (3 entries deleted). Renamed `supplier-invoices` module label to "فواتير المشتريات / Purchase Invoices". Removed these 3 keys from the module lists of RESTAURANT_MANAGER, ACCOUNTANT, PROJECT_MANAGER, PROCUREMENT roles. (OWNER has '*' so unaffected.)
+   524→   524→- SupplierInvoices.jsx: Full rewrite of the form (396 → 410 lines). Removed `goodsReceiptId`/`receiptNo`/`purchaseOrderId`/`orderNo`/`warehouseId`/`warehouseName`/`projectId`/`projectName` from the EMPTY form and from all related UI/logic. Removed the entire `onReceipt()` handler (no more "must link to goods receipt" requirement). Removed the loading of PurchaseOrder and GoodsReceipt entities. Added loading of `branches` (Project.list) and `inventoryItems` (InventoryItem.list). Added `branchId`/`branchName` to the EMPTY form with a branch Select dropdown. Added a full line-items subsystem: `lineItems` array, `blankLine()`, `updateLine()`, `onInventoryItemPick()` (auto-fills name + cost price from InventoryItem), `addLine()`, `removeLine()`. baseAmount (subtotal) is now computed from line items via `useMemo`. The form requires at least one line with value > 0. The dialog now has a max-w-3xl width to accommodate the line items table. Updated the table header column from "الطلب/Order" to "الفرع/Branch" (displaying `item.branchName || item.projectName` for backward compat). Updated export columns and document title to "فاتورة شراء / Purchase Invoice".
+   525→   525→- SupplierInvoiceDocument.jsx: Updated document title to "فاتورة شراء / Purchase Invoice". Replaced `projectName` info row with `branchName || projectName` info row labeled "الفرع / Branch". Removed `orderNo` and `receiptNo` info rows. Added a line-items table that renders when `invoice.lineItems` is non-empty (with columns: #, Item, Qty, Unit Price, Total). Falls back to description-only display when no line items (backward compat for legacy invoices).
+   526→   526→- ContextBar.jsx: Changed the quick-nav button key from `'purchase-orders'` to `'supplier-invoices'` (label "مشتريات/Purchases" kept).
+   527→   527→- NotificationCenter.jsx: Updated the "pending purchase order" notification: title changed from "أمر شراء معلق" to "فاتورة شراء معلقة", and the `go` action now navigates to `'supplier-invoices'` instead of `'purchase-orders'`.
+   528→   528→- Did NOT delete PurchaseRequests.jsx, PurchaseOrders.jsx, GoodsReceipts.jsx files — kept them in src/pages/. Their imports and TAB_CONTENT entries remain in CycleScreen.jsx but are never rendered (no cycle references them anymore).
+   529→   529→
+   530→   530→**Section 4 — Expenses (utils-binaa.js, ExpenseDialog.jsx, ExpenseTypePicker.jsx, Expenses.jsx)**
+   531→   531→- utils-binaa.js — EXPENSE_CATEGORIES: Added `UTILITIES` (كهرباء ومياه), `MARKETING` (تسويق). Renamed `SUBCONTRACTOR` → `SERVICE_PROVIDER`. Removed `ELECTRICITY` and `WATER` (consolidated into UTILITIES). Final list: 18 categories (RENT, MAINTENANCE, UTILITIES, SALARIES, INSURANCE, OFFICE, GOV_FEES, TRAVEL, SERVICE_PROVIDER, DELIVERY, CONSUMABLES, FUEL, MARKETING, HOSPITALITY, TRANSPORT, SERVICES, PERMITS, OTHER). Added `LEGACY_CATEGORY_ALIASES` map (SUBCONTRACTOR→SERVICE_PROVIDER, ELECTRICITY→UTILITIES, WATER→UTILITIES) and `resolveExpenseCategory(key)` function for backward-compat display of legacy data.
+   532→   532→- utils-binaa.js — EXPENSE_TYPES: Removed `PROJECT` type entirely. Renamed `EQUIPMENT` → `MAINTENANCE` (ar: "صيانة المعدات", en: "Equipment Maintenance", icon: Wrench, accountRole: EXPENSE_EQUIPMENT preserved). Added 3 new types: `RENT` (icon Building2, accountRole EXPENSE_GENERAL), `UTILITIES` (icon Waves, accountRole EXPENSE_GENERAL), `MARKETING` (icon Megaphone, accountRole EXPENSE_ADMIN). Final list: 8 types. Updated `getExpenseType(key)` with backward-compat: legacy `PROJECT` → maps to `COMPANY` type; legacy `EQUIPMENT` → maps to `MAINTENANCE` type.
+   533→   533→- utils-binaa.js — RESTAURANT_POSITIONS: Added new exported constant with 11 restaurant job titles (CASHIER/كاشير, CHEF/طاهي, SOUS_CHEF/مساعد طاهي, WAITER/نادل, BRANCH_MANAGER/مدير فرع, ACCOUNTANT/محاسب, CLEANER/عامل نظافة, DELIVERY/موصل طلبات, BARISTA/باريستا, HOST/مضيف, OTHER/أخرى).
+   534→   534→- ExpenseTypePicker.jsx: Added `Wrench, Waves, Megaphone` to lucide-react imports. Updated ICONS map to include the new icons (and removed `Truck` reference which would have caused a ReferenceError since `Truck` is no longer imported — EQUIPMENT was the only type using it).
+   535→   535→- ExpenseDialog.jsx: Added `branches = projects || []` alias (Project entity is reused for branches). Added `pickBranch(id)` handler that sets `branchId`/`branchName` AND `projectId`/`projectName` (for OperationEngine backward compatibility — businessEngine._buildExpensePayload reads `data.projectId`). Added an always-visible branch Select dropdown in the form (not gated by `typeDef.fields`). Removed the `typeDef.fields.includes('project')` block that previously rendered the projectId Select (no type has 'project' field anymore since PROJECT was removed).
+   536→   536→- Expenses.jsx: Updated EMPTY form — replaced `projectId`/`projectName` with `branchId`/`branchName`. Updated `buildDefaultForm()` to default `expenseType: 'COMPANY'` (no more PROJECT branch) and set `branchId`/`branchName` from activeProjectId/activeProjectName (also sets projectId/projectName for engine). Updated exportColumns: replaced "مرتبط بـ / Linked to" with "الفرع / Branch" showing `r.branchName || r.projectName`. Updated table header + row accordingly. Used `resolveExpenseCategory()` for category display (handles legacy SUBCONTRACTOR/ELECTRICITY/WATER keys gracefully).
+   537→   537→
+   538→   538→**Section 5 — Employees (Employees.jsx + utils-binaa.js)**
+   539→   539→- Employees.jsx: Added `branchId`/`branchName` to the EMPTY form. Added `branches` state, loaded via `Promise.all([Employee.list, Project.list])`. Added `onBranch(id)` handler. Added `positionLabel(val)` helper that resolves a position key (e.g., BRANCH_MANAGER) to its localized label, falling back to the raw value for legacy free-text data. Changed the `position` form field from a free-text Input to a Select dropdown using RESTAURANT_POSITIONS, with a legacy-value notice when the existing value isn't a known key. Added a branch Select dropdown in the form (next to position). Updated `openNew()` to default `branchId`/`branchName` from the currently active branch (activeProjectId/activeProjectName). Updated the SmartEntityCard subtitle to use `positionLabel()` and show branchName. Added a "الفرع / Branch" row to the card meta. Updated exportColumns to include a Branch column and use the positionLabel resolver for the Position column. Imported `RESTAURANT_POSITIONS` from utils-binaa.
+   540→   540→- utils-binaa.js: Added `RESTAURANT_POSITIONS` constant (see Section 4 above).
+   541→   541→
+   542→   542→Stage Summary:
+   543→   543→- Products: reorderLevel removed from form, table, save payload, CSV import payload, and all 22 seed menu items. quantity is now optional with explanatory placeholder. New "متاح اليوم" quick-toggle (Switch + Eye/EyeOff) in the items table enables one-click daily availability toggling. POS.jsx already had CATEGORIES/DEMO_MENU removed by prior task.
+   544→   544→- Purchasing: procurement-cycle simplified to 2 tabs (supplier-invoices + supplier-payments). 3 construction tabs removed from cycles.js + permissions.js + READY_TABS. SupplierInvoices.jsx rewritten with branchId selector + full line-items subsystem (InventoryItem lookup OR free text). SupplierInvoiceDocument.jsx updated to show branch + line items. ContextBar + NotificationCenter quick-navs repointed to supplier-invoices. Page files (PurchaseRequests/PurchaseOrders/GoodsReceipts) preserved, just unlinked from navigation.
+   545→   545→- Expenses: PROJECT type removed; EQUIPMENT renamed to MAINTENANCE; 3 new types added (RENT, UTILITIES, MARKETING). EXPENSE_CATEGORIES updated (UTILITIES, MARKETING added; SUBCONTRACTOR→SERVICE_PROVIDER renamed; ELECTRICITY/WATER consolidated). Legacy aliases + resolver for backward-compat display. projectId field removed from form, replaced with always-visible branchId Select. businessEngine untouched — branchId is mirrored to projectId in pickBranch() for engine compatibility.
+   546→   546→- Employees: branchId/branchName added to form with branch Select dropdown. position field converted from free-text Input to Select using new RESTAURANT_POSITIONS constant (11 restaurant roles). positionLabel() helper handles legacy free-text values. Card subtitle + meta + export columns updated to show branch and resolved position labels.
+   547→   547→- Lint: PASS — `bun run lint` exits 0 with 0 errors. 3 pre-existing warnings (ExpenseDialog `subcontractors` unused arg, Expenses `openEdit`/`askDelete` unused — all were unused before this task too). All 13 modified files pass @babel/parser syntax check. Dev server runs cleanly on port 3000 (HTTP 200, multiple "✓ Compiled" messages, no fatal errors). Only dev.log error is the pre-existing EADDRINUSE from a duplicate dev server attempt (not from these changes).
+   548→   548→- Constraints honored: did NOT modify branchSettings.js, any *Engine.js (postingEngine, ledgerEngine, financialEngine, businessEngine, auditEngine, workflowEngine, validationEngine), zatcaQr.js, standardChart.js, tables.js, POS.jsx, ThermalReceiptDocument.jsx, or ReceiptPrintDialog.jsx. Did NOT delete any page files. Used t(ar, en, lang) for all UI strings. All backend calls wrapped in try/catch with toast fallbacks. Backward compatibility preserved via legacy aliases (EXPENSE_CATEGORIES, EXPENSE_TYPES, positionLabel, branchName||projectName display).
+   549→   549→

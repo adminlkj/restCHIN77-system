@@ -1,0 +1,830 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Plus, Minus, X, Search, Printer, Receipt as ReceiptIcon, Pause,
+  CreditCard, Wallet, Banknote, Clock, UtensilsCrossed, LogOut,
+  ShoppingCart, Trash2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { base44 } from '@/api/base44Client';
+import {
+  t, formatCurrency, formatDate, genInvoiceNo,
+} from '@/lib/utils-binaa';
+import { calcVAT } from '@/lib/businessEngine';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { getBranchSettings, resolveReceiptSettings } from '@/lib/branchSettings';
+import { freeTable } from '@/lib/tables';
+import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+import { toast } from 'sonner';
+
+// ═══════════════════════════════════════════════════════════════════════
+// POS — نقطة البيع: شاشة مقسّمة (منتجات يسار / إيصال يمين) كاملة الارتفاع.
+// يقرأ الطاولة النشطة من localStorage['pos-active-table'] (يضبطها Tables.jsx).
+// ═══════════════════════════════════════════════════════════════════════
+
+// خريطة فئات InventoryItem → تسميات مطعم
+const CATEGORIES = [
+  { key: 'ALL',         ar: 'الكل',           en: 'All' },
+  { key: 'MATERIAL',    ar: 'أطباق رئيسية',   en: 'Main Dishes' },
+  { key: 'CONSUMABLE',  ar: 'مشروبات',        en: 'Beverages' },
+  { key: 'SPARE_PART',  ar: 'مقبلات',         en: 'Appetizers' },
+  { key: 'TOOL',        ar: 'حلويات',         en: 'Desserts' },
+  { key: 'FIXED_ASSET', ar: 'أخرى',           en: 'Other' },
+];
+
+// بيانات تجريبية تُستخدم عند فشل الخادم — ليبقى الواجهة قابلة للاختبار
+const DEMO_MENU = [
+  { id: 'demo-1', code: 'M-001', name: 'برجر',    nameEn: 'Burger',    category: 'MATERIAL',   unitCost: 35, unit: 'قطعة',  isActive: true },
+  { id: 'demo-2', code: 'M-002', name: 'بطاطس',   nameEn: 'Fries',     category: 'SPARE_PART', unitCost: 15, unit: 'قطعة',  isActive: true },
+  { id: 'demo-3', code: 'M-003', name: 'بيبسي',   nameEn: 'Pepsi',     category: 'CONSUMABLE', unitCost: 8,  unit: 'علبة',  isActive: true },
+  { id: 'demo-4', code: 'M-004', name: 'بيتزا',   nameEn: 'Pizza',     category: 'MATERIAL',   unitCost: 45, unit: 'قطعة',  isActive: true },
+  { id: 'demo-5', code: 'M-005', name: 'شاي',     nameEn: 'Tea',       category: 'CONSUMABLE', unitCost: 5,  unit: 'كوب',   isActive: true },
+  { id: 'demo-6', code: 'M-006', name: 'قهوة',    nameEn: 'Coffee',    category: 'CONSUMABLE', unitCost: 12, unit: 'كوب',   isActive: true },
+  { id: 'demo-7', code: 'M-007', name: 'كيك',     nameEn: 'Cake',      category: 'TOOL',       unitCost: 18, unit: 'قطعة',  isActive: true },
+  { id: 'demo-8', code: 'M-008', name: 'سلطة',    nameEn: 'Salad',     category: 'SPARE_PART', unitCost: 12, unit: 'طبق',   isActive: true },
+];
+
+const PAYMENT_METHODS = [
+  { key: 'CASH',   ar: 'نقداً',  en: 'Cash',   Icon: Banknote,    color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+  { key: 'CARD',   ar: 'بطاقة',  en: 'Card',   Icon: CreditCard,  color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { key: 'WALLET', ar: 'محفظة',  en: 'Wallet', Icon: Wallet,      color: 'bg-purple-100 text-purple-700 border-purple-300' },
+  { key: 'CREDIT', ar: 'آجل',    en: 'Credit', Icon: Clock,       color: 'bg-amber-100 text-amber-700 border-amber-300' },
+];
+
+const POS_ACTIVE_TABLE_KEY = 'pos-active-table';
+
+function readActiveTable() {
+  try {
+    const raw = localStorage.getItem(POS_ACTIVE_TABLE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function clearActiveTable() {
+  try { localStorage.removeItem(POS_ACTIVE_TABLE_KEY); } catch { /* ignore */ }
+}
+
+export default function POS() {
+  const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
+  const { user } = useAuth();
+  const { settings: companySettings } = useCompanySettings();
+  const cashier = user?.full_name || (lang === 'ar' ? 'الكاشير' : 'Cashier');
+
+  // ─── حالة ───────────────────────────────────────────────────────────
+  const [cart, setCart] = useState([]);
+  const enuItems, setMenuItems] = useState([]);
+  const enuLoading, setMenuLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState('ALL');
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [payments, setPayments] = useState([]); // [{ method, amount }]
+  const [cashReceived, setCashReceived] = useState('');
+  const [printReceipt, setPrintReceipt] = useState(null); // invoice object
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [activeTable, setActiveTable] = useState(() => readActiveTable());
+
+  // اسم الفرع من إعدادات الفرع (المدمجة مع إعدادات الشركة)
+  const branchSettings = useMemo(
+    () => activeProjectId ? getBranchSettings(activeProjectId) : {},
+    [activeProjectId]
+  );
+  const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
+  const tableLabel = activeTable?.tableName || t('طاولة', 'Table', lang);
+
+  // ─── تحميل المنتجات والزبائن ───────────────────────────────────────
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setMenuLoading(true);
+      try {
+        const items = await base44.entities.InventoryItem.filter({ isActive: true });
+        if (!active) return;
+        if (Array.isArray(items) && items.length) {
+          setMenuItems(items);
+        } else {
+          // لا توجد عناصر — استخدم البيانات التجريبية
+          setMenuItems(DEMO_MENU);
+        }
+      } catch (e) {
+        console.warn('Menu load failed, using demo data:', e);
+        if (!active) return;
+        setMenuItems(DEMO_MENU);
+      } finally {
+        if (active) setMenuLoading(false);
+      }
+
+      // الزبائن (اختياري)
+      try {
+        const cs = await base44.entities.Client.list();
+        if (active && Array.isArray(cs)) setCustomers(cs);
+      } catch { /* الزبائن اختياريون */ }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // ─── فلترة المنتجات ─────────────────────────────────────────────────
+  const filteredMenu = useMemo(() => {
+    return menuItems.filter(item => {
+      const matchCat = activeCategory === 'ALL' || item.category === activeCategory;
+      const q = search.trim().toLowerCase();
+      const matchSearch = !q ||
+        String(item.name || '').toLowerCase().includes(q) ||
+        String(item.nameEn || '').toLowerCase().includes(q) ||
+        String(item.code || '').toLowerCase().includes(q);
+      return matchCat && matchSearch;
+    });
+  }, enuItems, activeCategory, search]);
+
+  // ─── عربة التسوّق ───────────────────────────────────────────────────
+  const addToCart = (item) => {
+    setCart(prev => {
+      const idx = prev.findIndex(c => c.itemId === item.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+        return next;
+      }
+      return [...prev, {
+        itemId: item.id,
+        name: item.name,
+        nameEn: item.nameEn || '',
+        price: parseFloat(item.unitCost) || 0,
+        qty: 1,
+      }];
+    });
+  };
+
+  const changeQty = (itemId, delta) => {
+    setCart(prev => prev
+      .map(c => c.itemId === itemId ? { ...c, qty: c.qty + delta } : c)
+      .filter(c => c.qty > 0)
+    );
+  };
+
+  const setQty = (itemId, qty) => {
+    const q = Math.max(0, parseInt(qty) || 0);
+    if (q === 0) {
+      setCart(prev => prev.filter(c => c.itemId !== itemId));
+    } else {
+      setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, qty: q } : c));
+    }
+  };
+
+  const removeItem = (itemId) => {
+    setCart(prev => prev.filter(c => c.itemId !== itemId));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    setPayments([]);
+    setCashReceived('');
+  };
+
+  // ─── الحسابات المالية ───────────────────────────────────────────────
+  const subtotal = useMemo(
+    () => cart.reduce((s, c) => s + (c.price * c.qty), 0),
+    [cart]
+  );
+  const vatCalc = useMemo(() => calcVAT(subtotal, 0.15), [subtotal]);
+  const total = vatCalc.total;
+  const totalPaid = useMemo(
+    () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
+    [payments]
+  );
+  const change = totalPaid > total ? totalPaid - total : 0;
+  const isFullyPaid = totalPaid >= total && total > 0;
+
+  // ─── المدفوعات ──────────────────────────────────────────────────────
+  const addPayment = (method, amount = null) => {
+    const amt = amount !== null ? amount : parseFloat(cashReceived);
+    if (!amt || amt <= 0) {
+      toast.error(t('أدخل مبلغاً صحيحاً', 'Enter a valid amount', lang));
+      return;
+    }
+    const remaining = total - totalPaid;
+    if (amt > remaining + 0.01 && method !== 'CREDIT') {
+      // نسمح بالمبلغ الزائد (الباقي للزبون) لكن ننبه
+      toast.info(t('المبلغ أكبر من المتبقي — الباقي للزبون', 'Amount exceeds remaining — change due', lang));
+    }
+    setPayments(prev => [...prev, { method, amount: +amt.toFixed(2) }]);
+    setCashReceived('');
+  };
+
+  const removePayment = (idx) => {
+    setPayments(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // ─── إجراءات ────────────────────────────────────────────────────────
+  const exitToTables = () => {
+    clearActiveTable();
+    setActiveItem('tables');
+  };
+
+  // طباعة طلب المطبخ (إيصال داخلي للمنتجات فقط — بلا أسعار)
+  const printOrder = () => {
+    if (!cart.length) {
+      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+      return;
+    }
+    const w = window.open('', '_blank', 'width=400,height=600');
+    if (!w) {
+      toast.error(t('الرجاء السماح بالنوافذ المنبثقة', 'Please allow pop-ups', lang));
+      return;
+    }
+    const rtl = lang === 'ar';
+    const itemsHtml = cart.map((c, i) => `
+      <tr>
+        <td style="padding:4px 6px; border-bottom:1px dashed #ccc;">${i + 1}</td>
+        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; font-weight:700;">${c.name}</td>
+        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; text-align:center; font-weight:700;">${c.qty}</td>
+      </tr>
+    `).join('');
+    w.document.write(`
+      <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
+        <head><meta charset="utf-8"><title>${t('طلب المطبخ', 'Kitchen Order', lang)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+          body { font-family:'Cairo','Tahoma',sans-serif; padding:8px; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
+          .h { text-align:center; font-size:18px; font-weight:800; }
+          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:6px; }
+          table { width:100%; border-collapse:collapse; font-size:13px; }
+          th { background:#000; color:#fff; padding:6px; font-size:12px; }
+          .meta { font-size:11px; color:#555; margin:4px 0 8px; }
+          @page { size: 80mm auto; margin: 4mm; }
+        </style></head>
+        <body>
+          <div class="h">${t('طلب المطبخ', 'Kitchen Order', lang)}</div>
+          <div class="sub">${branchLabel} — ${tableLabel}</div>
+          <div class="meta">
+            ${t('التاريخ', 'Date', lang)}: ${formatDate(new Date().toISOString(), lang)} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+            ${t('الكاشير', 'Cashier', lang)}: ${cashier}
+          </div>
+          <table>
+            <thead><tr><th>#</th><th>${t('الصنف', 'Item', lang)}</th><th>${t('الكمية', 'Qty', lang)}</th></tr></thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+          <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
+        </body>
+      </html>
+    `);
+    w.document.close();
+    w.focus();
+    toast.success(t('تم إرسال طلب المطبخ للطباعة', 'Kitchen order sent to printer', lang));
+  };
+
+  // تعليق الطلب (DRAFT) — يُحرّر الطاولة ويعود لشاشة الطاولات
+  const holdInvoice = () => {
+    if (!cart.length) {
+      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+      return;
+    }
+    // إعادة الطاولة إلى متاحة مع إبقاء الإيصال مرتبطاً مؤقتاً (لا يُحفظ في الخادم)
+    if (activeTable?.tableId) {
+      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+    }
+    toast.success(t('تم تعليق الطلب — الطاولة متاحة الآن', 'Order held — table is now available', lang));
+    clearCart();
+    exitToTables();
+  };
+
+  // إلغاء الطلب
+  const cancelInvoice = () => {
+    clearCart();
+    setConfirmCancelOpen(false);
+    if (activeTable?.tableId) {
+      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+    }
+    toast.info(t('تم إلغاء الطلب', 'Order cancelled', lang));
+    exitToTables();
+  };
+
+  // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
+  const handlePrintReceipt = async () => {
+    if (!cart.length) {
+      toast.error(t('السلة فارغة', 'Cart is empty', lang));
+      return;
+    }
+    if (!isFullyPaid) {
+      toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
+      return;
+    }
+
+    // بناء الإيصال
+    const year = new Date().getFullYear();
+    const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
+    const lineItems = cart.map(c => ({
+      description: c.name,
+      descriptionEn: c.nameEn || '',
+      qty: c.qty,
+      unitPrice: c.price,
+      total: +(c.price * c.qty).toFixed(2),
+    }));
+    // إعدادات الإيصال المدمجة (فرع + شركة) — تُرفق للإيصال للطباعة المستقبلية
+    const branchReceiptSettings = activeProjectId
+      ? resolveReceiptSettings(activeProjectId, companySettings)
+      : companySettings;
+    const invoice = {
+      invoiceNo,
+      invoiceType: 'CONSTRUCTION', // dine-in
+      projectId: activeProjectId || '',
+      projectName: activeProjectName || branchLabel,
+      clientId: customerId || '',
+      clientName: customerName || t('زبون نقدي', 'Cash Customer', lang),
+      date: new Date().toISOString(),
+      lineItems,
+      subtotal: +subtotal.toFixed(2),
+      vatRate: 0.15,
+      vatAmount: vatCalc.vat,
+      totalAmount: total,
+      paidAmount: totalPaid,
+      status: isFullyPaid ? 'PAID' : 'PARTIALLY_PAID',
+      description: `${t('طاولة', 'Table', lang)}: ${tableLabel}`,
+      notes: JSON.stringify({
+        tableId: activeTable?.tableId || '',
+        tableName: tableLabel,
+        payments,
+        cashier,
+        branchSettings: branchReceiptSettings,
+      }),
+      cashier,
+      tableNo: tableLabel,
+      branchSettings: branchReceiptSettings,
+    };
+
+    // محاولة الحفظ على الخادم
+    let saved = null;
+    let backendOk = false;
+    try {
+      saved = await base44.entities.SalesInvoice.create(invoice);
+      backendOk = true;
+    } catch (e) {
+      console.warn('SalesInvoice save failed (preview-only):', e);
+    }
+
+    // تحرير الطاولة (متاحة) عند نجاح الحفظ أو حتى في المعاينة
+    if (activeTable?.tableId) {
+      try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+    }
+
+    // فتح معاينة الإيصال الحراري
+    setPrintReceipt(saved || invoice);
+
+    if (backendOk) {
+      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
+    } else {
+      toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
+    }
+
+    // تنظيف
+    clearCart();
+  };
+
+  // ─── عرض ───────────────────────────────────────────────────────────
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* الرأس العلوي */}
+      <div className="shrink-0 border-b bg-white px-4 py-2.5 flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div
+            className="size-9 rounded-lg flex items-center justify-center text-white shrink-0"
+            style={{ background: branchSettings.primaryColor || '#d97706' }}
+          >
+            <UtensilsCrossed className="size-5" />
+          </div>
+          <div className="leading-tight">
+            <div className="font-bold text-foreground text-sm">{branchLabel}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {branchSettings.posTerminalId && (
+                <span dir="ltr" className="font-mono">{branchSettings.posTerminalId}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="h-8 w-px bg-border mx-1" />
+
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">{t('الطاولة', 'Table', lang)}:</span>
+          <span className="font-bold text-foreground bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
+            {tableLabel}
+          </span>
+        </div>
+
+        <div className="h-8 w-px bg-border mx-1" />
+
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">{t('الكاشير', 'Cashier', lang)}:</span>
+          <span className="font-semibold text-foreground">{cashier}</span>
+        </div>
+
+        <div className="flex-1" />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={exitToTables}
+          className="gap-1.5"
+        >
+          <LogOut className="size-4" />
+          {t('خروج', 'Exit', lang)}
+        </Button>
+      </div>
+
+      {/* الجسم: شبكة منقسمة */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* ─── الجزء الأيمن: المنتجات (يسار في RTL) ─── */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50">
+          {/* شريط البحث */}
+          <div className="shrink-0 p-3 border-b bg-white">
+            <div className="relative">
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={t('ابحث عن صنف...', 'Search items...', lang)}
+                className="ps-9 h-10"
+              />
+            </div>
+            {/* تبويبات الفئات */}
+            <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
+              {CATEGORIES.map(cat => {
+                const isActive = activeCategory === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => setActiveCategory(cat.key)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-colors ${
+                      isActive
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {lang === 'ar' ? cat.ar : cat.en}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* شبكة المنتجات */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {menuLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Card key={i} className="h-28 animate-pulse bg-muted/40" />
+                ))}
+              </div>
+            ) : filteredMenu.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                <ShoppingCart className="size-12 mb-2 opacity-50" />
+                <p className="text-sm">{t('لا توجد أصناف', 'No items found', lang)}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredMenu.map(item => {
+                  const price = parseFloat(item.unitCost) || 0;
+                  return (
+                    <Card
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className="p-3 cursor-pointer hover:shadow-md hover:border-emerald-400 transition-all active:scale-[0.98] flex flex-col gap-1"
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="font-bold text-sm text-foreground leading-tight line-clamp-2">
+                          {item.name}
+                        </div>
+                      </div>
+                      {item.nameEn && (
+                        <div dir="ltr" className="text-[10px] text-muted-foreground line-clamp-1 text-start">
+                          {item.nameEn}
+                        </div>
+                      )}
+                      <div className="mt-auto pt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground font-mono">{item.code}</span>
+                        <span className="font-bold text-emerald-700 text-sm">
+                          {formatCurrency(price, lang)}
+                        </span>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
+        <div className="w-[400px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
+          {/* رأس الإيصال: زبون + طاولة */}
+          <div className="shrink-0 p-3 border-b bg-slate-50 space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                {t('الزبون', 'Customer', lang)}:
+              </Label>
+              <Select
+                value={customerId}
+                onValueChange={(v) => {
+                  if (v === '__cash__') {
+                    setCustomerId('');
+                    setCustomerName('');
+                  } else {
+                    const c = customers.find(c => c.id === v);
+                    setCustomerId(v);
+                    setCustomerName(c?.name || '');
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={t('زبون نقدي', 'Cash Customer', lang)} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__cash__">{t('زبون نقدي', 'Cash Customer', lang)}</SelectItem>
+                  {customers.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {!customerId && (
+              <Input
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder={t('اسم الزبون (اختياري)', 'Customer name (optional)', lang)}
+                className="h-8 text-xs"
+              />
+            )}
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t('الطاولة', 'Table', lang)}: <span className="font-bold text-foreground">{tableLabel}</span></span>
+              <span>{t('الكاشير', 'Cashier', lang)}: <span className="font-bold text-foreground">{cashier}</span></span>
+            </div>
+          </div>
+
+          {/* قائمة الأصناف */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-6">
+                <ShoppingCart className="size-10 mb-2 opacity-40" />
+                <p className="text-sm text-center">
+                  {t('السلة فارغة — اضغط على صنف لإضافته', 'Cart is empty — tap an item to add it', lang)}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {cart.map((item, idx) => (
+                  <div key={item.itemId} className="p-2.5 hover:bg-slate-50">
+                    <div className="flex items-start gap-2">
+                      <span className="text-[11px] text-muted-foreground font-mono mt-0.5 shrink-0">
+                        {idx + 1}.
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-foreground truncate">{item.name}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline" size="icon"
+                              className="size-6"
+                              onClick={() => changeQty(item.itemId, -1)}
+                            >
+                              <Minus className="size-3" />
+                            </Button>
+                            <Input
+                              value={item.qty}
+                              onChange={e => setQty(item.itemId, e.target.value)}
+                              className="h-6 w-10 text-center text-xs px-1"
+                            />
+                            <Button
+                              variant="outline" size="icon"
+                              className="size-6"
+                              onClick={() => changeQty(item.itemId, 1)}
+                            >
+                              <Plus className="size-3" />
+                            </Button>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {formatCurrency(item.price, lang)} × {item.qty}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-end shrink-0">
+                        <div className="font-bold text-sm text-foreground">
+                          {formatCurrency(item.price * item.qty, lang)}
+                        </div>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="size-6 text-destructive hover:text-destructive mt-0.5"
+                          onClick={() => removeItem(item.itemId)}
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* الملخّص المالي */}
+          <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{t('المجموع الفرعي', 'Subtotal', lang)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{t('ضريبة القيمة المضافة (15%)', 'VAT (15%)', lang)}</span>
+              <span className="font-medium">{formatCurrency(vatCalc.vat, lang)}</span>
+            </div>
+            <div className="flex items-center justify-between text-base font-bold border-t pt-2">
+              <span>{t('الإجمالي', 'Total', lang)}</span>
+              <span className="text-emerald-700">{formatCurrency(total, lang)}</span>
+            </div>
+
+            {/* المدفوعات المطبّقة */}
+            {payments.length > 0 && (
+              <div className="bg-white rounded-md border p-2 space-y-1">
+                <div className="text-[11px] font-semibold text-muted-foreground">
+                  {t('المدفوعات المطبّقة', 'Applied Payments', lang)}:
+                </div>
+                {payments.map((p, i) => {
+                  const m = PAYMENT_METHODS.find(m => m.key === p.method);
+                  return (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1">
+                        {m && <m.Icon className="size-3" />}
+                        {m ? (lang === 'ar' ? m.ar : m.en) : p.method}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="font-medium">{formatCurrency(p.amount, lang)}</span>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="size-5 text-destructive"
+                          onClick={() => removePayment(i)}
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="flex items-center justify-between text-xs font-semibold border-t pt-1">
+                  <span>{t('المدفوع', 'Paid', lang)}</span>
+                  <span>{formatCurrency(totalPaid, lang)}</span>
+                </div>
+                {change > 0 && (
+                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-700">
+                    <span>{t('الباقي للزبون', 'Change', lang)}</span>
+                    <span>{formatCurrency(change, lang)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* المبلغ المستلم + طرق الدفع */}
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number" min="0" step="0.01"
+                value={cashReceived}
+                onChange={e => setCashReceived(e.target.value)}
+                placeholder={t('المبلغ المستلم', 'Amount received', lang)}
+                className="h-9"
+              />
+              <Button
+                onClick={() => addPayment('CASH')}
+                className="h-9 bg-emerald-600 hover:bg-emerald-700 gap-1"
+              >
+                <Banknote className="size-4" /> {t('نقداً', 'Cash', lang)}
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // بطاقة: المبلغ المتبقي
+                  const remaining = +(total - totalPaid).toFixed(2);
+                  if (remaining > 0) addPayment('CARD', remaining);
+                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+                }}
+                className="h-9 gap-1 text-xs"
+              >
+                <CreditCard className="size-4" /> {t('بطاقة', 'Card', lang)}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const remaining = +(total - totalPaid).toFixed(2);
+                  if (remaining > 0) addPayment('WALLET', remaining);
+                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+                }}
+                className="h-9 gap-1 text-xs"
+              >
+                <Wallet className="size-4" /> {t('محفظة', 'Wallet', lang)}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const remaining = +(total - totalPaid).toFixed(2);
+                  if (remaining > 0) addPayment('CREDIT', remaining);
+                  else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
+                }}
+                className="h-9 gap-1 text-xs"
+              >
+                <Clock className="size-4" /> {t('آجل', 'Credit', lang)}
+              </Button>
+            </div>
+
+            {/* أزرار الإجراءات */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <Button
+                onClick={printOrder}
+                variant="outline"
+                className="h-10 gap-1.5"
+                disabled={!cart.length}
+              >
+                <Printer className="size-4" />
+                {t('طباعة الطلب', 'Print Order', lang)}
+              </Button>
+              <Button
+                onClick={handlePrintReceipt}
+                className="h-10 gap-1.5 bg-amber-600 hover:bg-amber-700"
+                disabled={!cart.length || !isFullyPaid}
+              >
+                <ReceiptIcon className="size-4" />
+                {t('طباعة الإيصال', 'Print Receipt', lang)}
+              </Button>
+              <Button
+                onClick={holdInvoice}
+                variant="outline"
+                className="h-9 gap-1.5 text-xs"
+                disabled={!cart.length}
+              >
+                <Pause className="size-3.5" />
+                {t('تعليق', 'Hold', lang)}
+              </Button>
+              <Button
+                onClick={() => cart.length ? setConfirmCancelOpen(true) : exitToTables()}
+                variant="outline"
+                className="h-9 gap-1.5 text-xs text-destructive hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" />
+                {t('إلغاء', 'Cancel', lang)}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* معاينة الإيصال الحراري */}
+      <ReceiptPrintDialog
+        open={!!printReceipt}
+        onOpenChange={(o) => {
+          setPrintReceipt(o ? printReceipt : null);
+          if (!o) {
+            // عند إغلاق المعاينة — تحرير الطاولة والعودة لشاشة الطاولات
+            if (activeTable?.tableId) {
+              try { freeTable(activeTable.tableId, false); } catch { /* ignore */ }
+            }
+            clearActiveTable();
+            setActiveItem('tables');
+          }
+        }}
+        invoice={printReceipt}
+      />
+
+      {/* تأكيد الإلغاء */}
+      <Dialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('تأكيد الإلغاء', 'Confirm Cancel', lang)}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t(
+              'سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟',
+              'The cart will be cleared and the table freed. Are you sure?',
+              lang
+            )}
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmCancelOpen(false)}>
+              {t('تراجع', 'Back', lang)}
+            </Button>
+            <Button variant="destructive" onClick={cancelInvoice}>
+              {t('نعم، ألغِ', 'Yes, Cancel', lang)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

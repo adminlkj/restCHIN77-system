@@ -120,6 +120,10 @@ export default function POS() {
   const [customerName, setCustomerName] = useState('');
   // Feature 1: نخزّن كائن الزبون الكامل للوصول إلى discountPercentage و isCash
   const [customer, setCustomer] = useState(null);
+  // بحث ذكي عن الزبائن بالاسم/الجوال/الخصم + إظهار القائمة المنسدلة
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false); // إضافة عميل نقدي سريع
   const [payments, setPayments] = useState([]); // [{ method, amount }]
   const [cashReceived, setCashReceived] = useState('');
   const [printReceipt, setPrintReceipt] = useState(null); // invoice object
@@ -362,6 +366,50 @@ export default function POS() {
     () => +(subtotal_raw(cart) * (discountPercentage / 100)).toFixed(2),
     [cart, discountPercentage]
   );
+
+  // بحث ذكي عن الزبائن: بالاسم أو رقم الجوال أو نسبة الخصم.
+  // يُفلتر محلياً من قائمة customers المحمّلة، دون طلب شبكة إضافي.
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers.slice(0, 50);
+    return customers.filter(c => {
+      const name = String(c.name || '').toLowerCase();
+      const phone = String(c.phone || '').toLowerCase();
+      const disc = String(c.discountPercentage || '0');
+      return name.includes(q) || phone.includes(q) || disc.includes(q);
+    }).slice(0, 50);
+  }, [customers, customerSearch]);
+
+  // إضافة عميل نقدي جديد مباشرة من POS (يُحفظ في قاعدة البيانات ويدخل للفاتورة فوراً).
+  // يدعم نسبة خصم ثابتة تُطبّق تلقائياً على فواتيره القادمة.
+  const quickAddCashCustomer = async ({ name, phone, discountPercentage: discPct }) => {
+    if (!name || !name.trim()) {
+      toast.error(t('أدخل اسم الزبون', 'Enter customer name', lang));
+      return;
+    }
+    try {
+      const code = `C-${Date.now().toString().slice(-6)}`;
+      const created = await base44.entities.Client.create({
+        code,
+        name: name.trim(),
+        phone: (phone || '').trim(),
+        isCash: true,
+        discountPercentage: parseFloat(discPct) || 0,
+        status: 'ACTIVE',
+      });
+      setCustomers(prev => [created, ...prev]);
+      setCustomerId(created.id);
+      setCustomerName(created.name);
+      setCustomer(created);
+      setCustomerSearch('');
+      setCustomerSearchOpen(false);
+      setQuickAddOpen(false);
+      toast.success(t('تمت إضافة الزبون النقدي', 'Cash customer added', lang));
+    } catch (e) {
+      toast.error(e?.message || t('فشل إضافة الزبون', 'Failed to add customer', lang));
+    }
+  };
+
 
   const isDelivery = invoiceType === 'SERVICE';
   const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
@@ -883,36 +931,79 @@ export default function POS() {
               <Label className="text-xs text-muted-foreground whitespace-nowrap">
                 {t('الزبون', 'Customer', lang)}:
               </Label>
-              <Select
-                value={customerId || '__cash__'}
-                onValueChange={(v) => {
-                  if (v === '__cash__') {
-                    setCustomerId('');
-                    setCustomerName('');
-                    setCustomer(null);
-                  } else {
-                    const c = customers.find(c => c.id === v);
-                    setCustomerId(v);
-                    setCustomerName(c?.name || '');
-                    setCustomer(c || null);
-                  }
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder={t('زبون نقدي', 'Cash Customer', lang)} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__cash__">{t('زبون نقدي', 'Cash Customer', lang)}</SelectItem>
-                  {customers.map(c => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                      {!c.isCash && c.discountPercentage > 0
-                        ? ` — ${t('خصم', 'Discount', lang)} ${c.discountPercentage}%`
-                        : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative flex-1">
+                <Search className="absolute start-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value);
+                    setCustomerSearchOpen(true);
+                  }}
+                  onFocus={() => setCustomerSearchOpen(true)}
+                  onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 200)}
+                  placeholder={customer ? customer.name : t('بحث بالاسم/الجوال/الخصم…', 'Search name/phone/discount…', lang)}
+                  className="h-8 text-xs ps-7"
+                />
+                {customerSearchOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                    {/* خيار زبون نقدي افتراضي */}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setCustomerId('');
+                        setCustomerName('');
+                        setCustomer(null);
+                        setCustomerSearch('');
+                        setCustomerSearchOpen(false);
+                      }}
+                      className="w-full text-start px-3 py-2 text-xs hover:bg-accent border-b flex items-center gap-2"
+                    >
+                      <Banknote className="size-3.5 text-emerald-600" />
+                      <span className="font-medium">{t('زبون نقدي (غير مسجل)', 'Cash (unregistered)', lang)}</span>
+                    </button>
+                    {filteredCustomers.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        {t('لا نتائج — أضف زبوناً جديداً', 'No results — add a new customer', lang)}
+                      </div>
+                    ) : filteredCustomers.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setCustomerId(c.id);
+                          setCustomerName(c.name);
+                          setCustomer(c);
+                          setCustomerSearch('');
+                          setCustomerSearchOpen(false);
+                        }}
+                        className="w-full text-start px-3 py-2 text-xs hover:bg-accent border-b last:border-0 flex items-center justify-between gap-2"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          {c.isCash ? <Banknote className="size-3.5 text-emerald-600 shrink-0" /> : <ShieldCheck className="size-3.5 text-blue-600 shrink-0" />}
+                          <span className="truncate">{c.name}</span>
+                          {c.phone && <span dir="ltr" className="text-muted-foreground text-[10px]">{c.phone}</span>}
+                        </span>
+                        {!c.isCash && c.discountPercentage > 0 && (
+                          <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-1.5 py-0.5 shrink-0">
+                            {c.discountPercentage}%
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    {/* زر إضافة عميل نقدي سريع */}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setQuickAddOpen(true); setCustomerSearchOpen(false); }}
+                      className="w-full text-start px-3 py-2 text-xs hover:bg-accent bg-emerald-50 text-emerald-700 font-medium flex items-center gap-2 border-t"
+                    >
+                      <Plus className="size-3.5" />
+                      {t('إضافة زبون نقدي جديد', 'Add new cash customer', lang)}
+                    </button>
+                  </div>
+                )}
+              </div>
               {/* Feature 1: شارة الخصم بجانب اسم الزبون */}
               {customer && !customer.isCash && discountPercentage > 0 && (
                 <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5 whitespace-nowrap">
@@ -928,6 +1019,15 @@ export default function POS() {
                 className="h-8 text-xs"
               />
             )}
+
+            {/* نافذة إضافة زبون نقدي سريع */}
+            <QuickAddCashCustomerDialog
+              open={quickAddOpen}
+              onOpenChange={setQuickAddOpen}
+              onAdd={quickAddCashCustomer}
+              lang={lang}
+            />
+
 
             {/* Feature 2 & 3: نوع الطلب (صالة/توصيل) + حقول التوصيل */}
             <div className="grid grid-cols-2 gap-2">
@@ -1342,4 +1442,58 @@ export default function POS() {
 // ─── مساعد حسابي داخلي للمجموع الفرعي (يستخدم قبل تعريف الميمو) ──────
 function subtotal_raw(cartArr) {
   return cartArr.reduce((s, c) => s + (c.price * c.qty), 0);
+}
+
+// ─── نافذة إضافة زبون نقدي سريع من POS ───────────────────────────────────
+// تُنشئ زبوناً نقدياً (isCash=true) مع نسبة خصم ثابتة تُطبّق تلقائياً على فواتيره.
+// تُضاف للقائمة وتُختار للفاتورة الحالية فوراً.
+function QuickAddCashCustomerDialog({ open, onOpenChange, onAdd, lang }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [discount, setDiscount] = useState('');
+
+  // إعادة تعيين الحقول عند الفتح
+  useEffect(() => {
+    if (open) { setName(''); setPhone(''); setDiscount(''); }
+  }, [open]);
+
+  const submit = () => {
+    onAdd({ name, phone, discountPercentage: discount });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{t('إضافة زبون نقدي جديد', 'Add New Cash Customer', lang)}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t('الاسم *', 'Name *', lang)}</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={t('اسم الزبون', 'Customer name', lang)} dir="rtl" autoFocus />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t('رقم الجوال', 'Phone', lang)}</Label>
+            <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="05xxxxxxxx" dir="ltr" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t('نسبة الخصم الثابتة %', 'Fixed discount %', lang)}</Label>
+            <Input value={discount} onChange={e => setDiscount(e.target.value)} type="number" min="0" max="100" step="0.01" placeholder="0" dir="ltr" />
+            <p className="text-[10px] text-muted-foreground">
+              {t('يُطبّق تلقائياً على فواتير هذا الزبون مستقبلاً.', 'Auto-applied to this customer\'s future invoices.', lang)}
+            </p>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('إلغاء', 'Cancel', lang)}
+          </Button>
+          <Button onClick={submit} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+            <Plus className="size-4" />
+            {t('إضافة واختيار', 'Add & Select', lang)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

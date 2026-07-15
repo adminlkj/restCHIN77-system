@@ -1,0 +1,387 @@
+     1→$ vite
+     2→
+     3→  VITE v6.1.0  ready in 207 ms
+     4→
+     5→  ➜  Local:   http://localhost:3000/
+     6→  ➜  Network: http://21.0.10.126:3000/
+     7→5:08:36 PM [vite] (client) hmr update /src/components/layout/Sidebar.jsx, /src/index.css
+     8→5:08:42 PM [vite] (client) hmr update /src/components/layout/Sidebar.jsx, /src/index.css
+     9→5:08:47 PM [vite] (client) hmr update /src/components/layout/Sidebar.jsx, /src/index.css
+    10→5:08:54 PM [vite] (client) hmr update /src/pages/Login.jsx, /src/index.css
+    11→5:09:13 PM [vite] (client) hmr update /src/pages/Login.jsx, /src/index.css
+    12→5:09:25 PM [vite] (client) page reload index.html
+    13→5:26:58 PM [vite] (client) hmr update /src/App.jsx, /src/index.css, /src/pages/CycleScreen.jsx, /src/components/layout/Sidebar.jsx
+    14→5:27:14 PM [vite] (client) hmr update /src/App.jsx, /src/index.css, /src/pages/CycleScreen.jsx, /src/components/layout/Sidebar.jsx
+    15→5:28:08 PM [vite] (client) hmr update /src/App.jsx, /src/index.css, /src/pages/CycleScreen.jsx, /src/components/layout/Sidebar.jsx
+    16→5:28:59 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    17→5:28:59 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    18→5:28:59 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    19→5:29:00 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    20→5:29:00 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    21→5:29:00 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    22→5:29:01 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    23→5:29:01 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    24→5:29:01 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    25→5:29:02 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    26→5:29:02 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    27→5:29:02 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    28→5:29:03 PM [vite] (client) hmr update /src/pages/Dashboard.jsx, /src/index.css
+    29→5:30:08 PM [vite] (client) hmr update /src/pages/SalesInvoices.jsx, /src/index.css
+    30→5:30:08 PM [vite] (client) hmr update /src/pages/SalesInvoices.jsx, /src/index.css
+    31→5:30:08 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+    32→  Plugin: vite:import-analysis
+    33→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+    34→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+    35→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+    36→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+    37→     |                                  ^
+    38→  36 |  import { toast } from "sonner";
+    39→  37 |  const TYPES = {
+    40→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+    41→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+    42→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+    43→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    44→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+    45→      at async Promise.all (index 20)
+    46→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+    47→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+    48→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+    49→      at async viteTransformMiddleware (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:42761:24)
+    50→5:30:08 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+    51→5:30:09 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+    52→  Plugin: vite:import-analysis
+    53→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+    54→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+    55→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+    56→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+    57→     |                                  ^
+    58→  36 |  import { toast } from "sonner";
+    59→  37 |  const TYPES = {
+    60→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+    61→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+    62→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+    63→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    64→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+    65→      at async Promise.all (index 20)
+    66→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+    67→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+    68→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+    69→5:30:09 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+    70→  Plugin: vite:import-analysis
+    71→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+    72→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+    73→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+    74→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+    75→     |                                  ^
+    76→  36 |  import { toast } from "sonner";
+    77→  37 |  const TYPES = {
+    78→5:30:09 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+    79→5:30:09 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+    80→  Plugin: vite:import-analysis
+    81→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+    82→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+    83→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+    84→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+    85→     |                                  ^
+    86→  36 |  import { toast } from "sonner";
+    87→  37 |  const TYPES = {
+    88→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+    89→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+    90→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+    91→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    92→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+    93→      at async Promise.all (index 20)
+    94→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+    95→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+    96→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+    97→5:30:09 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+    98→  Plugin: vite:import-analysis
+    99→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   100→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   101→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   102→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   103→     |                                  ^
+   104→  36 |  import { toast } from "sonner";
+   105→  37 |  const TYPES = {
+   106→5:30:09 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   107→5:30:09 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   108→  Plugin: vite:import-analysis
+   109→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   110→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   111→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   112→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   113→     |                                  ^
+   114→  36 |  import { toast } from "sonner";
+   115→  37 |  const TYPES = {
+   116→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   117→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   118→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   119→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   120→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   121→      at async Promise.all (index 20)
+   122→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   123→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   124→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   125→5:30:09 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   126→  Plugin: vite:import-analysis
+   127→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   128→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   129→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   130→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   131→     |                                  ^
+   132→  36 |  import { toast } from "sonner";
+   133→  37 |  const TYPES = {
+   134→5:30:09 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   135→5:30:09 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   136→  Plugin: vite:import-analysis
+   137→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   138→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   139→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   140→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   141→     |                                  ^
+   142→  36 |  import { toast } from "sonner";
+   143→  37 |  const TYPES = {
+   144→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   145→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   146→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   147→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   148→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   149→      at async Promise.all (index 20)
+   150→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   151→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   152→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   153→5:30:09 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   154→  Plugin: vite:import-analysis
+   155→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   156→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   157→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   158→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   159→     |                                  ^
+   160→  36 |  import { toast } from "sonner";
+   161→  37 |  const TYPES = {
+   162→5:30:10 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   163→5:30:10 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   164→  Plugin: vite:import-analysis
+   165→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   166→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   167→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   168→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   169→     |                                  ^
+   170→  36 |  import { toast } from "sonner";
+   171→  37 |  const TYPES = {
+   172→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   173→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   174→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   175→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   176→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   177→      at async Promise.all (index 20)
+   178→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   179→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   180→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   181→5:30:10 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   182→  Plugin: vite:import-analysis
+   183→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   184→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   185→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   186→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   187→     |                                  ^
+   188→  36 |  import { toast } from "sonner";
+   189→  37 |  const TYPES = {
+   190→5:30:10 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   191→5:30:10 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   192→  Plugin: vite:import-analysis
+   193→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   194→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   195→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   196→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   197→     |                                  ^
+   198→  36 |  import { toast } from "sonner";
+   199→  37 |  const TYPES = {
+   200→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   201→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   202→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   203→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   204→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   205→      at async Promise.all (index 20)
+   206→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   207→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   208→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   209→5:30:10 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   210→  Plugin: vite:import-analysis
+   211→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   212→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   213→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   214→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   215→     |                                  ^
+   216→  36 |  import { toast } from "sonner";
+   217→  37 |  const TYPES = {
+   218→5:30:10 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   219→5:30:10 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   220→  Plugin: vite:import-analysis
+   221→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   222→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   223→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   224→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   225→     |                                  ^
+   226→  36 |  import { toast } from "sonner";
+   227→  37 |  const TYPES = {
+   228→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   229→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   230→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   231→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   232→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   233→      at async Promise.all (index 20)
+   234→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   235→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   236→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   237→5:30:10 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   238→  Plugin: vite:import-analysis
+   239→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   240→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   241→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   242→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   243→     |                                  ^
+   244→  36 |  import { toast } from "sonner";
+   245→  37 |  const TYPES = {
+   246→5:30:11 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   247→5:30:11 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   248→  Plugin: vite:import-analysis
+   249→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   250→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   251→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   252→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   253→     |                                  ^
+   254→  36 |  import { toast } from "sonner";
+   255→  37 |  const TYPES = {
+   256→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   257→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   258→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   259→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   260→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   261→      at async Promise.all (index 20)
+   262→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   263→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   264→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   265→5:30:11 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   266→  Plugin: vite:import-analysis
+   267→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   268→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   269→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   270→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   271→     |                                  ^
+   272→  36 |  import { toast } from "sonner";
+   273→  37 |  const TYPES = {
+   274→5:30:11 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   275→5:30:11 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   276→  Plugin: vite:import-analysis
+   277→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   278→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   279→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   280→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   281→     |                                  ^
+   282→  36 |  import { toast } from "sonner";
+   283→  37 |  const TYPES = {
+   284→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   285→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   286→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   287→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   288→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   289→      at async Promise.all (index 20)
+   290→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   291→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   292→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   293→5:30:11 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   294→  Plugin: vite:import-analysis
+   295→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   296→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   297→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   298→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   299→     |                                  ^
+   300→  36 |  import { toast } from "sonner";
+   301→  37 |  const TYPES = {
+   302→5:30:11 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   303→5:30:11 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   304→  Plugin: vite:import-analysis
+   305→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   306→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   307→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   308→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   309→     |                                  ^
+   310→  36 |  import { toast } from "sonner";
+   311→  37 |  const TYPES = {
+   312→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   313→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   314→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   315→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   316→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   317→      at async Promise.all (index 20)
+   318→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   319→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   320→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   321→5:30:11 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   322→  Plugin: vite:import-analysis
+   323→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   324→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   325→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   326→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   327→     |                                  ^
+   328→  36 |  import { toast } from "sonner";
+   329→  37 |  const TYPES = {
+   330→5:30:11 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   331→5:30:12 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   332→  Plugin: vite:import-analysis
+   333→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   334→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   335→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   336→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   337→     |                                  ^
+   338→  36 |  import { toast } from "sonner";
+   339→  37 |  const TYPES = {
+   340→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   341→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   342→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   343→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   344→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   345→      at async Promise.all (index 20)
+   346→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   347→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   348→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   349→5:30:12 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   350→  Plugin: vite:import-analysis
+   351→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   352→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   353→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   354→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   355→     |                                  ^
+   356→  36 |  import { toast } from "sonner";
+   357→  37 |  const TYPES = {
+   358→5:31:13 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   359→5:31:14 PM [vite] Internal server error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   360→  Plugin: vite:import-analysis
+   361→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   362→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   363→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   364→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   365→     |                                  ^
+   366→  36 |  import { toast } from "sonner";
+   367→  37 |  const TYPES = {
+   368→      at TransformPluginContext._formatLog (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47802:41)
+   369→      at TransformPluginContext.error (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47799:16)
+   370→      at normalizeUrl (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45942:23)
+   371→      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   372→      at async file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:46061:37
+   373→      at async Promise.all (index 20)
+   374→      at async TransformPluginContext.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:45988:7)
+   375→      at async EnvironmentPluginContainer.transform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:47597:18)
+   376→      at async loadAndTransform (file:///home/z/my-project/restaurant-system/node_modules/vite/dist/node/chunks/dep-CfG9u7Cn.js:41305:27)
+   377→5:31:14 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/shared/ReceiptPrintDialog" from "src/pages/SalesInvoices.jsx". Does the file exist?
+   378→  Plugin: vite:import-analysis
+   379→  File: /home/z/my-project/restaurant-system/src/pages/SalesInvoices.jsx:18:31
+   380→  33 |  import ConfirmDialog from "@/components/shared/ConfirmDialog";
+   381→  34 |  import TableToolbar from "@/components/shared/TableToolbar";
+   382→  35 |  import ReceiptPrintDialog from "@/components/shared/ReceiptPrintDialog";
+   383→     |                                  ^
+   384→  36 |  import { toast } from "sonner";
+   385→  37 |  const TYPES = {
+   386→5:31:37 PM [vite] (client) hmr update /src/index.css, /src/pages/CycleScreen.jsx
+   387→
