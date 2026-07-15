@@ -21,11 +21,11 @@ import { requiredFields, missingFieldsMessage } from '@/lib/formValidation';
 const empty = {
   expenseType: 'COMPANY',
   category: 'OTHER', description: '', amount: '',
-  date: '',
+  date: new Date().toISOString().slice(0, 10),
   employeeId: '', employeeName: '',
   govEntity: '',
   expenseAccountCode: '', expenseAccountName: '',
-  paymentAccountCode: '', paymentAccountName: '',
+  paymentAccountCode: '1112', paymentAccountName: 'البنك',
   reference: '', notes: '',
   _vatEnabled: false,
 };
@@ -136,8 +136,10 @@ export default function Expenses() {
 
   const remove = async () => {
     try {
+      // ابحث عن السجل المراد حذفه من items (لأن item غير معرّف في هذا النطاق)
+      const target = items.find(i => i.id === deleteId);
       const allJE = await base44.entities.JournalEntry.filter({ isPosted: true });
-      const checks = allJE.filter(je => je.sourceType === 'Expense' && (je.description || '').includes(item?.description || ''));
+      const checks = allJE.filter(je => je.sourceType === 'Expense' && (je.description || '').includes(target?.description || ''));
       if (checks.length > 0) {
         toast.error(t('لا يمكن حذف مصروف مرّحل — استخدم العكس', 'Cannot delete a posted expense — use reverse', lang));
         return;

@@ -162,7 +162,7 @@ export default function ExpenseDialog({
               </Select>
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label>{t('طريقة الدفع / الحساب النقدي', 'Payment / Cash Account', lang)}</Label>
+              <Label>{t('طريقة الدفع / الحساب النقدي', 'Payment / Cash Account', lang)} <span className="text-rose-600">*</span></Label>
               <Select value={form.paymentAccountCode || ''} onValueChange={pickPaymentAccount}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('صندوق / بنك / عهدة', 'Cash / Bank / Custody', lang)} />
