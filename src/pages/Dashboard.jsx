@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, Receipt, UtensilsCrossed, Wallet,
-  RefreshCw, ShoppingBag, Users, Clock,
-  CreditCard, Banknote, Smartphone, Building2,
+  RefreshCw, ShoppingBag, Users,
+  CreditCard, Banknote, Building2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -102,7 +102,7 @@ export default function Dashboard() {
 
   // إيرادات حسب طريقة الدفع (اليوم)
   const paymentBreakdown = useMemo(() => {
-    const methods = { cash: 0, card: 0, wallet: 0, credit: 0 };
+    const methods = { cash: 0, card_mada: 0, card_visa: 0, card_mc: 0, card_other: 0 };
     todayInvoices.forEach(inv => {
       try {
         const notes = inv.notes ? JSON.parse(inv.notes) : {};
@@ -304,9 +304,10 @@ export default function Dashboard() {
             <div className="space-y-2">
               {[
                 { key: 'cash', ar: 'نقداً', en: 'Cash', icon: Banknote, color: 'text-emerald-600 bg-emerald-50' },
-                { key: 'card', ar: 'بطاقة', en: 'Card', icon: CreditCard, color: 'text-blue-600 bg-blue-50' },
-                { key: 'wallet', ar: 'محفظة', en: 'Wallet', icon: Smartphone, color: 'text-violet-600 bg-violet-50' },
-                { key: 'credit', ar: 'آجل', en: 'Credit', icon: Clock, color: 'text-amber-600 bg-amber-50' },
+                { key: 'card_mada', ar: 'مدى', en: 'Mada', icon: CreditCard, color: 'text-green-600 bg-green-50' },
+                { key: 'card_visa', ar: 'فيزا', en: 'Visa', icon: CreditCard, color: 'text-blue-600 bg-blue-50' },
+                { key: 'card_mc', ar: 'ماستركارد', en: 'Mastercard', icon: CreditCard, color: 'text-orange-600 bg-orange-50' },
+                { key: 'card_other', ar: 'أخرى', en: 'Other', icon: CreditCard, color: 'text-slate-600 bg-slate-50' },
               ].map(m => (
                 <div key={m.key} className="flex items-center justify-between rounded-lg px-3 py-2 bg-muted/30">
                   <div className="flex items-center gap-2">
@@ -315,7 +316,7 @@ export default function Dashboard() {
                     </div>
                     <span className="text-xs font-medium">{lang === 'ar' ? m.ar : m.en}</span>
                   </div>
-                  <span className="font-semibold text-sm tabular-nums">{formatCurrency(paymentBreakdown[m.key] || 0, lang)}</span>
+                  <span className="font-semibold text-sm tabular-nums">{formatCurrency(paymentBreakdown[m.key] || 0 || 0, lang)}</span>
                 </div>
               ))}
             </div>
