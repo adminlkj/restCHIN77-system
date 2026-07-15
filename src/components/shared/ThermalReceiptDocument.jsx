@@ -429,15 +429,26 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
 
       {/* ─── التذييل ─── */}
       <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: accent }}>
-        {T('شكراً لزيارتكم', 'Thank you for visiting')}
+        {(settings.receiptFooterMessage)
+          ? settings.receiptFooterMessage.split('\n')[0]
+          : T('شكراً لزيارتكم', 'Thank you for visiting')}
       </div>
-      <div style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>
-        {T('نتمنى لكم وجبة شهية', 'We hope you enjoyed your meal')}
-      </div>
+      {(settings.receiptFooterMessage
+        ? settings.receiptFooterMessage.split('\n')[1]
+        : T('نتمنى لكم وجبة شهية', 'We hope you enjoyed your meal'))
+        ? <div style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>
+            {(settings.receiptFooterMessage
+              ? settings.receiptFooterMessage.split('\n')[1]
+              : T('نتمنى لكم وجبة شهية', 'We hope you enjoyed your meal'))}
+          </div>
+        : null}
       {settings.phone ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>
           {T('للاستفسارات', 'Inquiries')}: <span dir="ltr">{settings.phone}</span>
         </div>
+      ) : null}
+      {settings.email ? (
+        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888' }}>{settings.email}</div>
       ) : null}
       {settings.website ? (
         <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>{settings.website}</div>

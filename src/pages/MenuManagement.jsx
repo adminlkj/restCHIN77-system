@@ -144,6 +144,7 @@ export default function MenuManagement() {
 
   // ─── استيراد CSV ────────────────────────────────────────────────────
   const fileInputRef = useRef(null);
+  const itemsRef = useRef([]);
   const [importPreview, setImportPreview] = useState(null); // array of parsed rows
   const [importing, setImporting] = useState(false);
 
@@ -157,6 +158,7 @@ export default function MenuManagement() {
       ]);
       setCategories((cats || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)));
       setItems(its || []);
+      itemsRef.current = its || [];
     } catch (err) {
       toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang)));
     } finally {
@@ -357,17 +359,35 @@ export default function MenuManagement() {
       if (itemEditing) {
         await base44.entities.InventoryItem.update(itemEditing.id, data);
         toast.success(t('تم تحديث الوجبة', 'Item updated', lang));
+        setItemDialogOpen(false);
       } else {
         await base44.entities.InventoryItem.create(data);
         toast.success(t('تمت إضافة الوجبة', 'Item added', lang));
+        // عند الإضافة: لا نغلق النافذة، نُعيد ضبط النموذج لإضافة وجبة جديدة
+        // مع الحفاظ على القسم المختار لتسهيل الإضافة المتعددة.
+        const savedCat = itemForm.categoryId;
+        const savedCatName = cat?.name || '';
+        await load();
+        setItemForm({
+          ...EMPTY_ITEM,
+          code: nextCodeFromList(itemsRef.current || [], 'M', 'code'),
+          categoryId: savedCat,
+          categoryName: savedCatName,
+          unit: 'قطعة',
+          isActive: true,
+        });
       }
-      setItemDialogOpen(false);
-      await load();
     } catch (err) {
       toast.error(errorMessage(err, t('فشل الحفظ', 'Save failed', lang)));
     } finally {
       setItemSaving(false);
     }
+  };
+
+  // حفظ وإغلاق النافذة (للإضافة المتعددة: المستخدم يضغط "حفظ" للإضافة المتتابعة، ثم "تم" للإغلاق)
+  const saveAndClose = async () => {
+    await saveItem();
+    setItemDialogOpen(false);
   };
 
   const removeItem = async () => {
@@ -1006,9 +1026,21 @@ export default function MenuManagement() {
             <Button variant="outline" onClick={() => setItemDialogOpen(false)}>
               {t('إلغاء', 'Cancel', lang)}
             </Button>
-            <Button onClick={saveItem} disabled={itemSaving} className="bg-amber-600 hover:bg-amber-700">
-              {itemSaving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
-            </Button>
+            {itemEditing ? (
+              <Button onClick={saveItem} disabled={itemSaving} className="bg-amber-600 hover:bg-amber-700">
+                {itemSaving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}
+              </Button>
+            ) : (
+              <>
+                <Button onClick={saveItem} disabled={itemSaving} className="bg-amber-600 hover:bg-amber-700 gap-1.5">
+                  {itemSaving ? <RefreshCw className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  {itemSaving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ وإضافة جديد', 'Save & Add New', lang)}
+                </Button>
+                <Button onClick={saveAndClose} disabled={itemSaving} variant="outline">
+                  {t('حفظ وإغلاق', 'Save & Close', lang)}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
