@@ -68,7 +68,6 @@ function calcVAT(amount, rate = VAT_RATE) {
 const RULES = {
   SALES_INVOICE: [
     { m: 'رقم الفاتورة مطلوب', t: (d) => !isBlank(d.invoiceNo) },
-    { m: 'اختيار العميل مطلوب', t: (d) => !isBlank(d.clientId) },
     { m: 'تاريخ الفاتورة مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.subtotal) > 0 },
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
@@ -91,7 +90,6 @@ const RULES = {
   RENTAL_CONTRACT: [
     { m: 'رقم العقد مطلوب', t: (d) => !isBlank(d.contractNo) },
     { m: 'اختيار المعدة مطلوب', t: (d) => !isBlank(d.equipmentId) },
-    { m: 'اختيار العميل مطلوب', t: (d) => !isBlank(d.clientId) },
     { m: 'قيمة الإيجار يجب أن تكون أكبر من صفر', t: (d) => num(d.rate) > 0 },
     { m: 'تاريخ نهاية العقد لا يمكن أن يسبق تاريخ البداية', t: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
   ],
@@ -104,7 +102,6 @@ const RULES = {
     { m: 'لا يمكن اعتماد مسير مدفوع دون تحديد تاريخ الدفع', t: (d) => d.status !== 'PAID' || !isBlank(d.paymentDate) },
   ],
   CLIENT_PAYMENT: [
-    { m: 'اختيار العميل مطلوب', t: (d) => !isBlank(d.clientId) },
     { m: 'تاريخ السند مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ يجب أن يكون أكبر من صفر', t: (d) => num(d.amount) > 0 },
     { m: 'اختيار الحساب النقدي (صندوق/بنك) مطلوب — لا يمكن تحصيل بلا حساب', t: (d) => !isBlank(d.cashAccountCode) },
