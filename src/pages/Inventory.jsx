@@ -27,7 +27,7 @@ const CATEGORIES = {
   TOOL:        { ar: 'أدوات', en: 'Tool', color: 'bg-violet-100 text-violet-700' },
   FIXED_ASSET: { ar: 'أصل ثابت', en: 'Fixed Asset', color: 'bg-emerald-100 text-emerald-700' },
 };
-const empty = { code: '', name: '', nameEn: '', category: 'MATERIAL', unit: '', quantity: '', reorderLevel: '', unitCost: '', warehouseId: '', location: '', isActive: true, notes: '' };
+const empty = { code: '', name: '', nameEn: '', category: 'MATERIAL', unit: '', quantity: '', reorderLevel: '', unitCost: '', costPrice: '', salePrice: '', warehouseId: '', location: '', isActive: true, notes: '' };
 
 // رؤوس أعمدة ملف CSV للاستيراد/التصدير والقالب
 const CSV_HEADERS = ['code', 'name', 'nameEn', 'categoryName', 'unit', 'costPrice', 'salePrice', 'quantity', 'reorderLevel'];
@@ -143,10 +143,13 @@ export default function Inventory() {
     setSaving(true);
     try {
       const wh = warehouses.find(w => w.id === form.warehouseId);
+      const cost = Number(form.unitCost) || Number(form.costPrice) || 0;
+      const sale = Number(form.salePrice) || cost || 0;
       const data = {
         code: form.code, name: form.name, nameEn: form.nameEn, category: form.category, unit: form.unit,
         quantity: Number(form.quantity) || 0, reorderLevel: Number(form.reorderLevel) || 0,
-        unitCost: Number(form.unitCost) || 0, warehouseId: form.warehouseId, warehouseName: wh?.name || '',
+        unitCost: cost, costPrice: cost, salePrice: sale,
+        warehouseId: form.warehouseId, warehouseName: wh?.name || '',
         location: form.location, isActive: form.isActive, notes: form.notes,
       };
       if (editing) { await base44.entities.InventoryItem.update(editing.id, data); toast.success(t('تم التحديث', 'Updated', lang)); }
@@ -233,10 +236,16 @@ export default function Inventory() {
       const payload = importPreview.map((r, idx) => {
         const cost = parseFloat(r.costPrice) || 0;
         const sale = parseFloat(r.salePrice) || cost || 0;
+        // مطابقة categoryName مع CATEGORIES للعثور على category code
+        const catEntry = Object.entries(CATEGORIES).find(([k, v]) =>
+          v.ar === r.categoryName || v.en === r.categoryName || k === r.categoryName
+        );
+        const category = catEntry ? catEntry[0] : 'MATERIAL';
         return {
           code: r.code || `INV-${String(idx + 1).padStart(4, '0')}`,
           name: r.name || '',
           nameEn: r.nameEn || '',
+          category,
           categoryName: r.categoryName || '',
           unit: r.unit || 'قطعة',
           costPrice: cost,
@@ -429,7 +438,8 @@ export default function Inventory() {
             <div className="space-y-1"><Label>{t('الكمية', 'Quantity', lang)}</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} /></div>
             <div className="space-y-1"><Label>{t('الوحدة', 'Unit', lang)}</Label><Input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder={t('قطعة، كجم...', 'pcs, kg...', lang)} /></div>
             <div className="space-y-1"><Label>{t('حد إعادة الطلب', 'Reorder Level', lang)}</Label><Input type="number" value={form.reorderLevel} onChange={e => setForm(f => ({ ...f, reorderLevel: e.target.value }))} /></div>
-            <div className="space-y-1"><Label>{t('تكلفة الوحدة', 'Unit Cost', lang)}</Label><Input type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>{t('تكلفة الشراء', 'Cost Price', lang)}</Label><Input type="number" value={form.costPrice || form.unitCost || ''} onChange={e => setForm(f => ({ ...f, costPrice: e.target.value, unitCost: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>{t('سعر البيع', 'Sale Price', lang)}</Label><Input type="number" value={form.salePrice || ''} onChange={e => setForm(f => ({ ...f, salePrice: e.target.value }))} /></div>
             <div className="space-y-1 col-span-2">
               <Label>{t('المخزن', 'Warehouse', lang)}</Label>
               <Select value={form.warehouseId} onValueChange={v => setForm(f => ({ ...f, warehouseId: v }))}>
