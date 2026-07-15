@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Printer, X, Receipt } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
@@ -25,11 +25,25 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
   const [client, setClient] = useState(null);
 
   // دمج إعدادات الشركة مع إعدادات الفرع المرتبط بالإيصال (إن وُجد).
-  // هذا يضمن أن الإيصال يعرض اسم الفرع، هاتفه، شعاره، رقمه الضريبي...
-  const settings = useMemo(() => {
+  // resolveReceiptSettings دالة async (تتصل بالخادم)، لذا نستخدم useEffect.
+  const [settings, setSettings] = useState(companySettings);
+
+  useEffect(() => {
+    let active = true;
     const branchId = invoice?.projectId || invoice?.branchId;
-    if (!branchId) return companySettings;
-    return resolveReceiptSettings(branchId, companySettings);
+    if (!branchId) {
+      setSettings(companySettings);
+      return;
+    }
+    (async () => {
+      try {
+        const resolved = await resolveReceiptSettings(branchId, companySettings);
+        if (active) setSettings(resolved);
+      } catch {
+        if (active) setSettings(companySettings);
+      }
+    })();
+    return () => { active = false; };
   }, [invoice?.projectId, invoice?.branchId, companySettings]);
 
   // جلب سجل العميل الكامل لعرض تفاصيله (السجل، الرقم الضريبي، الهاتف)

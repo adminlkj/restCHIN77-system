@@ -373,7 +373,8 @@ export default function POS() {
   // القاعدة الخاضعة للضريبة = subtotal - customerDiscount - manualDiscount + deliveryFee
   // الضريبة تُحسب على الصافي بعد الخصوم.
   const discountPercentage = useMemo(() => {
-    if (!customer || customer.isCash) return 0;
+    if (!customer) return 0;
+    // خصم العميل يُطبّق سواء كان نقدياً أو حساباً — الخصم حق ثابت للعميل
     return parseFloat(customer.discountPercentage) || 0;
   }, [customer]);
 
@@ -1105,7 +1106,7 @@ export default function POS() {
                 )}
               </div>
               {/* Feature 1: شارة الخصم بجانب اسم الزبون */}
-              {customer && !customer.isCash && discountPercentage > 0 && (
+              {customer && discountPercentage > 0 && (
                 <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5 whitespace-nowrap">
                   {t(`خصم ${discountPercentage}%`, `${discountPercentage}% off`, lang)}
                 </span>
