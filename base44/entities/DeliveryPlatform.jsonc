@@ -33,6 +33,12 @@
       "default": "GROSS",
       "description": "طريقة احتساب العمولة: GROSS=على الإجمالي، NET=على الصافي قبل الضريبة"
     },
+    "settlementMethod": {
+      "type": "string",
+      "enum": ["NET", "GROSS"],
+      "default": "NET",
+      "description": "طريقة التسوية مع المنصة: NET=المنصة تخصم العمولة قبل التحويل (الذمة=الصافي)، GROSS=المنصة تحوّل بالإجمالي ثم تصدر فاتورة عمولة (الذمة=الإجمالي، العمولة تُسجّل عند التسوية)"
+    },
     "vatOnCommissionEnabled": {
       "type": "boolean",
       "default": true,

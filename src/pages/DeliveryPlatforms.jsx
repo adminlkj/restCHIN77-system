@@ -33,6 +33,8 @@ const errorMessage = (err, fallback) => err?.data?.error || err?.message || fall
 
 const EMPTY_FORM = {
   code: '', name: '', nameEn: '', commissionRate: 0,
+  commissionVatRate: 0.15, commissionMethod: 'GROSS', settlementMethod: 'NET',
+  vatOnCommissionEnabled: true, settlementAccountCode: '1112',
   phone: '', isActive: true, notes: '',
 };
 
@@ -139,6 +141,11 @@ export default function DeliveryPlatforms() {
         name: form.name.trim(),
         nameEn: (form.nameEn || '').trim(),
         commissionRate: Number(form.commissionRate) || 0,
+        commissionVatRate: Number(form.commissionVatRate) || 0.15,
+        commissionMethod: form.commissionMethod || 'GROSS',
+        settlementMethod: form.settlementMethod || 'NET',
+        vatOnCommissionEnabled: form.vatOnCommissionEnabled !== false,
+        settlementAccountCode: form.settlementAccountCode || '1112',
         phone: form.phone || '',
         isActive: form.isActive !== false,
         notes: form.notes || '',
@@ -183,44 +190,52 @@ export default function DeliveryPlatforms() {
     });
   }, [dateFrom, dateTo]);
 
-  // ملخّص كل منصة: يُبنى تلقائياً من الفواتير (الإيراد/العمولة/ض.العمولة/الصافي)
-  // ومن التسويات (المسدّد) — لا إدخال يدوي للأرقام.
-  //   revenue = مجموع إجمالي الفواتير
-  //   commission = مجموع عمولات الفواتير
-  //   commissionVat = مجموع ضريبة العمولات
-  //   net = revenue - commission - commissionVat (صافي المستحق للمطعم)
-  //   paid = مجموع التسويات المنشورة (PlatformSettlement)
-  //   pending = net - paid
+  // ملخّص كل منصة: يُبنى تلقائياً من الفواتير المعتمدة + التسويات المرحّلة.
+  // لا تُخزّن المجاميع في قاعدة البيانات — تُحسب دائماً من المصادر.
+  //   salesPreTax  = Σ subtotal (الإيراد قبل الضريبة)
+  //   salesVat     = Σ vatAmount (ضريبة المبيعات)
+  //   salesTotal   = Σ totalAmount (الإجمالي شامل الضريبة)
+  //   commission   = Σ platformCommission
+  //   commissionVat = Σ platformCommissionVat (أو 15% إن لم يُسجّل)
+  //   net          = salesTotal - commission - commissionVat (صافي المستحق)
+  //   paid         = Σ settledAmount من التسويات المرحّلة
+  //   pending      = net - paid
   const statements = useMemo(() => {
     return items.map(p => {
       const list = filterByDate(
         invoices.filter(i => i.platformId === p.id || i.platformName === p.name)
       );
-      const revenue = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
+      const salesPreTax = list.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+      const salesVat = list.reduce((s, i) => s + (Number(i.vatAmount) || 0), 0);
+      const salesTotal = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
       const commission = list.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0);
       // ضريبة العمولة: من حقل platformCommissionVat إن وُجد، وإلا تُحسب 15% من العمولة
       const commissionVat = list.reduce((s, i) => {
         const v = Number(i.platformCommissionVat);
         if (!isNaN(v) && v > 0) return s + v;
-        // احتساب 15% من العمولة إن لم يُسجّل صراحةً
         return s + (Number(i.platformCommission) || 0) * 0.15;
       }, 0);
-      const net = revenue - commission - commissionVat;
-      // المسدّد = مجموع التسويات المنشورة لهذه المنصة
+      const net = salesTotal - commission - commissionVat;
+      // المسدّد = مجموع التسويات المرحّلة لهذه المنصة
       const platformSettlements = settlements.filter(s => s.platformId === p.id && s.status === 'POSTED');
       const paid = platformSettlements.reduce((s, st) => s + (Number(st.settledAmount) || 0), 0);
       const pending = Math.max(0, net - paid);
+      const commissionRate = Number(p.commissionRate) || 0;
       return {
         platform: p,
         invoices: list,
         settlements: platformSettlements,
         orders: list.length,
-        revenue,
+        salesPreTax,
+        salesVat,
+        salesTotal,
+        commissionRate,
         commission,
         commissionVat,
         net,
         paid,
         pending,
+        settlementMethod: p.settlementMethod || 'NET',
       };
     });
   }, [items, invoices, settlements, filterByDate]);
@@ -229,13 +244,15 @@ export default function DeliveryPlatforms() {
   const totals = useMemo(() => {
     return statements.reduce((acc, s) => ({
       orders: acc.orders + s.orders,
-      revenue: acc.revenue + s.revenue,
+      salesPreTax: acc.salesPreTax + s.salesPreTax,
+      salesVat: acc.salesVat + s.salesVat,
+      salesTotal: acc.salesTotal + s.salesTotal,
       commission: acc.commission + s.commission,
       commissionVat: acc.commissionVat + s.commissionVat,
       net: acc.net + s.net,
       paid: acc.paid + s.paid,
       pending: acc.pending + s.pending,
-    }), { orders: 0, revenue: 0, commission: 0, commissionVat: 0, net: 0, paid: 0, pending: 0 });
+    }), { orders: 0, salesPreTax: 0, salesVat: 0, salesTotal: 0, commission: 0, commissionVat: 0, net: 0, paid: 0, pending: 0 });
   }, [statements]);
 
   // ─── كشف تفصيلي للمنصة ─────────────────────────────────────────────
@@ -289,7 +306,7 @@ export default function DeliveryPlatforms() {
         date: settleForm.date,
         periodFrom: dateFrom || '',
         periodTo: dateTo || '',
-        totalSales: settleTarget.revenue,
+        totalSales: settleTarget.salesTotal,
         totalCommission: settleTarget.commission,
         commissionVat: settleTarget.commissionVat,
         netPayable: settleTarget.net,
@@ -316,10 +333,15 @@ export default function DeliveryPlatforms() {
   const statementExportColumns = [
     { header: { ar: 'المنصة', en: 'Platform' }, value: (r) => r.platform.name },
     { header: { ar: 'الكود', en: 'Code' }, value: (r) => r.platform.code },
+    { header: { ar: 'طريقة التسوية', en: 'Settlement' }, value: (r) => r.settlementMethod },
     { header: { ar: 'عدد الطلبات', en: 'Orders' }, value: (r) => r.orders },
-    { header: { ar: 'الإيرادات', en: 'Revenue' }, value: (r) => Number(r.revenue).toFixed(2) },
+    { header: { ar: 'المبيعات قبل الضريبة', en: 'Sales (pre-tax)' }, value: (r) => Number(r.salesPreTax).toFixed(2) },
+    { header: { ar: 'ضريبة المبيعات', en: 'Sales VAT' }, value: (r) => Number(r.salesVat).toFixed(2) },
+    { header: { ar: 'إجمالي المبيعات', en: 'Total Sales' }, value: (r) => Number(r.salesTotal).toFixed(2) },
+    { header: { ar: 'نسبة العمولة %', en: 'Commission %' }, value: (r) => Number(r.commissionRate).toFixed(2) },
     { header: { ar: 'العمولة', en: 'Commission' }, value: (r) => Number(r.commission).toFixed(2) },
-    { header: { ar: 'الصافي', en: 'Net' }, value: (r) => Number(r.net).toFixed(2) },
+    { header: { ar: 'ضريبة العمولة', en: 'Commission VAT' }, value: (r) => Number(r.commissionVat).toFixed(2) },
+    { header: { ar: 'صافي المستحق', en: 'Net Payable' }, value: (r) => Number(r.net).toFixed(2) },
     { header: { ar: 'المسدّد', en: 'Paid' }, value: (r) => Number(r.paid).toFixed(2) },
     { header: { ar: 'المعلّق', en: 'Pending' }, value: (r) => Number(r.pending).toFixed(2) },
   ];
@@ -479,41 +501,46 @@ export default function DeliveryPlatforms() {
             </CardContent>
           </Card>
 
-          {/* بطاقات الملخّص الشامل */}
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <SummaryCard icon={<FileText className="size-4" />} label={t('إجمالي الطلبات', 'Total Orders', lang)} value={totals.orders} tone="slate" />
-            <SummaryCard icon={<TrendingUp className="size-4" />} label={t('الإيرادات', 'Revenue', lang)} value={formatCurrency(totals.revenue, lang)} tone="emerald" />
+          {/* بطاقات الملخّص الشامل — محاسبية صحيحة: إيراد قبل الضريبة / ضريبة / إجمالي / عمولة / ض.عمولة / صافي / محصل / متبقي */}
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+            <SummaryCard icon={<FileText className="size-4" />} label={t('الطلبات', 'Orders', lang)} value={totals.orders} tone="slate" />
+            <SummaryCard icon={<TrendingUp className="size-4" />} label={t('المبيعات (قبل الضريبة)', 'Sales (pre-tax)', lang)} value={formatCurrency(totals.salesPreTax, lang)} tone="emerald" />
+            <SummaryCard icon={<Calculator className="size-4" />} label={t('ضريبة المبيعات', 'Sales VAT', lang)} value={formatCurrency(totals.salesVat, lang)} tone="slate" />
+            <SummaryCard icon={<TrendingUp className="size-4" />} label={t('إجمالي المبيعات', 'Total Sales', lang)} value={formatCurrency(totals.salesTotal, lang)} tone="emerald" />
             <SummaryCard icon={<Calculator className="size-4" />} label={t('العمولات', 'Commissions', lang)} value={formatCurrency(totals.commission, lang)} tone="rose" />
-            <SummaryCard icon={<DollarSign className="size-4" />} label={t('الصافي للمطعم', 'Net Payable', lang)} value={formatCurrency(totals.net, lang)} tone="teal" />
-            <SummaryCard icon={<DollarSign className="size-4" />} label={t('المسدّد', 'Paid', lang)} value={formatCurrency(totals.paid, lang)} tone="blue" />
-            <SummaryCard icon={<DollarSign className="size-4" />} label={t('المعلّق', 'Pending', lang)} value={formatCurrency(totals.pending, lang)} tone="amber" />
+            <SummaryCard icon={<Calculator className="size-4" />} label={t('ضريبة العمولات', 'Commission VAT', lang)} value={formatCurrency(totals.commissionVat, lang)} tone="rose" />
+            <SummaryCard icon={<DollarSign className="size-4" />} label={t('الصافي المستحق', 'Net Payable', lang)} value={formatCurrency(totals.net, lang)} tone="teal" />
+            <SummaryCard icon={<DollarSign className="size-4" />} label={t('المتبقي', 'Pending', lang)} value={formatCurrency(totals.pending, lang)} tone="amber" />
           </div>
 
-          {/* جدول الكشوفات */}
+          {/* جدول الكشوفات — تفصيل محاسبي كامل */}
           <Card>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('المنصة', 'Platform', lang)}</TableHead>
                   <TableHead className="text-center">{t('الطلبات', 'Orders', lang)}</TableHead>
-                  <TableHead className="text-end">{t('الإيرادات', 'Revenue', lang)}</TableHead>
+                  <TableHead className="text-end">{t('المبيعات قبل الضريبة', 'Sales (pre-tax)', lang)}</TableHead>
+                  <TableHead className="text-end">{t('ض. المبيعات', 'Sales VAT', lang)}</TableHead>
+                  <TableHead className="text-end">{t('إجمالي المبيعات', 'Total Sales', lang)}</TableHead>
                   <TableHead className="text-end">{t('العمولة', 'Commission', lang)}</TableHead>
+                  <TableHead className="text-end">{t('ض. العمولة', 'Comm. VAT', lang)}</TableHead>
                   <TableHead className="text-end">{t('الصافي', 'Net', lang)}</TableHead>
-                  <TableHead className="text-end">{t('المسدّد', 'Paid', lang)}</TableHead>
-                  <TableHead className="text-end">{t('المعلّق', 'Pending', lang)}</TableHead>
+                  <TableHead className="text-end">{t('المحصل', 'Paid', lang)}</TableHead>
+                  <TableHead className="text-end">{t('المتبقي', 'Pending', lang)}</TableHead>
                   <TableHead className="text-center">{t('إجراءات', 'Actions', lang)}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                       {t('جاري التحميل...', 'Loading...', lang)}
                     </TableCell>
                   </TableRow>
                 ) : statements.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                       {t('لا توجد منصات', 'No platforms', lang)}
                     </TableCell>
                   </TableRow>
@@ -523,10 +550,17 @@ export default function DeliveryPlatforms() {
                       <TableCell>
                         <div className="font-medium">{s.platform.name}</div>
                         <div className="text-[10px] text-muted-foreground font-mono" dir="ltr">{s.platform.code}</div>
+                        <Badge variant="outline" className="text-[10px] mt-0.5">{s.settlementMethod}</Badge>
                       </TableCell>
                       <TableCell className="text-center font-semibold">{s.orders}</TableCell>
-                      <TableCell className="text-end font-mono" dir="ltr">{formatCurrency(s.revenue, lang)}</TableCell>
-                      <TableCell className="text-end font-mono text-rose-700" dir="ltr">{formatCurrency(s.commission, lang)}</TableCell>
+                      <TableCell className="text-end font-mono" dir="ltr">{formatCurrency(s.salesPreTax, lang)}</TableCell>
+                      <TableCell className="text-end font-mono text-muted-foreground" dir="ltr">{formatCurrency(s.salesVat, lang)}</TableCell>
+                      <TableCell className="text-end font-mono font-semibold" dir="ltr">{formatCurrency(s.salesTotal, lang)}</TableCell>
+                      <TableCell className="text-end font-mono text-rose-700" dir="ltr">
+                        <div>{formatCurrency(s.commission, lang)}</div>
+                        <div className="text-[10px] text-muted-foreground">{s.commissionRate.toFixed(2)}%</div>
+                      </TableCell>
+                      <TableCell className="text-end font-mono text-rose-600 text-xs" dir="ltr">{formatCurrency(s.commissionVat, lang)}</TableCell>
                       <TableCell className="text-end font-mono font-semibold text-emerald-700" dir="ltr">{formatCurrency(s.net, lang)}</TableCell>
                       <TableCell className="text-end font-mono text-blue-700" dir="ltr">{formatCurrency(s.paid, lang)}</TableCell>
                       <TableCell className={`text-end font-mono ${s.pending > 0 ? 'text-amber-700 font-bold' : 'text-muted-foreground'}`} dir="ltr">
@@ -582,6 +616,49 @@ export default function DeliveryPlatforms() {
                 value={form.commissionRate}
                 onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('ضريبة العمولة %', 'Commission VAT %', lang)}</Label>
+              <Input
+                type="number" min="0" max="100" step="0.01"
+                value={form.commissionVatRate}
+                onChange={e => setForm(f => ({ ...f, commissionVatRate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('طريقة احتساب العمولة', 'Commission Calc Method', lang)}</Label>
+              <Select value={form.commissionMethod} onValueChange={v => setForm(f => ({ ...f, commissionMethod: v }))}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GROSS">{t('على الإجمالي', 'On Gross', lang)}</SelectItem>
+                  <SelectItem value="NET">{t('على الصافي قبل الضريبة', 'On Net (pre-tax)', lang)}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('طريقة التسوية', 'Settlement Method', lang)}</Label>
+              <Select value={form.settlementMethod} onValueChange={v => setForm(f => ({ ...f, settlementMethod: v }))}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NET">{t('صافي (المنصة تخصم العمولة)', 'Net (platform deducts commission)', lang)}</SelectItem>
+                  <SelectItem value="GROSS">{t('إجمالي (تحويل بالإجمالي ثم فاتورة عمولة)', 'Gross (full transfer + commission invoice)', lang)}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {form.settlementMethod === 'GROSS'
+                  ? t('الذمة = الإجمالي، وتُسجّل العمولة عند التسوية', 'Receivable = full; commission recorded at settlement', lang)
+                  : t('الذمة = الصافي، وتُسجّل العمولة عند البيع', 'Receivable = net; commission recorded at sale', lang)}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('حساب التسوية', 'Settlement Account', lang)}</Label>
+              <Select value={form.settlementAccountCode} onValueChange={v => setForm(f => ({ ...f, settlementAccountCode: v }))}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1112">{t('البنك (1112)', 'Bank (1112)', lang)}</SelectItem>
+                  <SelectItem value="1111">{t('الصندوق (1111)', 'Cash (1111)', lang)}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>{t('الاسم (عربي)', 'Name (Arabic)', lang)} *</Label>
@@ -756,30 +833,46 @@ export default function DeliveryPlatforms() {
 
           {settleTarget && (
             <>
-              {/* ملخّص كشف المنصة (تلقائي من الفواتير) */}
-              <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 rounded-lg p-3 mb-2">
+              {/* ملخّص كشف المنصة — تفصيل محاسبي كامل (تلقائي من الفواتير) */}
+              <div className="grid grid-cols-2 gap-1.5 text-xs bg-muted/40 rounded-lg p-3 mb-2">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('الإيرادات', 'Revenue', lang)}</span>
-                  <span className="font-mono" dir="ltr">{formatCurrency(settleTarget.revenue, lang)}</span>
+                  <span className="text-muted-foreground">{t('عدد الطلبات', 'Orders', lang)}</span>
+                  <span className="font-semibold">{settleTarget.orders}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('العمولة', 'Commission', lang)}</span>
+                  <span className="text-muted-foreground">{t('طريقة التسوية', 'Settlement', lang)}</span>
+                  <Badge variant="outline" className="text-[10px] h-5">{settleTarget.settlementMethod}</Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('المبيعات قبل الضريبة', 'Sales (pre-tax)', lang)}</span>
+                  <span className="font-mono" dir="ltr">{formatCurrency(settleTarget.salesPreTax, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('ضريبة المبيعات', 'Sales VAT', lang)}</span>
+                  <span className="font-mono text-muted-foreground" dir="ltr">{formatCurrency(settleTarget.salesVat, lang)}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1">
+                  <span className="font-medium">{t('إجمالي المبيعات', 'Total Sales', lang)}</span>
+                  <span className="font-mono font-semibold" dir="ltr">{formatCurrency(settleTarget.salesTotal, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('العمولة', 'Commission', lang)} ({settleTarget.commissionRate.toFixed(2)}%)</span>
                   <span className="font-mono text-rose-700" dir="ltr">{formatCurrency(settleTarget.commission, lang)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('ض. العمولة', 'Commission VAT', lang)}</span>
-                  <span className="font-mono text-rose-700" dir="ltr">{formatCurrency(settleTarget.commissionVat, lang)}</span>
+                  <span className="text-muted-foreground">{t('ضريبة العمولة', 'Commission VAT', lang)}</span>
+                  <span className="font-mono text-rose-600" dir="ltr">{formatCurrency(settleTarget.commissionVat, lang)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('الصافي', 'Net', lang)}</span>
+                <div className="flex justify-between border-b pb-1">
+                  <span className="font-medium">{t('صافي المستحق', 'Net Payable', lang)}</span>
                   <span className="font-mono font-semibold text-emerald-700" dir="ltr">{formatCurrency(settleTarget.net, lang)}</span>
                 </div>
-                <div className="flex justify-between border-t pt-1">
-                  <span className="text-muted-foreground">{t('المسدّد سابقاً', 'Already Paid', lang)}</span>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('المحصل سابقاً', 'Already Paid', lang)}</span>
                   <span className="font-mono text-blue-700" dir="ltr">{formatCurrency(settleTarget.paid, lang)}</span>
                 </div>
-                <div className="flex justify-between border-t pt-1">
-                  <span className="font-semibold">{t('المعلّق', 'Pending', lang)}</span>
+                <div className="flex justify-between">
+                  <span className="font-semibold">{t('المتبقي', 'Pending', lang)}</span>
                   <span className="font-mono font-bold text-amber-700" dir="ltr">{formatCurrency(settleTarget.pending, lang)}</span>
                 </div>
               </div>
