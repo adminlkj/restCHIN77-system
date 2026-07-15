@@ -1,0 +1,98 @@
+{
+  "name": "PlatformSettlement",
+  "type": "object",
+  "properties": {
+    "settlementNo": {
+      "type": "string",
+      "description": "رقم التسوية (SET-PL-0001)"
+    },
+    "platformId": {
+      "type": "string",
+      "description": "معرّف المنصة (DeliveryPlatform.id)"
+    },
+    "platformName": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "periodFrom": {
+      "type": "string",
+      "format": "date",
+      "description": "بداية فترة التسوية"
+    },
+    "periodTo": {
+      "type": "string",
+      "format": "date",
+      "description": "نهاية فترة التسوية"
+    },
+    "totalSales": {
+      "type": "number",
+      "default": 0,
+      "description": "إجمالي مبيعات المنصة في الفترة"
+    },
+    "totalCommission": {
+      "type": "number",
+      "default": 0,
+      "description": "إجمالي العمولة"
+    },
+    "commissionVat": {
+      "type": "number",
+      "default": 0,
+      "description": "ضريبة العمولة"
+    },
+    "netPayable": {
+      "type": "number",
+      "default": 0,
+      "description": "صافي المستحق للمطعم = إجمالي المبيعات - العمولة - ضريبة العمولة"
+    },
+    "settledAmount": {
+      "type": "number",
+      "default": 0,
+      "description": "المبلغ المُسوّى فعلياً (المحول/المستلم)"
+    },
+    "paymentMethod": {
+      "type": "string",
+      "enum": ["BANK_TRANSFER", "CASH", "CARD"],
+      "default": "BANK_TRANSFER"
+    },
+    "settlementAccountCode": {
+      "type": "string",
+      "default": "1112",
+      "description": "الحساب الذي استلم عليه (بنك/صندوق)"
+    },
+    "referenceNo": {
+      "type": "string",
+      "description": "رقم مرجعي (إشعار تحويل، رقم إيصال)"
+    },
+    "invoiceIds": {
+      "type": "array",
+      "description": "قائمة معرّفات الفواتير المُسوّاة في هذه التسوية"
+    },
+    "invoiceCount": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": ["DRAFT", "POSTED", "CANCELLED"],
+      "default": "DRAFT"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": ["settlementNo", "platformId", "date"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "role": "user" } }
+      ]
+    },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

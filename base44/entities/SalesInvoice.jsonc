@@ -80,11 +80,47 @@
     },
     "notes": {
       "type": "string"
+    },
+    "platformId": {
+      "type": "string",
+      "description": "معرّف المنصة (لبيع المنصات)"
+    },
+    "platformName": {
+      "type": "string"
+    },
+    "platformCommission": {
+      "type": "number",
+      "default": 0,
+      "description": "عمولة المنصة المحسوبة"
+    },
+    "platformCommissionVat": {
+      "type": "number",
+      "default": 0,
+      "description": "ضريبة عمولة المنصة"
+    },
+    "isPlatformSale": {
+      "type": "boolean",
+      "default": false,
+      "description": "هل البيع عبر منصة توصيل"
+    },
+    "manualDiscount": {
+      "type": "number",
+      "default": 0,
+      "description": "خصم يدوي على الفاتورة"
+    },
+    "deliveryFee": {
+      "type": "number",
+      "default": 0
+    },
+    "cashier": {
+      "type": "string"
+    },
+    "tableNo": {
+      "type": "string"
     }
   },
   "required": [
     "invoiceNo",
-    "clientId",
     "date",
     "status"
   ],

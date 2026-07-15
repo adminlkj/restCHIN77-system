@@ -1,0 +1,67 @@
+{
+  "name": "DeliveryPlatform",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "كود المنصة (PL-0001)"
+    },
+    "name": {
+      "type": "string",
+      "description": "اسم المنصة بالعربية"
+    },
+    "nameEn": {
+      "type": "string",
+      "description": "اسم المنصة بالإنجليزية"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "commissionRate": {
+      "type": "number",
+      "default": 0,
+      "description": "نسبة العمولة % من إجمالي الفاتورة"
+    },
+    "commissionVatRate": {
+      "type": "number",
+      "default": 0.15,
+      "description": "نسبة ضريبة القيمة المضافة على العمولة (15% افتراضياً)"
+    },
+    "commissionMethod": {
+      "type": "string",
+      "enum": ["GROSS", "NET"],
+      "default": "GROSS",
+      "description": "طريقة احتساب العمولة: GROSS=على الإجمالي، NET=على الصافي قبل الضريبة"
+    },
+    "vatOnCommissionEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "هل تُحتسب ضريبة على العمولة (المنصة تصدر فاتورة ضريبية بالعمولة)"
+    },
+    "settlementAccountCode": {
+      "type": "string",
+      "default": "1112",
+      "description": "كود حساب التسوية (بنك/صندوق) الذي تستلم عليه المنصة"
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "string",
+      "description": "ملاحظات وشروط الاتفاقية"
+    }
+  },
+  "required": ["code", "name"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "role": "user" } }
+      ]
+    },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

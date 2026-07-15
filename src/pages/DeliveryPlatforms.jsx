@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Pencil, Trash2, RefreshCw, Bike, FileText, DollarSign,
-  TrendingUp, Calculator, Eye, Search,
+  TrendingUp, Calculator, Eye, Search, Landmark,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
+import { OperationEngine } from '@/lib/businessEngine';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -38,9 +39,10 @@ const EMPTY_FORM = {
 export default function DeliveryPlatforms() {
   const { lang } = useStore();
 
-  const [view, setView] = useState('platforms'); // 'platforms' | 'statements'
+  const [view, setView] = useState('platforms'); // 'platforms' | 'statements' | 'settlements'
   const [items, setItems] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [settlements, setSettlements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -58,20 +60,35 @@ export default function DeliveryPlatforms() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [settling, setSettling] = useState(false);
 
-  // ─── تحميل المنصات + الإيصالات ─────────────────────────────────────
+  // نافذة التسوية الحقيقية (تنشئ قيداً محاسبياً)
+  const [settleDialogOpen, setSettleDialogOpen] = useState(false);
+  const [settleTarget, setSettleTarget] = useState(null); // platform statement object
+  const [settleForm, setSettleForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    settledAmount: '',
+    paymentMethod: 'BANK_TRANSFER',
+    settlementAccountCode: '1112',
+    referenceNo: '',
+    notes: '',
+  });
+
+  // ─── تحميل المنصات + الإيصالات + التسويات ─────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [plats, invs] = await Promise.all([
+      const [plats, invs, setts] = await Promise.all([
         base44.entities.DeliveryPlatform.list('-created_date', 500),
         base44.entities.SalesInvoice.list('-created_date', 1000),
+        base44.entities.PlatformSettlement.list('-created_date', 500),
       ]);
       setItems(plats || []);
       setInvoices(invs || []);
+      setSettlements(setts || []);
     } catch (err) {
       console.warn('DeliveryPlatform load failed:', err);
       setItems([]);
       setInvoices([]);
+      setSettlements([]);
       toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang)));
     } finally {
       setLoading(false);
@@ -166,7 +183,14 @@ export default function DeliveryPlatforms() {
     });
   }, [dateFrom, dateTo]);
 
-  // ملخّص كل منصة: { orders, revenue, commission, net, paid, pending }
+  // ملخّص كل منصة: يُبنى تلقائياً من الفواتير (الإيراد/العمولة/ض.العمولة/الصافي)
+  // ومن التسويات (المسدّد) — لا إدخال يدوي للأرقام.
+  //   revenue = مجموع إجمالي الفواتير
+  //   commission = مجموع عمولات الفواتير
+  //   commissionVat = مجموع ضريبة العمولات
+  //   net = revenue - commission - commissionVat (صافي المستحق للمطعم)
+  //   paid = مجموع التسويات المنشورة (PlatformSettlement)
+  //   pending = net - paid
   const statements = useMemo(() => {
     return items.map(p => {
       const list = filterByDate(
@@ -174,24 +198,32 @@ export default function DeliveryPlatforms() {
       );
       const revenue = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
       const commission = list.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0);
-      const net = revenue - commission;
-      const paid = list.reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
-      // المعلّق = ما لم يُسدّد بعد (net - paid لكن بحد أدنى 0)
-      // نلاحظ: paidAmount قد تشمل قيمة الإيصال كامل (الزبون دفع) لكن العمولة تبقى معلّقة.
-      // هنا نعتبر "المعلّق" = صافي المستحق للمطعم - المسدّد من المنصة.
+      // ضريبة العمولة: من حقل platformCommissionVat إن وُجد، وإلا تُحسب 15% من العمولة
+      const commissionVat = list.reduce((s, i) => {
+        const v = Number(i.platformCommissionVat);
+        if (!isNaN(v) && v > 0) return s + v;
+        // احتساب 15% من العمولة إن لم يُسجّل صراحةً
+        return s + (Number(i.platformCommission) || 0) * 0.15;
+      }, 0);
+      const net = revenue - commission - commissionVat;
+      // المسدّد = مجموع التسويات المنشورة لهذه المنصة
+      const platformSettlements = settlements.filter(s => s.platformId === p.id && s.status === 'POSTED');
+      const paid = platformSettlements.reduce((s, st) => s + (Number(st.settledAmount) || 0), 0);
       const pending = Math.max(0, net - paid);
       return {
         platform: p,
         invoices: list,
+        settlements: platformSettlements,
         orders: list.length,
         revenue,
         commission,
+        commissionVat,
         net,
         paid,
         pending,
       };
     });
-  }, [items, invoices, filterByDate]);
+  }, [items, invoices, settlements, filterByDate]);
 
   // ملخّص شامل لكل المنصات
   const totals = useMemo(() => {
@@ -199,10 +231,11 @@ export default function DeliveryPlatforms() {
       orders: acc.orders + s.orders,
       revenue: acc.revenue + s.revenue,
       commission: acc.commission + s.commission,
+      commissionVat: acc.commissionVat + s.commissionVat,
       net: acc.net + s.net,
       paid: acc.paid + s.paid,
       pending: acc.pending + s.pending,
-    }), { orders: 0, revenue: 0, commission: 0, net: 0, paid: 0, pending: 0 });
+    }), { orders: 0, revenue: 0, commission: 0, commissionVat: 0, net: 0, paid: 0, pending: 0 });
   }, [statements]);
 
   // ─── كشف تفصيلي للمنصة ─────────────────────────────────────────────
@@ -218,26 +251,59 @@ export default function DeliveryPlatforms() {
     );
   }, [detailPlatform, invoices, filterByDate]);
 
-  // ─── تسوية المنصة: تعليم الإيصالات بأنها مُسدّدة (paidAmount = totalAmount, status PAID) ──
-  const settlePlatform = async (platform) => {
+  // ─── فتح نافذة التسوية الحقيقية لمنصة ──────────────────────────────
+  // التسوية تنشئ قيداً محاسبياً: مدين بنك/صندوق، دائن ذمم المنصة.
+  // تُخفّض الذمة تدريجياً حتى الإغلاق الكامل.
+  const openSettleDialog = (statement) => {
+    setSettleTarget(statement);
+    // اقتراح: تسوية كامل المعلّق دفعة واحدة
+    setSettleForm({
+      date: new Date().toISOString().slice(0, 10),
+      settledAmount: statement.pending > 0 ? statement.pending.toFixed(2) : '',
+      paymentMethod: 'BANK_TRANSFER',
+      settlementAccountCode: statement.platform.settlementAccountCode || '1112',
+      referenceNo: '',
+      notes: '',
+    });
+    setSettleDialogOpen(true);
+  };
+
+  // تنفيذ التسوية عبر OperationEngine (ينشئ سجل PlatformSettlement + قيد JE)
+  const submitSettlement = async () => {
+    if (!settleTarget) return;
+    const amount = Number(settleForm.settledAmount);
+    if (!amount || amount <= 0) {
+      toast.error(t('أدخل مبلغ تسوية صحيح', 'Enter a valid settlement amount', lang));
+      return;
+    }
+    if (amount > settleTarget.pending + 0.01) {
+      toast.error(t('مبلغ التسوية يتجاوز المعلّق', 'Settlement exceeds pending', lang));
+      return;
+    }
     setSettling(true);
     try {
-      const list = invoices.filter(i =>
-        (i.platformId === platform.id || i.platformName === platform.name) &&
-        Number(i.paidAmount || 0) < Number(i.totalAmount || 0)
-      );
-      if (list.length === 0) {
-        toast.info(t('لا توجد إيصالات معلّقة للتسوية', 'No pending invoices to settle', lang));
-        return;
-      }
-      await Promise.all(list.map(inv =>
-        base44.entities.SalesInvoice.update(inv.id, {
-          paidAmount: Number(inv.totalAmount) || 0,
-          status: 'PAID',
-          notes: (inv.notes || '') + (inv.notes ? ' | ' : '') + `تمت التسوية مع منصة ${platform.name} بتاريخ ${new Date().toISOString().slice(0, 10)}`,
-        })
-      ));
-      toast.success(t(`تمت تسوية ${list.length} إيصال`, `Settled ${list.length} invoices`, lang));
+      // جمع معرّفات الفواتير المُسوّاة (للمتابعة)
+      const invoiceIds = settleTarget.invoices.map(inv => inv.id);
+      await OperationEngine.createPlatformSettlement({
+        platformId: settleTarget.platform.id,
+        date: settleForm.date,
+        periodFrom: dateFrom || '',
+        periodTo: dateTo || '',
+        totalSales: settleTarget.revenue,
+        totalCommission: settleTarget.commission,
+        commissionVat: settleTarget.commissionVat,
+        netPayable: settleTarget.net,
+        settledAmount: amount,
+        paymentMethod: settleForm.paymentMethod,
+        settlementAccountCode: settleForm.settlementAccountCode,
+        referenceNo: settleForm.referenceNo,
+        invoiceIds,
+        invoiceCount: invoiceIds.length,
+        notes: settleForm.notes,
+      });
+      toast.success(t('تمت التسوية وترحيل القيد', 'Settled & JE posted', lang));
+      setSettleDialogOpen(false);
+      setSettleTarget(null);
       load();
     } catch (err) {
       toast.error(errorMessage(err, t('فشل التسوية', 'Settlement failed', lang)));
@@ -476,9 +542,9 @@ export default function DeliveryPlatforms() {
                             size="sm"
                             className="gap-1 text-xs"
                             disabled={settling || s.pending <= 0}
-                            onClick={() => settlePlatform(s.platform)}
+                            onClick={() => openSettleDialog(s)}
                           >
-                            <DollarSign className="size-3.5" /> {t('تسوية', 'Settle', lang)}
+                            <Landmark className="size-3.5" /> {t('تسوية', 'Settle', lang)}
                           </Button>
                         </div>
                       </TableCell>
@@ -674,6 +740,111 @@ export default function DeliveryPlatforms() {
         onConfirm={remove}
         confirmLabel={t('حذف', 'Delete', lang)}
       />
+
+      {/* ══════════════ نافذة التسوية الحقيقية ══════════════ */}
+      <Dialog open={settleDialogOpen} onOpenChange={setSettleDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="size-5 text-emerald-600" />
+              {t('تسوية منصة', 'Platform Settlement', lang)}
+              {settleTarget?.platform && (
+                <span className="text-muted-foreground font-normal">— {settleTarget.platform.name}</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {settleTarget && (
+            <>
+              {/* ملخّص كشف المنصة (تلقائي من الفواتير) */}
+              <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 rounded-lg p-3 mb-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('الإيرادات', 'Revenue', lang)}</span>
+                  <span className="font-mono" dir="ltr">{formatCurrency(settleTarget.revenue, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('العمولة', 'Commission', lang)}</span>
+                  <span className="font-mono text-rose-700" dir="ltr">{formatCurrency(settleTarget.commission, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('ض. العمولة', 'Commission VAT', lang)}</span>
+                  <span className="font-mono text-rose-700" dir="ltr">{formatCurrency(settleTarget.commissionVat, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('الصافي', 'Net', lang)}</span>
+                  <span className="font-mono font-semibold text-emerald-700" dir="ltr">{formatCurrency(settleTarget.net, lang)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1">
+                  <span className="text-muted-foreground">{t('المسدّد سابقاً', 'Already Paid', lang)}</span>
+                  <span className="font-mono text-blue-700" dir="ltr">{formatCurrency(settleTarget.paid, lang)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1">
+                  <span className="font-semibold">{t('المعلّق', 'Pending', lang)}</span>
+                  <span className="font-mono font-bold text-amber-700" dir="ltr">{formatCurrency(settleTarget.pending, lang)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('تاريخ التسوية', 'Settlement Date', lang)} *</Label>
+                    <Input type="date" value={settleForm.date} onChange={e => setSettleForm(f => ({ ...f, date: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('مبلغ التسوية', 'Settlement Amount', lang)} *</Label>
+                    <Input type="number" min="0" step="0.01" value={settleForm.settledAmount} onChange={e => setSettleForm(f => ({ ...f, settledAmount: e.target.value }))} dir="ltr" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('طريقة الاستلام', 'Receipt Method', lang)}</Label>
+                    <Select value={settleForm.paymentMethod} onValueChange={v => setSettleForm(f => ({ ...f, paymentMethod: v }))}>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BANK_TRANSFER">{t('تحويل بنكي', 'Bank Transfer', lang)}</SelectItem>
+                        <SelectItem value="CASH">{t('نقداً', 'Cash', lang)}</SelectItem>
+                        <SelectItem value="CARD">{t('بطاقة', 'Card', lang)}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('الحساب المستلم عليه', 'Receiving Account', lang)}</Label>
+                    <Select value={settleForm.settlementAccountCode} onValueChange={v => setSettleForm(f => ({ ...f, settlementAccountCode: v }))}>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1112">{t('البنك (1112)', 'Bank (1112)', lang)}</SelectItem>
+                        <SelectItem value="1111">{t('الصندوق (1111)', 'Cash (1111)', lang)}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('رقم مرجعي', 'Reference No.', lang)}</Label>
+                  <Input value={settleForm.referenceNo} onChange={e => setSettleForm(f => ({ ...f, referenceNo: e.target.value }))} placeholder={t('إشعار تحويل، رقم إيصال…', 'Transfer advice, receipt no…', lang)} dir="ltr" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('ملاحظات', 'Notes', lang)}</Label>
+                  <Input value={settleForm.notes} onChange={e => setSettleForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <p className="text-[11px] text-muted-foreground bg-emerald-50 border border-emerald-200 rounded p-2">
+                  {t('سيُنشأ قيد محاسبي: مدين الحساب المستلم عليه / دائن ذمم المنصة (1115). يُخفّض الذمة تدريجياً.',
+                     'Creates a journal entry: debit receiving account / credit platform receivable (1115). Reduces balance gradually.', lang)}
+                </p>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setSettleDialogOpen(false)}>
+                  {t('إلغاء', 'Cancel', lang)}
+                </Button>
+                <Button onClick={submitSettlement} disabled={settling} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                  {settling ? <RefreshCw className="size-4 animate-spin" /> : <Landmark className="size-4" />}
+                  {t('تأكيد التسوية', 'Confirm Settlement', lang)}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </ModuleLayout>
   );
 }

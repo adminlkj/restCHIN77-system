@@ -17,7 +17,8 @@ const VAT_RATE = 0.15;
 // خريطة الحسابات الافتراضية حسب الدور (تُستخدم كخطة بديلة إن لم يوجد حساب في الدليل)
 // خطة بديلة تطابق الشجرة القياسية الحالية — تُستخدم فقط إن لم يوجد الدور في الدليل.
 // ملاحظة محاسبية: البيع النقدي يُذهب للصندوق/البنك/البطاقة حسب طريقة الدفع،
-// والبيع الآجل يُذهب لذمم العملاء، وبيع المنصات يُذهب لذمم المنصات.
+// والبيع الآجل يُذهب لذمم العملاء، وبيع المنصات يُذهب لذمم المنصات (الصافي بعد العمولة)
+// مع تسجيل مصروف العمولة وضريبة العمولة المدفوعة.
 const ACCOUNTS = {
   CASH:                 { code: '1111', name: 'صندوق الكاشير' },
   BANK:                 { code: '1112', name: 'البنك' },
@@ -35,6 +36,8 @@ const ACCOUNTS = {
   REVENUE_CONSTRUCTION: { code: '4100', name: 'إيرادات المبيعات' },
   REVENUE_RENTAL:       { code: '4200', name: 'إيرادات تأجير المعدات' },
   REVENUE_SERVICE:      { code: '4300', name: 'إيرادات الخدمات' },
+  COMMISSION_EXPENSE:   { code: '5231', name: 'عمولات منصات التوصيل' },
+  COMMISSION_VAT_INPUT: { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة (عمولات)' },
   EXPENSE_GENERAL:      { code: '5250', name: 'المصروفات العمومية' },
   EXPENSE_SALARIES:     { code: '5210', name: 'الرواتب والأجور الإدارية' },
   EXPENSE_PURCHASE:     { code: '5110', name: 'مواد ومشتريات المشاريع' },
@@ -80,6 +83,11 @@ const RULES = {
     { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.subtotal) > 0 },
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
     { m: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', t: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + (num(d.vatRate) || 0.15)) + 0.01 },
+  ],
+  PLATFORM_SETTLEMENT: [
+    { m: 'معرّف المنصة مطلوب', t: (d) => !isBlank(d.platformId) },
+    { m: 'تاريخ التسوية مطلوب', t: (d) => !isBlank(d.date) },
+    { m: 'مبلغ التسوية يجب أن يكون أكبر من صفر', t: (d) => num(d.settledAmount) > 0 },
   ],
   PURCHASE_ORDER: [
     { m: 'رقم الأمر مطلوب', t: (d) => !isBlank(d.orderNo) },
@@ -267,27 +275,55 @@ const PAYMENT_METHOD_ACCOUNTS = {
   BANK:       ACCOUNTS.BANK,
 };
 
-function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, vatAmount, totalAmount, invoiceType, projectName, payments, isPlatformSale, platformId, platformName }) {
+function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, vatAmount, totalAmount, invoiceType, projectName, payments, isPlatformSale, platformId, platformName, platformCommission, platformCommissionVat }) {
   const rev = invoiceType === 'RENTAL' ? ACCOUNTS.REVENUE_RENTAL : invoiceType === 'SERVICE' ? ACCOUNTS.REVENUE_SERVICE : ACCOUNTS.REVENUE_SALES;
   const costCenter = projectName || '';
   const vat = num(vatAmount);
+  const commission = num(platformCommission);
+  const commissionVat = num(platformCommissionVat);
 
   // قرر سطور المدين حسب نوع البيع وطرق الدفع.
   let debitLines = [];
-  let partyType = 'CLIENT';
-  let partyId = clientId || '';
-  let partyName = clientName || '';
 
   if (isPlatformSale) {
-    // بيع المنصات: ذمم المنصات (آجل حتى التحصيل)
+    // بيع المنصات: المنصة تخصم العمولة (وvat العمولة) وتُحوّل الصافي للمطعم لاحقاً.
+    // القيد:
+    //   مدين: ذمم المنصة (الصافي = total - commission - commissionVat)
+    //   مدين: مصروف العمولة (commission)
+    //   مدين: ضريبة العمولة المدفوعة (commissionVat) — المنصة تصدر فاتورة ضريبية بالعمولة
+    //   دائن: إيراد المبيعات (subtotal)
+    //   دائن: ضريبة المبيعات المحصلة (vatAmount)
+    // التوازن: (net + commission + commissionVat) = (subtotal + vat) = totalAmount
+    const netReceivable = num(totalAmount) - commission - commissionVat;
+    if (netReceivable < -0.01) {
+      throw new Error(`العمولة (${commission}) + ضريبتها (${commissionVat}) تتجاوز إجمالي الفاتورة (${totalAmount}) للمنصة ${platformName || ''}`);
+    }
     debitLines.push({
       accountCode: ACCOUNTS.PLATFORM_RECEIVABLE.code,
       accountName: ACCOUNTS.PLATFORM_RECEIVABLE.name,
-      debit: num(totalAmount), credit: 0,
-      description: `فاتورة منصة ${platformName || ''} ${invoiceNo}`,
+      debit: +netReceivable.toFixed(2), credit: 0,
+      description: `صافي مستحق منصة ${platformName || ''} ${invoiceNo}`,
       partyType: 'PLATFORM', partyId: platformId || '', partyName: platformName || '',
       costCenter,
     });
+    if (commission > 0) {
+      debitLines.push({
+        accountCode: ACCOUNTS.COMMISSION_EXPENSE.code,
+        accountName: ACCOUNTS.COMMISSION_EXPENSE.name,
+        debit: +commission.toFixed(2), credit: 0,
+        description: `عمولة منصة ${platformName || ''} ${invoiceNo}`,
+        costCenter,
+      });
+    }
+    if (commissionVat > 0) {
+      debitLines.push({
+        accountCode: ACCOUNTS.COMMISSION_VAT_INPUT.code,
+        accountName: ACCOUNTS.COMMISSION_VAT_INPUT.name,
+        debit: +commissionVat.toFixed(2), credit: 0,
+        description: `ضريبة عمولة منصة ${platformName || ''} ${invoiceNo}`,
+        costCenter,
+      });
+    }
   } else if (Array.isArray(payments) && payments.length > 0) {
     // بيع نقدي بطرق دفع واحدة أو أكثر: سطر مدين لكل طريقة دفع.
     // ندمج نفس الطريقة (مثلاً دفعتين نقداً) في سطر واحد لتجنب تكرار السطور.
@@ -311,7 +347,8 @@ function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, 
       accountCode: ACCOUNTS.RECEIVABLES.code, accountName: ACCOUNTS.RECEIVABLES.name,
       debit: num(totalAmount), credit: 0,
       description: `فاتورة آجلة ${invoiceNo}`,
-      partyType, partyId, partyName, costCenter,
+      partyType: 'CLIENT', partyId: clientId || '', partyName: clientName || '',
+      costCenter,
     });
   }
 
@@ -321,21 +358,19 @@ function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, 
   ];
 
   const lines = [...debitLines, ...creditLines];
-  // تحقق التوازن (يجب أن يتطابق المدين مع totalAmount)
+  // تحقق التوازن (المدين يجب أن يساوي الدائن).
   const totalDebit = lines.reduce((s, l) => s + num(l.debit), 0);
   const totalCredit = lines.reduce((s, l) => s + num(l.credit), 0);
-  // إن كان هناك فرق صغير بسبب تقريب، عدّل سطر الإيراد.
-  const diff = num(totalAmount) - totalDebit;
+  const diff = totalDebit - totalCredit;
   if (Math.abs(diff) > 0.01) {
-    // فرق كبير = خطأ في البيانات؛ ارفع استثناء بدل قيد غير متوازن.
-    throw new Error(`اختلال توازن القيد لفاتورة ${invoiceNo}: المدين ${totalDebit} مقابل المتوقع ${totalAmount} (الفرق ${diff.toFixed(2)})`);
+    throw new Error(`اختلال توازن القيد لفاتورة ${invoiceNo}: المدين ${totalDebit.toFixed(2)} مقابل الدائن ${totalCredit.toFixed(2)} (الفرق ${diff.toFixed(2)})`);
   }
 
   return {
     entryNo: `JE-SINV-${invoiceNo}`, date,
     description: `فاتورة مبيعات ${invoiceNo} — ${clientName}${projectName ? ` — ${projectName}` : ''}${isPlatformSale ? ` — منصة ${platformName || ''}` : ''}`,
     sourceType: 'SalesInvoice', isPosted: true,
-    totalDebit: num(totalAmount), totalCredit: num(totalAmount),
+    totalDebit: +totalDebit.toFixed(2), totalCredit: +totalCredit.toFixed(2),
     lines,
   };
 }
@@ -971,6 +1006,8 @@ async function approveSalesInvoice(base44, id) {
   const isPlatformSale = notesObj.isPlatformSale === true || inv.isPlatformSale === true;
   const platformId = notesObj?.platform?.platformId || inv.platformId || '';
   const platformName = notesObj?.platform?.platformName || inv.platformName || '';
+  const platformCommission = num(notesObj?.platform?.platformCommission || inv.platformCommission || 0);
+  const platformCommissionVat = num(notesObj?.platform?.platformCommissionVat || inv.platformCommissionVat || 0);
 
   const je = await buildJE(base44, 'SALES_INVOICE',
     { entryNo: `JE-SINV-${inv.invoiceNo}`, date: inv.date, description: `فاتورة مبيعات ${inv.invoiceNo} — ${inv.clientName}`, sourceType: 'SalesInvoice' },
@@ -981,10 +1018,67 @@ async function approveSalesInvoice(base44, id) {
       subtotal: inv.subtotal, vatAmount: inv.vatAmount, totalAmount: inv.totalAmount,
       invoiceType: inv.invoiceType, projectName: inv.projectName,
       payments, isPlatformSale, platformId, platformName,
+      platformCommission, platformCommissionVat,
     }),
     { type: 'CLIENT', id: inv.clientId, name: inv.clientName });
   await autoPostJE(base44, je);
   return await base44.asServiceRole.entities.SalesInvoice.update(id, { status: 'APPROVED' });
+}
+
+// ─── تسوية المنصة ────────────────────────────────────────────────────────────
+// تسوية منصة: تحويل بنكي/استلام نقدي لفواتير منصة في فترة معينة.
+// يُخفّض ذمة المنصة (1115) ويُسجّل التحصيل في البنك/الصندوق.
+// القيد:
+//   مدين: البنك/الصندوق (settledAmount)
+//   دائن: ذمم المنصة (settledAmount) — مع partyType=PLATFORM
+// لا يُعاد احتساب العمولة هنا (سُجّلت عند اعتماد الفاتورة).
+// التسوية تُربط بقائمة الفواتير المُسوّاة (invoiceIds) للمتابعة.
+async function createPlatformSettlement(base44, data) {
+  assertValid('PLATFORM_SETTLEMENT', data);
+  if (!data.platformId) throw new Error('معرّف المنصة مطلوب');
+  if (!data.settledAmount || num(data.settledAmount) <= 0) throw new Error('مبلغ التسوية يجب أن يكون موجباً');
+
+  const platform = await base44.asServiceRole.entities.DeliveryPlatform.get(data.platformId);
+  if (!platform) throw new Error('المنصة غير موجودة');
+
+  const settlementNo = data.settlementNo || `SET-PL-${Date.now().toString().slice(-8)}`;
+  const date = data.date || new Date().toISOString().slice(0, 10);
+  const amount = num(data.settledAmount);
+
+  // الحساب النقدي المستلم عليه (بنك افتراضياً)
+  const cashCode = data.settlementAccountCode || platform.settlementAccountCode || ACCOUNTS.BANK.code;
+  const cashName = cashCode === ACCOUNTS.CASH.code ? ACCOUNTS.CASH.name
+    : cashCode === ACCOUNTS.BANK.code ? ACCOUNTS.BANK.name
+    : 'الحساب المختار';
+
+  const je = await buildJE(base44, 'PLATFORM_SETTLEMENT',
+    { entryNo: `JE-PSET-${settlementNo}`, date, description: `تسوية منصة ${platform.name} — ${settlementNo}`, sourceType: 'PlatformSettlement' },
+    { base: amount, vat: 0, total: amount },
+    () => ({
+      entryNo: `JE-PSET-${settlementNo}`, date,
+      description: `تسوية منصة ${platform.name} — ${settlementNo}`,
+      sourceType: 'PlatformSettlement', isPosted: true,
+      totalDebit: amount, totalCredit: amount,
+      lines: [
+        { accountCode: cashCode, accountName: cashName, debit: amount, credit: 0, description: `تحصيل من منصة ${platform.name}` },
+        { accountCode: ACCOUNTS.PLATFORM_RECEIVABLE.code, accountName: ACCOUNTS.PLATFORM_RECEIVABLE.name, debit: 0, credit: amount, description: `إخفاض ذمة منصة ${platform.name} — ${settlementNo}`, partyType: 'PLATFORM', partyId: platform.id, partyName: platform.name },
+      ],
+    }),
+    { type: 'PLATFORM', id: platform.id, name: platform.name });
+  await autoPostJE(base44, je);
+
+  const payload = {
+    ...data,
+    settlementNo,
+    platformName: platform.name,
+    status: 'POSTED',
+    netPayable: num(data.netPayable) || 0,
+    totalSales: num(data.totalSales) || 0,
+    totalCommission: num(data.totalCommission) || 0,
+    commissionVat: num(data.commissionVat) || 0,
+    invoiceCount: Array.isArray(data.invoiceIds) ? data.invoiceIds.length : 0,
+  };
+  return await base44.asServiceRole.entities.PlatformSettlement.create(payload);
 }
 
 // يبني بنود الأمر من الحمولة ويحسب الإجمالي منها (البنود هي الأساس).
@@ -1569,6 +1663,7 @@ const HANDLERS = {
   STOCK_MOVEMENT:  { create: (b, p) => createStockMovement(b, p.data) },
   GOODS_RECEIPT:   { create: (b, p) => createGoodsReceipt(b, p.data) },
   FISCAL_YEAR:     { close: (b, p) => closeFiscalYear(b, p.id) },
+  PLATFORM_SETTLEMENT: { create: (b, p) => createPlatformSettlement(b, p.data) },
 };
 
 Deno.serve(async (req) => {

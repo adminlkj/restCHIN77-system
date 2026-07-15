@@ -250,6 +250,15 @@ export const OperationEngine = {
     };
     return await runOperation({ operation: 'STOCK_MOVEMENT', mode: 'create', data: payload });
   },
+
+  // ─── تسوية المنصة ────────────────────────────────────────────────────
+  // تُنشئ سجل PlatformSettlement + قيد محاسبي:
+  //   مدين: البنك/الصندوق (settledAmount)
+  //   دائن: ذمم المنصة (settledAmount) — يخفّض رصيد المستحقات.
+  // لا يُعاد احتساب العمولة هنا (سُجّلت عند اعتماد الفاتورة).
+  async createPlatformSettlement(data) {
+    return await runOperation({ operation: 'PLATFORM_SETTLEMENT', mode: 'create', data });
+  },
 };
 
 // ─── دورة الأصول الثابتة والإهلاك (IAS 16) ─────────────────────────────────────
