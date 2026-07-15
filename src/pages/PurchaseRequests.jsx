@@ -165,7 +165,7 @@ export default function PurchaseRequests() {
                         <TableCell>
                           <div className="flex gap-1">
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8 text-emerald-700" title={t('اعتماد', 'Approve', lang)} onClick={() => setStatus(item, 'APPROVED')}><CheckCircle2 className="size-3.5" /></Button>}
-                            {item.status !== 'APPROVED' && item.status !== 'CANCELLED' && <Button variant="ghost" size="icon" className="size-8 text-rose-700" title={t('إلغاء', 'Cancel', lang)} onClick={() => setStatus(item, 'CANCELLED')}><XCircle className="size-3.5" /></Button>}
+                            {item.status !== 'APPROVED' && item.status !== 'REJECTED' && <Button variant="ghost" size="icon" className="size-8 text-rose-700" title={t('رفض', 'Reject', lang)} onClick={() => setStatus(item, 'REJECTED')}><XCircle className="size-3.5" /></Button>}
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(item)}><Pencil className="size-3.5" /></Button>}
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => askDelete(item.id)}><Trash2 className="size-3.5" /></Button>}
                           </div>

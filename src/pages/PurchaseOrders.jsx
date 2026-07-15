@@ -78,11 +78,10 @@ export default function PurchaseOrders() {
   };
   useEffect(() => { load(); }, []);
 
-  // بنود جدول الكميات للمشروع المختار — مصدر أصناف أمر الشراء.
+  // أصناف المخزون المتاحة للاختيار في بنود أمر الشراء.
   useEffect(() => {
-    if (!form.projectId) { setBoqItems([]); return; }
-    base44.entities.BOQItem.filter({ projectId: form.projectId }).then(setBoqItems).catch(() => setBoqItems([]));
-  }, [form.projectId]);
+    base44.entities.InventoryItem.filter({ isActive: true }).then(setBoqItems).catch(() => setBoqItems([]));
+  }, []);
 
   const buildDefaultForm = () => ({
     ...empty,

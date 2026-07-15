@@ -4,10 +4,10 @@ import crypto from 'crypto';
 import { pool } from './db.js';
 
 const FISCAL_GUARDED_ENTITIES = new Set([
-  'JournalEntry', 'SalesInvoice', 'PurchaseOrder', 'SupplierInvoice', 'RentalInvoice',
+  'JournalEntry', 'SalesInvoice', 'SupplierInvoice', 'RentalInvoice',
   'Expense', 'PayrollRun', 'ClientPayment', 'SupplierPayment',
   'SubcontractorInvoice', 'SubcontractorPayment', 'StockMovement',
-  'GoodsReceipt', 'FixedAsset', 'OperatingHours', 'FuelLog',
+  'GoodsReceipt', 'FixedAsset',
   'MaintenanceRecord', 'AttendanceRecord', 'EmployeeAdvance',
 ]);
 
@@ -444,14 +444,14 @@ async function assertNoFinancialFieldPatch(entityName, newData) {
 /**
  * المستندات المالية التي لا يجوز تغيير حالتها مباشرةً عبر PATCH.
  * فقط postOperation يسمح بتغيير الحالة (لأنه يُنشئ/يُلغي القيود).
+ * PurchaseOrder و PurchaseRequest مستندات تشغيلية (لا تُنشئ قيوداً) — يُسمح بتغيير حالتها.
+ * Contract/RentalContract/ChangeOrder/ProgressBilling/SubcontractorContract — محذوفة (مقاولات).
  */
 const STATUS_CONTROLLED_DOCUMENTS = new Set([
   'SalesInvoice', 'SupplierInvoice', 'RentalInvoice', 'SubcontractorInvoice',
   'ClientPayment', 'SupplierPayment', 'SubcontractorPayment',
   'Expense', 'PayrollRun', 'GoodsReceipt',
   'StockMovement', 'FixedAsset',
-  'Contract', 'RentalContract', 'PurchaseOrder', 'PurchaseRequest',
-  'ChangeOrder', 'ProgressBilling', 'SubcontractorContract',
 ]);
 
 /**
