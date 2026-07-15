@@ -468,3 +468,42 @@ Stage Summary:
 - صفحة العملاء (Clients.jsx): حذف عميل يُحجب فقط عند وجود فواتير بيع أو تحصيلات — لا فحص للعقود (Contract) المحذوفة. رسالة الخطأ محدّثة لتعكس الفحوصات الفعلية.
 - صفحة الحركات المخزنية (StockMovements.jsx): كانت نظيفة بالفعل — لا تغييرات. حقل projectId مُبقّى كسياق فرع/طلب مع تسمية "الطلب" مطعمية في كل الواجهة.
 - جميع القيود احتُرمت: لا لمس src/lib/، لا تغيير أسماء كيانات/واجهات API، CRUD و OperationEngine يعملان، شارة saleType محفوظة، ثنائية اللغة محفوظة.
+
+---
+Task ID: construction-cleanup-final
+Agent: main (Z.ai Code)
+Task: تنظيف شامل للنظام من بقايا المقاولات
+
+Work Log:
+- حذف 20 ملف مقاولات بالكامل (BOQ, Contracts, ProjectWorkspace, Subcontractors, RentalContracts, Timesheets, FuelConsumption, EquipmentWorkspace, 15 workspace tab, ContractDocument, SubAggregateList)
+- تنظيف cycles.js: إزالة subcontractors-cycle كاملاً، إزالة تبويبات rental-contracts/timesheets/fuel
+- تنظيف App.jsx: إزالة استيرادات الصفحات المحذوفة من STANDALONE
+- تنظيف CycleScreen.jsx: إزالة كل إدخالات TAB_CONTENT للمقاولات
+- تنظيف permissions.js: إزالة 15+ وحدة مقاولات، إعادة تسمية PROJECT_MANAGER→BRANCH_MANAGER، OPERATOR→KITCHEN_STAFF
+- تنظيف Equipment.jsx: إزالة plateNumber/dailyRate/hourlyRate/RENTED، إضافة location، إعادة تسمية لمعدات المطعم
+- تنظيف Expenses.jsx + ExpenseDialog.jsx: إزالة أنواع PROJECT/EQUIPMENT
+- تنظيف Projects.jsx: إزالة contractValue/projectType/location
+- تنظيف SalesInvoices.jsx: إزالة progressBilling/certificate/Contract
+- تنظيف Clients.jsx: إزالة Contract delete-guard
+- تنظيف GlobalSearch.jsx: إزالة Subcontractor source
+- تنظيف NotificationCenter.jsx: إزالة إشعارات rental/contract/changeorder/progressbilling
+- تنظيف PermissionMatrix.jsx: إعادة تسمية المجموعات
+- lint: 0 أخطاء، build: نجح
+- commit: 28c4f74، push: ناجح
+- Render نشر index-Dy3DqLgb.js
+
+التحقق الفعلي على Render (agent-browser):
+- النظام يحمّل بدون أخطاء (0 errors في console بعد reload)
+- الشريط الجانبي يعرض 13 دورة مطاعم فقط:
+  لوحة المبيعات، نقطة البيع، الطلبات والمبيعات، معدات المطعم، المشتريات،
+  المصروفات التشغيلية، الموارد البشرية، المالية والمحاسبة، التقارير،
+  الزبائن والموردون، المستخدمون والصلاحيات، المخازن والمكوّنات، الإعدادات
+- تم التحقق من اختفاء كل مصطلحات المقاولات من الواجهة:
+  الخدمات الخارجية: NO ✓، مقاولات: NO ✓، معدات ثقيلة: NO ✓،
+  وقود: NO ✓، تأجير: NO ✓، مستخلصات: NO ✓، عقود: NO ✓
+
+Stage Summary:
+- النظام أصبح نظام مطاعم خالص بدون أي بقايا مقاولات
+- 20 ملف حُذف، 15+ ملف نُظف
+- كل الدورات المتبقية تخص المطاعم فقط
+- المحركات المحاسبية لم تُمَس (businessEngine لا يزال يحتوي createRentalContract للتوافق مع البيانات القديمة، لكن لا يُستدعى من أي واجهة)
