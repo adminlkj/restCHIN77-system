@@ -3,9 +3,9 @@ import { Check } from 'lucide-react';
 import { MODULES, ACTIONS, ACTION_KEYS, VIEW_ONLY_MODULES } from '@/lib/permissions';
 
 const GROUP_LABELS = {
-  projects: { ar: 'المشاريع', en: 'Projects' },
-  rental: { ar: 'المعدات والتأجير', en: 'Equipment & Rental' },
-  costs: { ar: 'المشتريات والتكاليف', en: 'Procurement & Costs' },
+  projects: { ar: 'نقطة البيع والمبيعات', en: 'POS & Sales' },
+  rental: { ar: 'معدات المطعم', en: 'Restaurant Equipment' },
+  costs: { ar: 'المشتريات والمصروفات', en: 'Procurement & Costs' },
   hr: { ar: 'الموارد البشرية', en: 'HR' },
   accounting: { ar: 'المالية والمحاسبة', en: 'Finance & Accounting' },
   settings: { ar: 'الإعدادات والبيانات', en: 'Settings & Master Data' },

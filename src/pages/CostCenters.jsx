@@ -13,7 +13,7 @@ import TableToolbar from '@/components/shared/TableToolbar';
 import { buildCostCenterAnalysis } from '@/lib/ledgerEngine';
 import { toast } from 'sonner';
 
-// تحليل مراكز التكلفة: إيراد وتكلفة وهامش لكل مركز (مشروع).
+// تحليل أقسام المطعم: إيراد وتكلفة وهامش لكل قسم (طلب/فرع). الكيان Project يُستخدم كقسم مطعم.
 export default function CostCenters() {
   const { lang } = useStore();
   const [data, setData] = useState({ projects: [], journalEntries: [], chartAccounts: [] });

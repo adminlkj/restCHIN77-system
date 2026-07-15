@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { t, EXPENSE_CATEGORIES, getExpenseType } from '@/lib/utils-binaa';
+import { t, EXPENSE_CATEGORIES, EXPENSE_TYPES, getExpenseType } from '@/lib/utils-binaa';
 import { calcVAT } from '@/lib/businessEngine';
 import ExpenseTypePicker from './ExpenseTypePicker';
 
@@ -14,10 +14,29 @@ import ExpenseTypePicker from './ExpenseTypePicker';
  * نموذج المصروف الديناميكي — محرك واحد.
  * الخطوة 1: اختيار النوع (يظهر فقط عند الإنشاء الجديد).
  * الخطوة 2: نموذج يتغير حقوله تلقائياً حسب النوع المختار.
+ *
+ * ملاحظة مطعمية: أنواع المصروفات الخاصة بالبناء (PROJECT/EQUIPMENT)
+ * محجوبة عن الإنشاء الجديد. السجلات القديمة بهذه الأنواع تُعرض كـ
+ * COMPANY/ADMIN للقراءة فقط، دون تغيير القيمة المخزّنة. القيم الداخلية
+ * (accountRole) في src/lib تبقى كما هي للتوافق مع postOperation/entry.ts.
  */
+
+// أنواع المصروفات المعتمدة لمطعم — نُخفي أنواع البناء (PROJECT/EQUIPMENT) عن الواجهة.
+const HIDDEN_EXPENSE_TYPES = ['PROJECT', 'EQUIPMENT'];
+export const RESTAURANT_EXPENSE_TYPES = EXPENSE_TYPES.filter(
+  (ty) => !HIDDEN_EXPENSE_TYPES.includes(ty.key)
+);
+
+// خريطة عرض الأنواع القديمة (الخاصة بالبناء) إلى أنواع مطعمية للعرض فقط.
+const LEGACY_TYPE_DISPLAY_FALLBACK = { PROJECT: 'COMPANY', EQUIPMENT: 'ADMIN' };
+
+export function getRestaurantExpenseType(key) {
+  return getExpenseType(LEGACY_TYPE_DISPLAY_FALLBACK[key] || key);
+}
+
 export default function ExpenseDialog({
   open, onOpenChange, lang, editing, form, setForm, saving, onSave,
-  projects, equipment, employees, subcontractors,
+  employees,
   expenseAccounts = [], cashAccounts = [],
 }) {
   const [step, setStep] = React.useState(editing ? 2 : 1);
@@ -26,14 +45,17 @@ export default function ExpenseDialog({
     if (open) setStep(editing ? 2 : 1);
   }, [open, editing]);
 
-  const typeDef = getExpenseType(form.expenseType);
+  // للعرض فقط: نُسقط الأنواع القديمة (PROJECT/EQUIPMENT) إلى أنواع مطعمية.
+  const typeDef = getRestaurantExpenseType(form.expenseType);
+  // التعريف الأصلي للنوع (لإظهار الفئات والحقول المتاحة) — يُحترم للسجلات القديمة.
+  const originalTypeDef = getExpenseType(form.expenseType);
   const isRTL = lang === 'ar';
 
   const amt = parseFloat(form.amount) || 0;
   const { vat: vatAmt, total: totalAmt } = form._vatEnabled ? calcVAT(amt) : { vat: 0, total: amt };
 
-  // الفئات المتاحة لهذا النوع
-  const cats = EXPENSE_CATEGORIES.filter(c => typeDef.categories.includes(c.key));
+  // الفئات المتاحة لهذا النوع (نأخذها من تعريف النوع الأصلي لتفادي فقد فئة سجل قديم)
+  const cats = EXPENSE_CATEGORIES.filter(c => originalTypeDef.categories.includes(c.key));
 
   const pickType = (key) => {
     const def = getExpenseType(key);
@@ -75,7 +97,7 @@ export default function ExpenseDialog({
 
         {step === 1 ? (
           <div className="py-2">
-            <ExpenseTypePicker lang={lang} value={form.expenseType} onSelect={pickType} />
+            <ExpenseTypePicker lang={lang} value={form.expenseType} onSelect={pickType} types={RESTAURANT_EXPENSE_TYPES} />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 py-2">
@@ -103,38 +125,21 @@ export default function ExpenseDialog({
 
             <div className="col-span-2 space-y-1.5"><Label>{t('الوصف', 'Description', lang)} *</Label><Input value={form.description} onChange={e => set('description', e.target.value)} /></div>
 
-            {/* حقول ديناميكية حسب النوع */}
-            {typeDef.fields.includes('project') && (
-              <div className="col-span-2 space-y-1.5">
-                <Label>{t('المشروع', 'Project', lang)}</Label>
-                <Select value={form.projectId} onValueChange={v => set('projectId', v)}>
-                  <SelectTrigger><SelectValue placeholder={t('اختر المشروع', 'Select project', lang)} /></SelectTrigger>
-                  <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            )}
-            {typeDef.fields.includes('equipment') && (
-              <div className="col-span-2 space-y-1.5">
-                <Label>{t('المعدة', 'Equipment', lang)}</Label>
-                <Select value={form.equipmentId} onValueChange={v => set('equipmentId', v)}>
-                  <SelectTrigger><SelectValue placeholder={t('اختر المعدة', 'Select equipment', lang)} /></SelectTrigger>
-                  <SelectContent>{equipment.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            )}
-            {typeDef.fields.includes('employee') && (
+            {/* حقول ديناميكية حسب النوع — مطعمية فقط (موظف/جهة حكومية)؛
+                حقول البناء (مشروع/معدات/عقد/موقع/BOQ) محذوفة من الواجهة. */}
+            {originalTypeDef.fields.includes('employee') && (
               <div className="col-span-2 space-y-1.5">
                 <Label>{t('الموظف', 'Employee', lang)}</Label>
                 <Select value={form.employeeId} onValueChange={v => set('employeeId', v)}>
                   <SelectTrigger><SelectValue placeholder={t('اختر الموظف', 'Select employee', lang)} /></SelectTrigger>
-                  <SelectContent>{employees.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{(employees || []).map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             )}
-            {typeDef.fields.includes('govEntity') && (
+            {originalTypeDef.fields.includes('govEntity') && (
               <div className="col-span-2 space-y-1.5">
                 <Label>{t('الجهة الحكومية', 'Government Entity', lang)}</Label>
-                <Input value={form.govEntity} onChange={e => set('govEntity', e.target.value)} placeholder={t('مثل: البلدية، الجوازات...', 'e.g. Municipality...', lang)} />
+                <Input value={form.govEntity} onChange={e => set('govEntity', e.target.value)} placeholder={t('مثل: الزكاة والضريبة، البلدية، الغذاء والدواء...', 'e.g. Zakat & Tax, Municipality, SFDA...', lang)} />
               </div>
             )}
 

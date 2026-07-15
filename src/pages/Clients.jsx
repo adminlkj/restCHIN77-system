@@ -71,13 +71,13 @@ export default function Clients() {
 
   const remove = async () => {
     try {
+      // الكيانات البنائية (Contract, RentalContract) محذوفة — لا فحص لها هنا.
       const checks = await Promise.all([
         base44.entities.SalesInvoice.filter({ clientId: deleteId }),
         base44.entities.ClientPayment.filter({ clientId: deleteId }),
-        base44.entities.Contract.filter({ clientId: deleteId }),
       ]);
       if (checks.some(list => list.length > 0)) {
-        toast.error(t('لا يمكن حذف عميل له فواتير أو تحصيلات أو عقود', 'Cannot delete a client with invoices, payments or contracts', lang));
+        toast.error(t('لا يمكن حذف عميل له فواتير أو تحصيلات', 'Cannot delete a client with invoices or payments', lang));
         return;
       }
       await base44.entities.Client.delete(deleteId); toast.success(t('تم الحذف', 'Deleted', lang)); load();

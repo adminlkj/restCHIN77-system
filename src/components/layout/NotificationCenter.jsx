@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, FileWarning, HandCoins, FileClock, Wrench, RefreshCw, CheckCircle2, Truck, Clock, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, FileWarning, HandCoins, FileClock, Wrench, RefreshCw, CheckCircle2, CheckCheck, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate } from '@/lib/utils-binaa';
@@ -28,19 +28,14 @@ export default function NotificationCenter() {
     setLoading(true);
     const now = Date.now();
     try {
-      const [invoices, rentalInvoices, rentalContracts, advances, docs, maintenance, supplierInvoices, payrollRuns, billings, purchaseOrders, changeOrders, contracts] = await Promise.all([
+      const [invoices, advances, docs, maintenance, supplierInvoices, payrollRuns, purchaseOrders] = await Promise.all([
         base44.entities.SalesInvoice.list('-date', 300).catch(() => []),
-        base44.entities.RentalInvoice.list('-date', 300).catch(() => []),
-        base44.entities.RentalContract.list('-endDate', 300).catch(() => []),
         base44.entities.EmployeeAdvance.list('-date', 300).catch(() => []),
         base44.entities.EmployeeDocument.list('-created_date', 300).catch(() => []),
         base44.entities.MaintenanceRecord.list('-date', 300).catch(() => []),
         base44.entities.SupplierInvoice.list('-date', 300).catch(() => []),
         base44.entities.PayrollRun.list('-created_date', 300).catch(() => []),
-        base44.entities.ProgressBilling.list('-date', 300).catch(() => []),
         base44.entities.PurchaseOrder.list('-created_date', 300).catch(() => []),
-        base44.entities.ChangeOrder.list('-date', 300).catch(() => []),
-        base44.entities.Contract.list('-endDate', 300).catch(() => []),
       ]);
       const items = [];
 
@@ -59,22 +54,7 @@ export default function NotificationCenter() {
         }
       });
 
-      // 2. فواتير تأجير متأخرة
-      rentalInvoices.forEach(inv => {
-        const unpaid = (inv.totalAmount || 0) - (inv.paidAmount || 0);
-        const overdue = inv.dueDate && new Date(inv.dueDate).getTime() < now;
-        if (unpaid > 0.5 && (overdue || inv.status === 'OVERDUE')) {
-          items.push({
-            id: `rinv-${inv.id}`, Icon: Truck, tone: 'rose',
-            titleAr: `فاتورة تأجير متأخرة: ${inv.invoiceNo}`, titleEn: `Overdue rental invoice: ${inv.invoiceNo}`,
-            metaAr: `${inv.clientName || ''} · متبقٍ ${formatCurrency(unpaid, lang)}`,
-            metaEn: `${inv.clientName || ''} · ${formatCurrency(unpaid, lang)} due`,
-            go: () => { store.setEquipmentContext(inv.equipmentId, inv.equipmentName || ''); store.setActiveItem('equipment-workspace'); },
-          });
-        }
-      });
-
-      // 3. فواتير موردين مستحقة السداد
+      // 2. فواتير موردين مستحقة السداد
       supplierInvoices.forEach(inv => {
         const unpaid = (inv.totalAmount || 0) - (inv.paidAmount || 0);
         const dueSoon = inv.dueDate && new Date(inv.dueDate).getTime() < now + 7 * DAY;
@@ -89,18 +69,7 @@ export default function NotificationCenter() {
         }
       });
 
-      // 4. عقود تأجير منتهية
-      rentalContracts.filter(r => r.status === 'ACTIVE' && r.endDate && new Date(r.endDate).getTime() < now).forEach(r => {
-        items.push({
-          id: `rent-${r.id}`, Icon: Clock, tone: 'amber',
-          titleAr: `عقد تأجير منتهي: ${r.contractNo}`, titleEn: `Expired rental contract: ${r.contractNo}`,
-          metaAr: `${r.equipmentName || ''} · ${formatDate(r.endDate, lang)}`,
-          metaEn: `${r.equipmentName || ''} · ${formatDate(r.endDate, lang)}`,
-          go: () => store.setActiveItem('rental-contracts'),
-        });
-      });
-
-      // 5. سلف موظفين مفتوحة
+      // 3. سلف موظفين مفتوحة
       advances.filter(a => a.status !== 'SETTLED').forEach(a => {
         const rem = (a.amount || 0) - (a.deductedAmount || 0);
         if (rem > 0.5) items.push({
@@ -111,7 +80,7 @@ export default function NotificationCenter() {
         });
       });
 
-      // 6. وثائق تنتهي خلال 30 يوم
+      // 4. وثائق تنتهي خلال 30 يوم
       docs.filter(d => d.expiryDate && new Date(d.expiryDate).getTime() < now + 30 * DAY).forEach(d => {
         items.push({
           id: `doc-${d.id}`, Icon: FileClock, tone: 'orange',
@@ -121,17 +90,17 @@ export default function NotificationCenter() {
         });
       });
 
-      // 7. صيانة قيد التنفيذ
+      // 5. صيانة معدات قيد التنفيذ
       maintenance.filter(m => m.status === 'OPEN' || m.status === 'IN_PROGRESS').forEach(m => {
         items.push({
           id: `mnt-${m.id}`, Icon: Wrench, tone: 'cyan',
-          titleAr: 'صيانة قيد التنفيذ', titleEn: 'Maintenance in progress',
+          titleAr: 'صيانة معدة قيد التنفيذ', titleEn: 'Equipment maintenance in progress',
           metaAr: m.description || '', metaEn: m.description || '',
-          go: () => { store.setEquipmentContext(m.equipmentId, ''); store.setActiveItem('equipment-workspace'); },
+          go: () => store.setActiveItem('equipment-maintenance'),
         });
       });
 
-      // 8. مسيرات رواتب معلقة
+      // 6. مسيرات رواتب معلقة
       payrollRuns.filter(p => p.status === 'DRAFT').forEach(p => {
         items.push({
           id: `pay-${p.id}`, Icon: FileClock, tone: 'cyan',
@@ -141,18 +110,7 @@ export default function NotificationCenter() {
         });
       });
 
-      // 9. مستخلصات معلقة (SUBMITTED)
-      billings.filter(b => b.status === 'SUBMITTED').forEach(b => {
-        items.push({
-          id: `pb-${b.id}`, Icon: FileClock, tone: 'amber',
-          titleAr: `مستخلص بانتظار الاعتماد: ${b.certificateNo}`, titleEn: `Pending billing: ${b.certificateNo}`,
-          metaAr: `${b.projectName || ''} · ${formatCurrency(b.grossAmount || 0, lang)}`,
-          metaEn: `${b.projectName || ''} · ${formatCurrency(b.grossAmount || 0, lang)}`,
-          go: () => { if (b.projectId) { store.setProjectContext(b.projectId, b.projectName || ''); store.setActiveItem('project-workspace'); } },
-        });
-      });
-
-      // 10. أوامر شراء معلقة (DRAFT/APPROVED بدون استلام)
+      // 7. أوامر شراء معلقة (DRAFT/APPROVED بدون استلام)
       purchaseOrders.filter(po => ['DRAFT', 'APPROVED'].includes(po.status)).forEach(po => {
         items.push({
           id: `po-${po.id}`, Icon: FileClock, tone: 'amber',
@@ -160,28 +118,6 @@ export default function NotificationCenter() {
           metaAr: `${po.supplierName || ''} · ${formatCurrency((po.totalAmount || 0) + (po.vatAmount || 0), lang)}`,
           metaEn: `${po.supplierName || ''} · ${formatCurrency((po.totalAmount || 0) + (po.vatAmount || 0), lang)}`,
           go: () => store.setActiveItem('purchase-orders'),
-        });
-      });
-
-      // 11. أوامر تغيير معلقة (DRAFT)
-      changeOrders.filter(co => co.status === 'DRAFT').forEach(co => {
-        items.push({
-          id: `co-${co.id}`, Icon: FileWarning, tone: 'amber',
-          titleAr: `أمر تغيير بانتظار الاعتماد: ${co.orderNo}`, titleEn: `Pending change order: ${co.orderNo}`,
-          metaAr: `${co.description || ''} · ${formatCurrency(co.amount || 0, lang)}`,
-          metaEn: `${co.description || ''} · ${formatCurrency(co.amount || 0, lang)}`,
-          go: () => { if (co.projectId) { store.setProjectContext(co.projectId, ''); store.setActiveItem('project-workspace'); } },
-        });
-      });
-
-      // 12. عقود مشاريع منتهية
-      contracts.filter(c => c.status === 'ACTIVE' && c.endDate && new Date(c.endDate).getTime() < now).forEach(c => {
-        items.push({
-          id: `con-${c.id}`, Icon: Clock, tone: 'amber',
-          titleAr: `عقد مشروع منتهي: ${c.contractNo}`, titleEn: `Expired contract: ${c.contractNo}`,
-          metaAr: `${c.projectName || ''} · ${formatDate(c.endDate, lang)}`,
-          metaEn: `${c.projectName || ''} · ${formatDate(c.endDate, lang)}`,
-          go: () => store.setActiveItem('contracts'),
         });
       });
 

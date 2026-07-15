@@ -7,22 +7,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { t, formatCurrency, formatDate, EXPENSE_CATEGORIES, EXPENSE_TYPES, getExpenseType } from '@/lib/utils-binaa';
+import { t, formatCurrency, formatDate, EXPENSE_CATEGORIES } from '@/lib/utils-binaa';
 import { OperationEngine } from '@/lib/businessEngine';
 import { selectExpenseAccounts, selectCashAccounts } from '@/lib/postingEngine';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
-import ExpenseDialog from '@/components/expenses/ExpenseDialog';
+import ExpenseDialog, { RESTAURANT_EXPENSE_TYPES, getRestaurantExpenseType } from '@/components/expenses/ExpenseDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
 import { toast } from 'sonner';
 import { requiredFields, missingFieldsMessage } from '@/lib/formValidation';
 
+// نموذج المصروف الافتراضي — مطعمي بالكامل. لا اختيار مشروع/معدات/عقد/موقع/BOQ.
 const empty = {
   expenseType: 'COMPANY',
   category: 'OTHER', description: '', amount: '',
-  date: '', projectId: '', projectName: '',
-  equipmentId: '', equipmentName: '', employeeId: '', employeeName: '',
-  subcontractorId: '', subcontractorName: '', govEntity: '',
+  date: '',
+  employeeId: '', employeeName: '',
+  govEntity: '',
   expenseAccountCode: '', expenseAccountName: '',
   paymentAccountCode: '', paymentAccountName: '',
   reference: '', notes: '',
@@ -30,12 +31,9 @@ const empty = {
 };
 
 export default function Expenses() {
-  const { lang, activeProjectId, activeProjectName } = useStore();
+  const { lang } = useStore();
   const [items, setItems]       = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [equipment, setEquipment] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [subcontractors, setSubcontractors] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -51,28 +49,23 @@ export default function Expenses() {
   const load = async () => {
     setLoading(true);
     try {
-      const [e, p, eq, em, sc, ac] = await Promise.all([
+      const [e, em, ac] = await Promise.all([
         base44.entities.Expense.list('-created_date', 200),
-        base44.entities.Project.list(),
-        base44.entities.Equipment.list(),
         base44.entities.Employee.list(),
-        base44.entities.Subcontractor.list(),
         base44.entities.ChartAccount.list('code', 1000),
       ]);
-      setItems(e); setProjects(p); setEquipment(eq); setEmployees(em); setSubcontractors(sc); setAccounts(ac);
+      setItems(e); setEmployees(em); setAccounts(ac);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
-  const buildDefaultForm = () => ({
-    ...empty,
-    expenseType: activeProjectId ? 'PROJECT' : 'COMPANY',
-    projectId:   activeProjectId   || '',
-    projectName: activeProjectName || '',
-  });
+  const buildDefaultForm = () => ({ ...empty });
 
-  const refs = { projects, equipment, employees, subcontractors };
+  // refs تُمرَّر إلى OperationEngine فقط بالكيانات المطعمية المستخدمة في الحقول.
+  // businessEngine._buildExpensePayload يتحمّل غياب projects/equipment/subcontractors
+  // برجوعه إلى القيمة المخزّنة في data (فارغة هنا) دون أخطاء.
+  const refs = { employees };
   const expenseAccounts = selectExpenseAccounts(accounts);
   const cashAccounts = selectCashAccounts(accounts);
 
@@ -157,10 +150,10 @@ export default function Expenses() {
 
   const exportColumns = [
     { header: { ar: 'التاريخ', en: 'Date' }, value: (r) => r.date },
-    { header: { ar: 'النوع', en: 'Type' }, value: (r) => { const ty = getExpenseType(r.expenseType || 'COMPANY'); return lang === 'ar' ? ty.ar : ty.en; } },
+    { header: { ar: 'النوع', en: 'Type' }, value: (r) => { const ty = getRestaurantExpenseType(r.expenseType || 'COMPANY'); return lang === 'ar' ? ty.ar : ty.en; } },
     { header: { ar: 'الفئة', en: 'Category' }, value: (r) => { const c = EXPENSE_CATEGORIES.find(x => x.key === r.category); return c ? (lang === 'ar' ? c.ar : c.en) : r.category; } },
     { header: { ar: 'الوصف', en: 'Description' }, value: (r) => r.description },
-    { header: { ar: 'مرتبط بـ', en: 'Linked to' }, value: (r) => r.projectName || r.equipmentName || r.employeeName || r.subcontractorName || r.govEntity || '' },
+    { header: { ar: 'مرتبط بـ', en: 'Linked to' }, value: (r) => r.employeeName || r.govEntity || '' },
     { header: { ar: 'المبلغ', en: 'Amount' }, value: (r) => r.amount || 0 },
     { header: { ar: 'الضريبة', en: 'VAT' }, value: (r) => r.vatAmount || 0 },
     { header: { ar: 'الإجمالي', en: 'Total' }, value: (r) => r.totalAmount || 0 },
@@ -168,11 +161,11 @@ export default function Expenses() {
 
   return (
     <ModuleLayout
-      title={t('المصروفات العامة', 'General Expenses', lang)}
-      subtitle={t('تسجيل ومتابعة المصروفات التشغيلية', 'Track operational expenses', lang)}
+      title={t('المصروفات', 'Expenses', lang)}
+      subtitle={t('تسجيل ومتابعة مصروفات المطعم', 'Track restaurant expenses', lang)}
       actions={
         <div className="flex items-center gap-2">
-          <TableToolbar columns={exportColumns} rows={filtered} title={{ ar: 'المصروفات العامة', en: 'General Expenses' }} />
+          <TableToolbar columns={exportColumns} rows={filtered} title={{ ar: 'المصروفات', en: 'Expenses' }} />
           <Button onClick={openNew} className="gap-2 bg-rose-600 hover:bg-rose-700"><Plus className="size-4" />{t('مصروف جديد', 'New Expense', lang)}</Button>
         </div>
       }
@@ -186,7 +179,7 @@ export default function Expenses() {
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">{t('كل الأنواع', 'All Types', lang)}</SelectItem>
-            {EXPENSE_TYPES.map(ty => <SelectItem key={ty.key} value={ty.key}>{lang === 'ar' ? ty.ar : ty.en}</SelectItem>)}
+            {RESTAURANT_EXPENSE_TYPES.map(ty => <SelectItem key={ty.key} value={ty.key}>{lang === 'ar' ? ty.ar : ty.en}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterCat} onValueChange={setFilterCat}>
@@ -222,8 +215,8 @@ export default function Expenses() {
                   ? <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">{t('لا توجد مصروفات', 'No expenses', lang)}</TableCell></TableRow>
                   : filtered.map(item => {
                     const cat = EXPENSE_CATEGORIES.find(c => c.key === item.category);
-                    const ty = getExpenseType(item.expenseType || 'COMPANY');
-                    const linked = item.projectName || item.equipmentName || item.employeeName || item.subcontractorName || item.govEntity || '—';
+                    const ty = getRestaurantExpenseType(item.expenseType || 'COMPANY');
+                    const linked = item.employeeName || item.govEntity || '—';
                     return (
                       <TableRow key={item.id} className="hover:bg-muted/30">
                         <TableCell className="text-xs">{formatDate(item.date, lang)}</TableCell>
@@ -262,10 +255,7 @@ export default function Expenses() {
         setForm={setForm}
         saving={saving}
         onSave={save}
-        projects={projects}
-        equipment={equipment}
         employees={employees}
-        subcontractors={subcontractors}
         expenseAccounts={expenseAccounts}
         cashAccounts={cashAccounts}
       />

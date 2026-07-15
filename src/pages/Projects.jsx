@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { t, formatCurrency, formatDate, PROJECT_STATUS, nextCodeFromList } from '@/lib/utils-binaa';
+import { t, formatDate, PROJECT_STATUS, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -19,8 +19,9 @@ import { canTransition } from '@/lib/workflowEngine';
 import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
 
-const emptyForm = { code: '', name: '', nameAr: '', clientId: '', clientName: '', location: '', startDate: '', endDate: '', status: 'PLANNING', projectType: 'CONSTRUCTION', contractValue: '', description: '' };
-const PROJECT_TYPES = { CONSTRUCTION: { ar: 'تنفيذي', en: 'Restaurant' }, RENTAL: { ar: 'تأجير', en: 'Rental' }, BOTH: { ar: 'الاثنان', en: 'Both' } };
+// الكيان Project يُستخدم كـ "طلب/فرع" في سياق المطعم. الحقول محصورة على: كود، اسم، زبون، تواريخ، حالة، وصف.
+// أُزيلت حقول البناء: location (موقع الإنشاء)، contractValue (قيمة العقد)، projectType (نوع مشروع البناء).
+const emptyForm = { code: '', name: '', nameAr: '', clientId: '', clientName: '', startDate: '', endDate: '', status: 'PLANNING', description: '' };
 
 export default function Projects() {
   const { lang, setProjectContext, setClientContext, activeProjectId, setActiveItem } = useStore();
@@ -59,7 +60,7 @@ export default function Projects() {
   });
 
   const openNew = () => { setEditing(null); setForm({ ...emptyForm, code: nextCodeFromList(items, 'PRJ') }); setDialogOpen(true); };
-  const openEdit = (item) => { setEditing(item); setForm({ ...emptyForm, ...item, contractValue: item.contractValue || '' }); setDialogOpen(true); };
+  const openEdit = (item) => { setEditing(item); setForm({ ...emptyForm, ...item }); setDialogOpen(true); };
   const askDelete = (id) => { setDeleteId(id); setConfirmOpen(true); };
 
   const save = async () => {
@@ -70,7 +71,7 @@ export default function Projects() {
     setSaving(true);
     try {
       const cl = clients.find(c => c.id === form.clientId);
-      const data = { ...form, code: form.code || nextCodeFromList(items, 'PRJ'), contractValue: parseFloat(form.contractValue) || 0, clientName: cl?.name || form.clientName };
+      const data = { ...form, code: form.code || nextCodeFromList(items, 'PRJ'), clientName: cl?.name || form.clientName };
       if (editing) { await base44.entities.Project.update(editing.id, data); toast.success(t('تم التحديث', 'Updated', lang)); }
       else { await base44.entities.Project.create(data); toast.success(t('تم إنشاء الطلب', 'Order created', lang)); }
       setDialogOpen(false); load();
@@ -80,18 +81,14 @@ export default function Projects() {
 
   const remove = async () => {
     try {
+      // فحوصات الكيانات المرتبطة بالطلب (مطعمية فقط) — أُزيلت فحوصات البناء:
+      // Contract, BOQItem, ProgressBilling, ChangeOrder, ProjectDocument, ContractItem.
       const checks = await Promise.all([
-        base44.entities.Contract.filter({ projectId: deleteId }),
-        base44.entities.BOQItem.filter({ projectId: deleteId }),
-        base44.entities.ProgressBilling.filter({ projectId: deleteId }),
-        base44.entities.ChangeOrder.filter({ projectId: deleteId }),
-        base44.entities.ProjectDocument.filter({ projectId: deleteId }),
         base44.entities.SalesInvoice.filter({ projectId: deleteId }),
         base44.entities.PurchaseOrder.filter({ projectId: deleteId }),
         base44.entities.Expense.filter({ projectId: deleteId }),
         base44.entities.WorkOrder.filter({ projectId: deleteId }),
         base44.entities.DailyReport.filter({ projectId: deleteId }),
-        base44.entities.ContractItem.filter({ projectId: deleteId }),
       ]);
       if (checks.some(list => list.length > 0)) {
         toast.error(t('لا يمكن حذف طلب عليه مستندات أو حركات مرتبطة', 'Cannot delete an order with linked documents or transactions', lang));
@@ -106,8 +103,6 @@ export default function Projects() {
     { header: { ar: 'الكود', en: 'Code' }, value: (r) => r.code },
     { header: { ar: 'اسم الطلب', en: 'Order Name' }, value: (r) => r.name },
     { header: { ar: 'الزبون', en: 'Customer' }, value: (r) => r.clientName },
-    { header: { ar: 'النوع', en: 'Type' }, value: (r) => (PROJECT_TYPES[r.projectType] ? (lang === 'ar' ? PROJECT_TYPES[r.projectType].ar : PROJECT_TYPES[r.projectType].en) : r.projectType) },
-    { header: { ar: 'قيمة العقد', en: 'Contract Value' }, value: (r) => r.contractValue || 0 },
     { header: { ar: 'الحالة', en: 'Status' }, value: (r) => (PROJECT_STATUS[r.status] ? (lang === 'ar' ? PROJECT_STATUS[r.status].ar : PROJECT_STATUS[r.status].en) : r.status) },
     { header: { ar: 'تاريخ البدء', en: 'Start Date' }, value: (r) => r.startDate },
   ];
@@ -115,7 +110,7 @@ export default function Projects() {
   return (
     <ModuleLayout
       title={t('الطلبات', 'Orders', lang)}
-      subtitle={t('إدارة طلبات المطاعم والتنفيذ', 'Manage restaurant and execution orders', lang)}
+      subtitle={t('إدارة طلبات المطعم والفروع', 'Manage restaurant orders and branches', lang)}
       actions={
         <div className="flex items-center gap-2">
           <TableToolbar columns={exportColumns} rows={filtered} title={{ ar: 'الطلبات', en: 'Orders' }} />
@@ -144,7 +139,7 @@ export default function Projects() {
 
       <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
         <FolderOpen className="size-4 shrink-0" />
-        <span>{t('كل طلب هو مركز عمل متكامل — اضغط "فتح" لعرض العقود والإيصالات والمصروفات والمستندات الخاصة به.', 'Each order is a full workspace — click "Open" to view its contracts, receipts, expenses and documents.', lang)}</span>
+        <span>{t('كل طلب هو مركز عمل متكامل — اضغط "فتح" لعرض الإيصالات والمصروفات والمستندات الخاصة به.', 'Each order is a full workspace — click "Open" to view its receipts, expenses and documents.', lang)}</span>
       </div>
 
       <Card>
@@ -155,19 +150,16 @@ export default function Projects() {
                 <TableHead>{t('الكود', 'Code', lang)}</TableHead>
                 <TableHead>{t('اسم الطلب', 'Order Name', lang)}</TableHead>
                 <TableHead>{t('الزبون', 'Customer', lang)}</TableHead>
-                <TableHead>{t('النوع', 'Type', lang)}</TableHead>
-                <TableHead>{t('قيمة العقد', 'Contract Value', lang)}</TableHead>
                 <TableHead>{t('الحالة', 'Status', lang)}</TableHead>
                 <TableHead>{t('تاريخ البدء', 'Start Date', lang)}</TableHead>
                 <TableHead>{t('الإجراءات', 'Actions', lang)}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>)}</TableRow>)
-                : filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('لا توجد طلبات', 'No orders found', lang)}</TableCell></TableRow>
+              {loading ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 6 }).map((_, j) => <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>)}</TableRow>)
+                : filtered.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">{t('لا توجد طلبات', 'No orders found', lang)}</TableCell></TableRow>
                 : filtered.map(item => {
                   const st = PROJECT_STATUS[item.status] || PROJECT_STATUS.PLANNING;
-                  const pt = PROJECT_TYPES[item.projectType] || { ar: item.projectType, en: item.projectType };
                   return (
                     <TableRow key={item.id} className="hover:bg-muted/30">
                       <TableCell className="font-mono text-xs font-medium">{item.code}</TableCell>
@@ -182,8 +174,6 @@ export default function Projects() {
                         </button>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.clientName || '—'}</TableCell>
-                      <TableCell><span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">{lang === 'ar' ? pt.ar : pt.en}</span></TableCell>
-                      <TableCell className="font-medium">{formatCurrency(item.contractValue, lang)}</TableCell>
                       <TableCell><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.color}`}>{lang === 'ar' ? st.ar : st.en}</span></TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(item.startDate, lang)}</TableCell>
                       <TableCell>
@@ -212,8 +202,6 @@ export default function Projects() {
 
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <span>{filtered.length} {t('طلب', 'orders', lang)}</span>
-        <span>|</span>
-        <span>{t('إجمالي قيمة العقود', 'Total contract value', lang)}: {formatCurrency(filtered.reduce((s, i) => s + (i.contractValue || 0), 0), lang)}</span>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -232,19 +220,8 @@ export default function Projects() {
                 <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>{t('الموقع', 'Location', lang)}</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>{t('قيمة العقد', 'Contract Value', lang)}</Label><Input type="number" value={form.contractValue} onChange={e => setForm(f => ({ ...f, contractValue: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>{t('تاريخ البدء', 'Start Date', lang)}</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>{t('تاريخ الانتهاء', 'End Date', lang)}</Label><Input type="date" value={form.endDate} min={form.startDate || undefined} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>{t('نوع الطلب', 'Order Type', lang)}</Label>
-              <Select value={form.projectType} onValueChange={v => setForm(f => ({ ...f, projectType: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(PROJECT_TYPES).map(([k, v]) => <SelectItem key={k} value={k}>{lang === 'ar' ? v.ar : v.en}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5">
               <Label>{t('الحالة', 'Status', lang)}</Label>
               <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>

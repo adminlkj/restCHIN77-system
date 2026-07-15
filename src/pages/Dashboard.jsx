@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/AuthContext';
 import { t, formatCurrency } from '@/lib/utils-binaa';
 import { getBranchTableStats } from '@/lib/tables';
 
@@ -38,8 +37,7 @@ function KPICard({ title, value, subtitle, icon: Icon, tint, onClick }) {
 
 // ─── Restaurant Dashboard ───────────────────────────────────────────────────
 export default function Dashboard() {
-  const { lang, setActiveItem, activeProjectId, activeProjectName } = useStore();
-  const { user } = useAuth();
+  const { lang, setActiveItem, activeProjectId } = useStore();
   const [data, setData] = useState({ invoices: [], menuItems: [], branches: [] });
   const [loading, setLoading] = useState(true);
   const [tableStats, setTableStats] = useState({ total: 0, available: 0, occupied: 0, reserved: 0, cleaning: 0 });

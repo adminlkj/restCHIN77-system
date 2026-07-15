@@ -5,39 +5,23 @@
 
 // All addressable modules in the system (must match Sidebar item keys)
 export const MODULES = [
-  // Projects
+  // POS & Sales
   { key: 'pos', ar: 'نقطة البيع', en: 'POS', group: 'projects' },
   { key: 'tables', ar: 'الطاولات', en: 'Tables', group: 'projects' },
-  { key: 'projects', ar: 'الفروع', en: 'Branches', group: 'projects' },
-  { key: 'project-workspace', ar: 'مركز عمل الفرع', en: 'Branch Workspace', group: 'projects' },
-  { key: 'contracts', ar: 'عقود الفروع', en: 'Branch Contracts', group: 'projects' },
+  { key: 'projects', ar: 'الطلبات', en: 'Orders', group: 'projects' },
   { key: 'sales', ar: 'الإيصالات', en: 'Receipts', group: 'projects' },
   { key: 'client-payments', ar: 'التحصيلات', en: 'Collections', group: 'projects' },
-  { key: 'boq', ar: 'قائمة المكوّنات', en: 'Ingredients List', group: 'projects' },
-  // Equipment
+  // Restaurant Equipment
   { key: 'equipment', ar: 'سجل المعدات', en: 'Equipment', group: 'rental' },
-  { key: 'equipment-workspace', ar: 'مركز عمل المعدة', en: 'Equipment Workspace', group: 'rental' },
-  { key: 'rental-contracts', ar: 'اتفاقيات التجهيزات', en: 'Equipment Agreements', group: 'rental' },
-  { key: 'timesheets', ar: 'ساعات التشغيل', en: 'Operating Hours', group: 'rental' },
-  { key: 'delivery-orders', ar: 'أوامر التوصيل', en: 'Delivery Orders', group: 'rental' },
-  { key: 'rental-invoices', ar: 'إيصالات التجهيزات', en: 'Equipment Receipts', group: 'rental' },
   { key: 'equipment-maintenance', ar: 'الصيانة', en: 'Maintenance', group: 'rental' },
-  { key: 'fuel', ar: 'استهلاك الوقود', en: 'Fuel', group: 'rental' },
   // Procurement & Costs
   { key: 'purchase-requests', ar: 'طلبات الشراء', en: 'Purchase Requests', group: 'costs' },
   { key: 'purchase-orders', ar: 'أوامر الشراء', en: 'Purchase Orders', group: 'costs' },
   { key: 'goods-receipts', ar: 'سندات الاستلام', en: 'Goods Receipts', group: 'costs' },
   { key: 'expenses', ar: 'المصروفات', en: 'Expenses', group: 'costs' },
-  { key: 'subcontractors', ar: 'مورّدو الخدمات', en: 'Service Providers', group: 'costs' },
   { key: 'supplier-invoices', ar: 'فواتير الموردين', en: 'Supplier Invoices', group: 'costs' },
   { key: 'supplier-payments', ar: 'سداد الموردين', en: 'Supplier Payments', group: 'costs' },
   { key: 'inventory', ar: 'المخزون والمواد', en: 'Inventory', group: 'costs' },
-  // Subcontractors cycle
-  { key: 'sub-registry', ar: 'سجل مورّدي الخدمات', en: 'Service Providers Registry', group: 'subcontractors' },
-  { key: 'sub-contracts', ar: 'اتفاقيات الخدمات', en: 'Service Agreements', group: 'subcontractors' },
-  { key: 'sub-invoices', ar: 'كشوفات حساب مورّدي الخدمات', en: 'Service Provider Statements', group: 'subcontractors' },
-  { key: 'sub-payments', ar: 'سداد مورّدي الخدمات', en: 'Service Provider Payments', group: 'subcontractors' },
-  { key: 'sub-penalties', ar: 'غرامات مورّدي الخدمات', en: 'Service Provider Penalties', group: 'subcontractors' },
   // HR
   { key: 'employees', ar: 'الموظفون', en: 'Employees', group: 'hr' },
   { key: 'employee-workspace', ar: 'مركز عمل الموظف', en: 'Employee Workspace', group: 'hr' },
@@ -82,7 +66,7 @@ export const ACTIONS = [
 export const ACTION_KEYS = ACTIONS.map(a => a.key);
 // Read-only screens where create/edit/delete don't apply — only "view".
 export const VIEW_ONLY_MODULES = new Set([
-  'general-ledger', 'trial-balance', 'vat', 'reports', 'project-workspace', 'equipment-workspace',
+  'general-ledger', 'trial-balance', 'vat', 'reports',
 ]);
 
 // البريد الإلكتروني لمالك النظام — له صلاحية مطلقة بصرف النظر عن الدور.
@@ -98,10 +82,10 @@ export const APP_ROLES = {
   RESTAURANT_MANAGER: {
     ar: 'مدير المطعم', en: 'Restaurant Manager',
     color: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-    modules: ['pos', 'tables', 'projects', 'project-workspace', 'sales', 'client-payments', 'boq',
+    modules: ['pos', 'tables', 'projects', 'sales', 'client-payments',
       'purchase-orders', 'purchase-requests', 'goods-receipts', 'expenses',
       'reports', 'clients', 'suppliers', 'platforms', 'menu', 'inventory', 'warehouses', 'stock-movements',
-      'employees', 'attendance', 'rental-contracts', 'equipment'],
+      'employees', 'attendance', 'equipment', 'equipment-maintenance'],
   },
   CASHIER: {
     ar: 'كاشير', en: 'Cashier',
@@ -114,12 +98,12 @@ export const APP_ROLES = {
     modules: ['sales', 'client-payments', 'purchase-orders', 'purchase-requests', 'goods-receipts', 'expenses', 'supplier-invoices',
       'supplier-payments', 'chart-accounts', 'accounting', 'general-ledger', 'trial-balance', 'cost-centers',
       'vat', 'reports', 'fiscal-years', 'fixed-assets', 'audit', 'payroll-runs', 'payroll-sheets', 'clients', 'suppliers', 'platforms',
-      'sub-registry', 'sub-contracts', 'sub-invoices', 'sub-payments', 'sub-penalties', 'projects'],
+      'projects'],
   },
-  PROJECT_MANAGER: {
+  BRANCH_MANAGER: {
     ar: 'مدير فرع', en: 'Branch Manager',
     color: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-    modules: ['pos', 'tables', 'projects', 'project-workspace', 'contracts', 'sales', 'client-payments', 'boq', 'purchase-orders',
+    modules: ['pos', 'tables', 'projects', 'sales', 'client-payments', 'purchase-orders',
       'purchase-requests', 'goods-receipts', 'expenses',
       'reports', 'clients', 'menu'],
   },
@@ -127,20 +111,17 @@ export const APP_ROLES = {
     ar: 'مسؤول مشتريات', en: 'Procurement',
     color: 'bg-amber-100 text-amber-700 border border-amber-200',
     modules: ['purchase-orders', 'purchase-requests', 'goods-receipts', 'supplier-invoices', 'supplier-payments', 'inventory',
-      'warehouses', 'stock-movements', 'subcontractors',
-      'sub-registry', 'sub-contracts', 'sub-invoices', 'sub-payments', 'sub-penalties',
-      'suppliers'],
+      'warehouses', 'stock-movements', 'suppliers'],
   },
   HR: {
     ar: 'موارد بشرية', en: 'Human Resources',
     color: 'bg-blue-100 text-blue-700 border border-blue-200',
     modules: ['employees', 'payroll-runs', 'attendance', 'advances', 'reports'],
   },
-  OPERATOR: {
-    ar: 'مشغّل معدات', en: 'Equipment Operator',
+  KITCHEN_STAFF: {
+    ar: 'موظف مطبخ', en: 'Kitchen Staff',
     color: 'bg-cyan-100 text-cyan-700 border border-cyan-200',
-    modules: ['equipment', 'rental-contracts', 'timesheets', 'delivery-orders',
-      'rental-invoices', 'equipment-maintenance', 'fuel'],
+    modules: ['pos', 'tables', 'menu', 'inventory', 'equipment-maintenance'],
   },
   VIEWER: {
     ar: 'مشاهدة فقط', en: 'Viewer',
@@ -175,9 +156,6 @@ export function canAccess(user, moduleKey) {
   const modules = resolveUserModules(user);
   // Report tabs live under the reports cycle; anyone with reports access can open them.
   if (moduleKey?.startsWith('report-')) return modules.includes('reports') || modules.includes(moduleKey);
-  // The equipment workspace is opened from the equipment registry — anyone who
-  // can access the registry can open a piece of equipment's workspace.
-  if (moduleKey === 'equipment-workspace') return modules.includes('equipment') || modules.includes('equipment-workspace');
   return modules.includes(moduleKey);
 }
 

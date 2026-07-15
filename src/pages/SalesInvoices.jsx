@@ -26,7 +26,6 @@ const TYPES = {
 const empty = {
   invoiceNo: '', invoiceType: 'CONSTRUCTION',
   projectId: '', projectName: '', clientId: '', clientName: '',
-  progressBillingId: '', certificateNo: '',
   date: '', dueDate: '', subtotal: '', vatRate: '0.15',
   paidAmount: '', status: 'DRAFT', description: '', notes: '',
 };
@@ -36,8 +35,6 @@ export default function SalesInvoices() {
   const [items, setItems]       = useState([]);
   const [projects, setProjects] = useState([]);
   const [clients, setClients]   = useState([]);
-  const [certificates, setCertificates] = useState([]);
-  const [contracts, setContracts] = useState([]);
   const [printInvoice, setPrintInvoice] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -52,20 +49,18 @@ export default function SalesInvoices() {
   const load = async () => {
     setLoading(true);
     try {
-      const [inv, p, c, cert, con] = await Promise.all([
+      const [inv, p, c] = await Promise.all([
         base44.entities.SalesInvoice.list('-created_date', 200),
         base44.entities.Project.list(),
         base44.entities.Client.list(),
-        base44.entities.ProgressBilling.list('-date', 500),
-        base44.entities.Contract.list('-created_date', 500),
       ]);
-      setItems(inv); setProjects(p); setClients(c); setCertificates(cert); setContracts(con);
+      setItems(inv); setProjects(p); setClients(c);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
-  // تطبيق سياق المشروع/العميل تلقائياً عند فتح نموذج جديد + ترقيم تلقائي INV-YYYY-0001
+  // تطبيق سياق الطلب/الزبون تلقائياً عند فتح نموذج جديد + ترقيم تلقائي INV-YYYY-0001
   const buildDefaultForm = () => ({
     ...empty,
     invoiceNo:   genInvoiceNo('INV', new Date().getFullYear(), items.length + 1),
@@ -75,10 +70,9 @@ export default function SalesInvoices() {
     clientName:  activeClientName  || '',
   });
 
-  // إثراء الفاتورة برقم العقد المرتبط بمشروعها قبل الطباعة.
+  // معاينة وطباعة الإيصال.
   const openPrint = (item) => {
-    const con = contracts.find(c => c.projectId === item.projectId);
-    setPrintInvoice({ ...item, contractNo: con?.contractNo || '' });
+    setPrintInvoice(item);
   };
 
   const filtered = items.filter(i => {
@@ -140,23 +134,11 @@ export default function SalesInvoices() {
   // الحسابات تأتي من Business Engine — SSOT
   const { base: sub, vat: vatAmount, total: totalAmount } = calcVAT(form.subtotal, parseFloat(form.vatRate) || 0.15);
 
-  // المستخلصات المعتمدة للمشروع المختار — الفاتورة التنفيذية لا تُنشأ إلا بناءً عليها
-  const approvedCerts = certificates.filter(c => c.projectId === form.projectId && c.status === 'APPROVED');
-
   const save = async () => {
     if (!form.invoiceNo || !form.clientId)
       return toast.error(t('رقم الإيصال والزبون مطلوبان', 'Receipt No. and customer required', lang));
     if (form.date && form.dueDate && form.dueDate < form.date)
       return toast.error(t('تاريخ الاستحقاق يجب أن يكون بعد تاريخ الإيصال', 'Due date must be after receipt date', lang));
-    // ربط السلسلة: إيصال الصالة لا يُنشأ إلا بعد اعتماد مستخلص للطلب
-    if (form.invoiceType === 'CONSTRUCTION') {
-      if (!form.projectId)
-        return toast.error(t('اختيار الطلب مطلوب لإيصال الصالة', 'Order is required for a dine-in receipt', lang));
-      if (approvedCerts.length === 0)
-        return toast.error(t('لا يمكن إنشاء إيصال صالة قبل اعتماد مستخلص لهذا الطلب', 'Cannot create a dine-in receipt before an approved certificate exists for this order', lang));
-      if (!form.progressBillingId)
-        return toast.error(t('يجب ربط الإيصال بمستخلص معتمد', 'The receipt must be linked to an approved certificate', lang));
-    }
     setSaving(true);
     try {
       if (editing) {
@@ -335,28 +317,13 @@ export default function SalesInvoices() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>{t('الطلب', 'Order', lang)}{form.invoiceType === 'CONSTRUCTION' ? ' *' : ''}</Label>
-              <Select value={form.projectId} onValueChange={v => { const p = projects.find(p => p.id === v); setForm(f => ({ ...f, projectId: v, projectName: p?.name || '', clientId: p?.clientId || f.clientId, clientName: p?.clientName || f.clientName, progressBillingId: '', certificateNo: '' })); }}>
+              <Label>{t('الطلب', 'Order', lang)}</Label>
+              <Select value={form.projectId} onValueChange={v => { const p = projects.find(p => p.id === v); setForm(f => ({ ...f, projectId: v, projectName: p?.name || '', clientId: p?.clientId || f.clientId, clientName: p?.clientName || f.clientName })); }}>
                 <SelectTrigger><SelectValue placeholder={t('اختر طلب', 'Select order', lang)} /></SelectTrigger>
                 <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
 
-            {form.invoiceType === 'CONSTRUCTION' && (
-              <div className="col-span-2 space-y-1.5">
-                <Label>{t('المستخلص المعتمد', 'Approved Certificate', lang)} *</Label>
-                {!form.projectId ? (
-                  <p className="text-xs text-muted-foreground">{t('اختر الطلب أولاً لعرض المستخلصات المعتمدة', 'Select an order first to see approved certificates', lang)}</p>
-                ) : approvedCerts.length === 0 ? (
-                  <p className="text-xs text-rose-600">{t('لا يوجد مستخلص معتمد لهذا الطلب — يجب اعتماد مستخلص أولاً', 'No approved certificate for this order — approve a certificate first', lang)}</p>
-                ) : (
-                  <Select value={form.progressBillingId} onValueChange={v => { const c = approvedCerts.find(c => c.id === v); setForm(f => ({ ...f, progressBillingId: v, certificateNo: c?.certificateNo || '', subtotal: f.subtotal || String(c?.netAmount || '') })); }}>
-                    <SelectTrigger><SelectValue placeholder={t('اختر مستخلصاً معتمداً', 'Select an approved certificate', lang)} /></SelectTrigger>
-                    <SelectContent>{approvedCerts.map(c => <SelectItem key={c.id} value={c.id}>{c.certificateNo} — {formatCurrency(c.netAmount, lang)}</SelectItem>)}</SelectContent>
-                  </Select>
-                )}
-              </div>
-            )}
             <div className="space-y-1.5"><Label>{t('تاريخ الإيصال', 'Receipt Date', lang)}</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>{t('تاريخ الاستحقاق', 'Due Date', lang)}</Label><Input type="date" value={form.dueDate} min={form.date || undefined} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>{t('المبلغ قبل الضريبة', 'Subtotal', lang)}</Label><Input type="number" value={form.subtotal} onChange={e => setForm(f => ({ ...f, subtotal: e.target.value }))} /></div>

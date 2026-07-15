@@ -7,17 +7,17 @@
 import {
   Building2, Truck, ShoppingCart, Users, Calculator, Settings,
   FileText, CreditCard, ReceiptText, ClipboardList,
-  Wrench, Fuel, CalendarDays, DollarSign, HardHat, Wallet, HandCoins,
+  Wrench, CalendarDays, DollarSign, Wallet, HandCoins,
   UsersRound, Package, Warehouse, Boxes, ShieldCheck, Network, BookOpen, Shield, BarChart3, CalendarRange, Scale,
-  GitPullRequestArrow, AlertTriangle, TrendingUp, PieChart, Landmark, Waves, ShieldQuestion,
+  GitPullRequestArrow, TrendingUp, PieChart, Landmark, Waves, ShieldQuestion,
   UtensilsCrossed, ChefHat, Bike, Soup, Cookie, Apple,
 } from 'lucide-react';
 
 // Keys that have a real screen wired in App.jsx. Others render a ComingSoon placeholder.
 export const READY_TABS = new Set([
   'pos', 'tables', 'branches',
-  'projects', 'contracts', 'sales', 'client-payments', 'boq',
-  'equipment', 'rental-contracts', 'timesheets', 'equipment-maintenance', 'fuel',
+  'projects', 'sales', 'client-payments',
+  'equipment', 'equipment-maintenance',
   'purchase-requests', 'purchase-orders', 'goods-receipts', 'supplier-invoices', 'supplier-payments',
   'expenses',
   'employees', 'payroll-runs', 'payroll-sheets', 'attendance', 'advances',
@@ -26,8 +26,6 @@ export const READY_TABS = new Set([
   'platforms', 'menu',
   // Reports cycle
   'report-income', 'report-balance', 'report-cashflow', 'report-ledger', 'report-trial', 'report-vat', 'report-projects', 'report-inventory', 'report-partners', 'report-employees',
-  // Subcontractors cycle
-  'sub-registry', 'sub-contracts', 'sub-invoices', 'sub-payments', 'sub-penalties',
 ]);
 
 export const CYCLES = [
@@ -51,10 +49,7 @@ export const CYCLES = [
     color: { text: 'text-cyan-600', border: 'border-cyan-500', light: 'bg-cyan-50', bg: 'bg-cyan-600' },
     tabs: [
       { key: 'equipment',             ar: 'سجل المعدات',   en: 'Equipment Registry', Icon: Truck },
-      { key: 'rental-contracts',      ar: 'اتفاقيات التجهيزات', en: 'Rental Agreements', Icon: FileText },
-      { key: 'timesheets',            ar: 'ساعات التشغيل', en: 'Operating Hours',    Icon: CalendarDays },
       { key: 'equipment-maintenance', ar: 'الصيانة',      en: 'Maintenance',        Icon: Wrench },
-      { key: 'fuel',                  ar: 'استهلاك الوقود', en: 'Fuel Consumption',  Icon: Fuel },
     ],
   },
   {
@@ -104,19 +99,6 @@ export const CYCLES = [
       { key: 'fiscal-years',   ar: 'السنوات المالية',    en: 'Fiscal Years',      Icon: CalendarRange },
       { key: 'fixed-assets',   ar: 'الأصول والإهلاك',    en: 'Fixed Assets',      Icon: Landmark },
       { key: 'audit',          ar: 'المراجعة والتدقيق',  en: 'Audit Suite',       Icon: ShieldCheck },
-    ],
-  },
-  {
-    key: 'subcontractors-cycle',
-    label: { ar: 'الخدمات الخارجية', en: 'External Services' },
-    Icon: HardHat,
-    color: { text: 'text-orange-600', border: 'border-orange-500', light: 'bg-orange-50', bg: 'bg-orange-600' },
-    tabs: [
-      { key: 'sub-registry',  ar: 'سجل موردي الخدمات',   en: 'Service Providers', Icon: HardHat },
-      { key: 'sub-contracts', ar: 'اتفاقيات الخدمات',    en: 'Agreements',        Icon: FileText },
-      { key: 'sub-invoices',  ar: 'المستخلصات والفواتير', en: 'Invoices',          Icon: ReceiptText },
-      { key: 'sub-payments',  ar: 'السداد',              en: 'Payments',          Icon: Wallet },
-      { key: 'sub-penalties', ar: 'الغرامات',            en: 'Penalties',         Icon: AlertTriangle },
     ],
   },
   {

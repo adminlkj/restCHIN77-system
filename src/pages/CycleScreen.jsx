@@ -6,18 +6,13 @@ import { CYCLE_BY_KEY, READY_TABS } from '@/lib/cycles';
 
 // Tab content screens
 import Projects from '@/pages/Projects';
-import Contracts from '@/pages/Contracts';
 import SalesInvoices from '@/pages/SalesInvoices';
 import ClientPayments from '@/pages/ClientPayments';
-import BOQ from '@/pages/BOQ';
-import Timesheets from '@/pages/Timesheets';
 import Equipment from '@/pages/Equipment';
-import RentalContracts from '@/pages/RentalContracts';
 import PurchaseRequests from '@/pages/PurchaseRequests';
 import PurchaseOrders from '@/pages/PurchaseOrders';
 import GoodsReceipts from '@/pages/GoodsReceipts';
 import Expenses from '@/pages/Expenses';
-import Subcontractors from '@/pages/Subcontractors';
 import SupplierInvoices from '@/pages/SupplierInvoices';
 import SupplierPayments from '@/pages/SupplierPayments';
 import Employees from '@/pages/Employees';
@@ -37,17 +32,12 @@ import Warehouses from '@/pages/Warehouses';
 import StockMovements from '@/pages/StockMovements';
 import Reports from '@/pages/Reports';
 import VATReport from '@/pages/VATReport';
-import ProjectReports from '@/pages/ProjectReports';
+import BranchReport from '@/pages/BranchReport';
 import InventoryReports from '@/pages/InventoryReports';
 import PartnerFollowUp from '@/pages/PartnerFollowUp';
 import EmployeeReports from '@/pages/EmployeeReports';
 import EquipmentMaintenance from '@/pages/EquipmentMaintenance';
-import FuelConsumption from '@/pages/FuelConsumption';
 import AuditSuite from '@/pages/AuditSuite';
-import SubContractsAll from '@/pages/SubContractsAll';
-import SubcontractorInvoicesAll from '@/pages/SubcontractorInvoicesAll';
-import SubPaymentsAll from '@/pages/SubPaymentsAll';
-import SubPenaltiesAll from '@/pages/SubPenaltiesAll';
 import Clients from '@/pages/Clients';
 import Suppliers from '@/pages/Suppliers';
 import DeliveryPlatforms from '@/pages/DeliveryPlatforms';
@@ -57,15 +47,10 @@ import Settings from '@/pages/Settings';
 
 const TAB_CONTENT = {
   projects: <Projects />,
-  contracts: <Contracts />,
   sales: <SalesInvoices />,
   'client-payments': <ClientPayments />,
-  boq: <BOQ />,
   equipment: <Equipment />,
-  'rental-contracts': <RentalContracts />,
-  timesheets: <Timesheets />,
   'equipment-maintenance': <EquipmentMaintenance />,
-  fuel: <FuelConsumption />,
   'purchase-requests': <PurchaseRequests />,
   'purchase-orders': <PurchaseOrders />,
   'goods-receipts': <GoodsReceipts />,
@@ -94,16 +79,10 @@ const TAB_CONTENT = {
   'report-ledger': <GeneralLedger />,
   'report-trial': <TrialBalance />,
   'report-vat': <VATReport />,
-  'report-projects': <ProjectReports />,
+  'report-projects': <BranchReport />,
   'report-inventory': <InventoryReports />,
   'report-partners': <PartnerFollowUp />,
   'report-employees': <EmployeeReports />,
-  // Subcontractors cycle
-  'sub-registry': <Subcontractors />,
-  'sub-contracts': <SubContractsAll />,
-  'sub-invoices': <SubcontractorInvoicesAll />,
-  'sub-payments': <SubPaymentsAll />,
-  'sub-penalties': <SubPenaltiesAll />,
   clients: <Clients />,
   suppliers: <Suppliers />,
   platforms: <DeliveryPlatforms />,

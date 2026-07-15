@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, Building2, Truck, Users, FileText, Landmark, Package } from 'lucide-react';
+import { Search, Loader2, Building2, Truck, Users, FileText, Package } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t } from '@/lib/utils-binaa';
@@ -8,17 +8,17 @@ import { t } from '@/lib/utils-binaa';
 const SOURCES = [
   {
     key: 'Project', entity: 'Project', Icon: Building2, color: 'text-emerald-600',
-    typeAr: 'مشروع', typeEn: 'Project',
+    typeAr: 'فرع', typeEn: 'Branch',
     label: r => r.name, sub: r => r.code,
-    match: (r, q) => `${r.name} ${r.code} ${r.clientName || ''}`.toLowerCase().includes(q),
-    go: (r, store) => { store.setProjectContext(r.id, r.name); store.setActiveItem('project-workspace'); },
+    match: (r, q) => `${r.name} ${r.code}`.toLowerCase().includes(q),
+    go: (r, store) => { store.setProjectContext(r.id, r.name); store.setActiveItem('tables'); },
   },
   {
     key: 'Equipment', entity: 'Equipment', Icon: Truck, color: 'text-cyan-600',
     typeAr: 'معدة', typeEn: 'Equipment',
     label: r => r.name, sub: r => r.code,
-    match: (r, q) => `${r.name} ${r.code} ${r.plateNumber || ''}`.toLowerCase().includes(q),
-    go: (r, store) => { store.setEquipmentContext(r.id, r.name); store.setActiveItem('equipment-workspace'); },
+    match: (r, q) => `${r.name} ${r.code} ${r.serialNumber || ''}`.toLowerCase().includes(q),
+    go: (r, store) => store.setActiveItem('equipment'),
   },
   {
     key: 'Employee', entity: 'Employee', Icon: Users, color: 'text-violet-600',
@@ -47,13 +47,6 @@ const SOURCES = [
     label: r => r.invoiceNo, sub: r => r.clientName,
     match: (r, q) => `${r.invoiceNo} ${r.clientName || ''}`.toLowerCase().includes(q),
     go: (r, store) => store.setActiveItem('sales'),
-  },
-  {
-    key: 'Subcontractor', entity: 'Subcontractor', Icon: Landmark, color: 'text-amber-600',
-    typeAr: 'مقاول باطن', typeEn: 'Subcontractor',
-    label: r => r.name, sub: r => r.specialty,
-    match: (r, q) => `${r.name} ${r.code} ${r.specialty || ''}`.toLowerCase().includes(q),
-    go: (r, store) => store.setActiveItem('subcontractors'),
   },
 ];
 

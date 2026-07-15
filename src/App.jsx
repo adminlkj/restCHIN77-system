@@ -13,10 +13,7 @@ import { CYCLE_BY_KEY, cycleForTab } from '@/lib/cycles';
 // Pages
 import Dashboard from '@/pages/Dashboard';
 import CycleScreen from '@/pages/CycleScreen';
-import ProjectWorkspace from '@/pages/ProjectWorkspace';
-import EquipmentWorkspace from '@/pages/EquipmentWorkspace';
 import EmployeeWorkspace from '@/pages/EmployeeWorkspace';
-import SubcontractorWorkspace from '@/pages/SubcontractorWorkspace';
 import Branches from '@/pages/Branches';
 import Tables from '@/pages/Tables';
 import POS from '@/pages/POS';
@@ -31,10 +28,7 @@ import { Navigate } from 'react-router-dom';
 const STANDALONE = {
   dashboard: <Dashboard />,
   profile: <Profile />,
-  'project-workspace': <ProjectWorkspace />,
-  'equipment-workspace': <EquipmentWorkspace />,
   'employee-workspace': <EmployeeWorkspace />,
-  'subcontractor-workspace': <SubcontractorWorkspace />,
   // Restaurant POS screens — reached via setActiveItem() navigation.
   branches: <Branches />,
   tables: <Tables />,
