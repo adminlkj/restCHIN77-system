@@ -979,6 +979,13 @@ async function autoPostJE(base44, jeData) {
 // الإنشاء يحفظ الفاتورة كمسودة فقط بلا قيد — القيد يُرحّل عند الاعتماد.
 async function createSalesInvoice(base44, data) {
   assertValid('SALES_INVOICE', data);
+  // فرض تفرّد رقم الفاتورة — لا يسمح بفواتير بنفس الرقم.
+  if (!isBlank(data.invoiceNo)) {
+    const existing = await base44.asServiceRole.entities.SalesInvoice.filter({ invoiceNo: data.invoiceNo });
+    if (existing && existing.length > 0) {
+      throw new Error(`رقم الفاتورة "${data.invoiceNo}" مستخدم بالفعل — استخدم رقماً آخر`);
+    }
+  }
   const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, num(data.vatRate) || VAT_RATE);
   const payload = { ...data, subtotal, vatRate: num(data.vatRate) || VAT_RATE, vatAmount, totalAmount, paidAmount: num(data.paidAmount), status: 'DRAFT' };
   return await base44.asServiceRole.entities.SalesInvoice.create(payload);
@@ -1048,7 +1055,27 @@ async function approveSalesInvoice(base44, id) {
     }),
     { type: 'CLIENT', id: inv.clientId, name: inv.clientName });
   await autoPostJE(base44, je);
-  return await base44.asServiceRole.entities.SalesInvoice.update(id, { status: 'APPROVED' });
+
+  // تحديد الحالة النهائية حسب نوع البيع:
+  //   - بيع نقدي (payments موجودة وتغطي الإجمالي): PAID + paidAmount = الإجمالي
+  //   - بيع منصة (isPlatformSale): APPROVED (ذمة منصة، paidAmount=0)
+  //   - بيع آجل (عميل مسجل بدون دفع): APPROVED (ذمة عميل، paidAmount=0)
+  // هذا يمنع التناقض بين الحالة والمدفوع، ويضمن أن البيع النقدي = مدفوع فوراً.
+  let finalStatus = 'APPROVED';
+  let finalPaidAmount = 0;
+  if (!isPlatformSale && Array.isArray(payments) && payments.length > 0) {
+    const totalPaid = payments.reduce((s, p) => s + num(p.amount), 0);
+    if (totalPaid >= num(inv.totalAmount) - 0.01) {
+      finalStatus = 'PAID';
+      finalPaidAmount = num(inv.totalAmount);
+    } else if (totalPaid > 0) {
+      finalStatus = 'PARTIALLY_PAID';
+      finalPaidAmount = totalPaid;
+    }
+  }
+  // استخدام update مع خيار internal لتجاوز قيد منع تغيير الحالة المباشر
+  // (هذا المسار الوحيد المشروع لتغيير الحالة لأنه يُرحّل القيد أولاً).
+  return await base44.asServiceRole.entities.SalesInvoice.update(id, { status: finalStatus, paidAmount: finalPaidAmount });
 }
 
 // ─── تسوية المنصة ────────────────────────────────────────────────────────────

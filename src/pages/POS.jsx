@@ -126,6 +126,8 @@ export default function POS() {
   const [quickAddOpen, setQuickAddOpen] = useState(false); // إضافة عميل نقدي سريع
   const [payments, setPayments] = useState([]); // [{ method, amount }]
   const [cashReceived, setCashReceived] = useState('');
+  // خصم على مستوى الفاتورة (يدوي): { type: 'AMOUNT' | 'PERCENT', value: number }
+  const [manualDiscount, setManualDiscount] = useState({ type: 'AMOUNT', value: '' });
   const [printReceipt, setPrintReceipt] = useState(null); // invoice object
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [activeTable, setActiveTable] = useState(() => readActiveTable());
@@ -319,8 +321,15 @@ export default function POS() {
         nameEn: item.nameEn || '',
         price: parseFloat(item.salePrice ?? item.unitCost) || 0,
         qty: 1,
+        discount: 0, // خصم على هذا الصنف (مبلغ ثابت لكل وحدة)
       }];
     });
+  };
+
+  // خصم على صنف محدد في السلة (مبلغ ثابت لكل وحدة)
+  const setItemDiscount = (itemId, discount) => {
+    const d = Math.max(0, parseFloat(discount) || 0);
+    setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, discount: d } : c));
   };
 
   const changeQty = (itemId, delta) => {
@@ -356,16 +365,59 @@ export default function POS() {
     setCustomerName('');
   };
 
-  // ─── Feature 1: الخصم + Feature 2: رسوم التوصيل + Feature 3: العمولة ─
+  // ─── حسابات الخصومات والضريبة والإجمالي ──────────────────────────────
+  // الخصومات ثلاثة أنواع (تُطبّق بالترتيب):
+  //   1) خصم على الصنف (item.discount لكل وحدة) — يُخفض سعر الصنف قبل المجموع
+  //   2) خصم العميل (customer.discountPercentage) — نسبة على المجموع بعد خصم الأصناف
+  //   3) خصم يدوي على الفاتورة (manualDiscount) — مبلغ ثابت أو نسبة على ما بعد العميل
+  // القاعدة الخاضعة للضريبة = subtotal - customerDiscount - manualDiscount + deliveryFee
+  // الضريبة تُحسب على الصافي بعد الخصوم.
   const discountPercentage = useMemo(() => {
     if (!customer || customer.isCash) return 0;
     return parseFloat(customer.discountPercentage) || 0;
   }, [customer]);
 
-  const discountAmount = useMemo(
-    () => +(subtotal_raw(cart) * (discountPercentage / 100)).toFixed(2),
-    [cart, discountPercentage]
+  // المجموع الفرعي قبل الخصومات (شامل خصومات الأصناف المنفردة)
+  const subtotalAfterItemDiscounts = useMemo(
+    () => cart.reduce((s, c) => s + Math.max(0, (c.price - (c.discount || 0)) * c.qty), 0),
+    [cart]
   );
+  // إجمالي خصومات الأصناف (للعرض في الإيصال)
+  const itemDiscountsTotal = useMemo(
+    () => cart.reduce((s, c) => s + (c.discount || 0) * c.qty, 0),
+    [cart]
+  );
+
+  // خصم العميل (نسبة على المجموع بعد خصومات الأصناف)
+  const customerDiscountAmount = useMemo(
+    () => +(subtotalAfterItemDiscounts * (discountPercentage / 100)).toFixed(2),
+    [subtotalAfterItemDiscounts, discountPercentage]
+  );
+
+  // المجموع بعد خصم العميل
+  const subtotalAfterCustomerDiscount = useMemo(
+    () => Math.max(0, subtotalAfterItemDiscounts - customerDiscountAmount),
+    [subtotalAfterItemDiscounts, customerDiscountAmount]
+  );
+
+  // خصم يدوي على الفاتورة (مبلغ ثابت أو نسبة)
+  const manualDiscountAmount = useMemo(() => {
+    const v = parseFloat(manualDiscount.value) || 0;
+    if (v <= 0) return 0;
+    if (manualDiscount.type === 'PERCENT') {
+      return +(subtotalAfterCustomerDiscount * (v / 100)).toFixed(2);
+    }
+    return Math.min(v, subtotalAfterCustomerDiscount); // لا يتجاوز المتبقي
+  }, [manualDiscount, subtotalAfterCustomerDiscount]);
+
+  // المجموع الفرعي النهائي (بعد كل الخصومات، قبل التوصيل والضريبة)
+  const subtotal = useMemo(
+    () => Math.max(0, subtotalAfterCustomerDiscount - manualDiscountAmount),
+    [subtotalAfterCustomerDiscount, manualDiscountAmount]
+  );
+
+  // إجمالي الخصومات (للعرض)
+  const discountAmount = +(customerDiscountAmount + manualDiscountAmount).toFixed(2);
 
   // بحث ذكي عن الزبائن: بالاسم أو رقم الجوال أو نسبة الخصم.
   // يُفلتر محلياً من قائمة customers المحمّلة، دون طلب شبكة إضافي.
@@ -424,16 +476,10 @@ export default function POS() {
   // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
   const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
 
-  // subtotal
-  const subtotal = useMemo(
-    () => subtotal_raw(cart),
-    [cart]
-  );
-
-  // القاعدة الخاضعة للضريبة = subtotal - discount + deliveryFee
+  // القاعدة الخاضعة للضريبة = subtotal (بعد كل الخصومات) + deliveryFee
   const vatBase = useMemo(
-    () => Math.max(0, subtotal - discountAmount + effectiveDeliveryFee),
-    [subtotal, discountAmount, effectiveDeliveryFee]
+    () => Math.max(0, subtotal + effectiveDeliveryFee),
+    [subtotal, effectiveDeliveryFee]
   );
 
   const vatCalc = useMemo(() => calcVAT(vatBase, 0.15), [vatBase]);
@@ -618,66 +664,129 @@ export default function POS() {
       toast.error(t('السلة فارغة', 'Cart is empty', lang));
       return;
     }
-    if (!isFullyPaid) {
-      toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
-      return;
+    // منع اجتماع "زبون نقدي" + "منصة" في نفس الفاتورة — دورات منفصلة.
+    if (isPlatformSale) {
+      // بيع منصة: لا يقبل دفع نقدي، الذمة على المنصة.
+      if (payments.length > 0) {
+        toast.error(t('مبيعات المنصات آجلة — لا تُدخل طرق دفع', 'Platform sales are credit — no payment methods', lang));
+        return;
+      }
+    } else {
+      // بيع نقدي/آجل: يجب استيفاء الدفع للنقدي.
+      if (!isFullyPaid) {
+        toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
+        return;
+      }
     }
 
     // بناء الإيصال
     const year = new Date().getFullYear();
     const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
-    const lineItems = cart.map(c => ({
-      description: c.name,
-      descriptionEn: c.nameEn || '',
-      qty: c.qty,
-      unitPrice: c.price,
-      total: +(c.price * c.qty).toFixed(2),
-    }));
-    // إعدادات الإيصال المدمجة (فرع + شركة) — تُرفق للإيصال للطباعة المستقبلية
+    // بنود الفاتورة تشمل خصم الصنف (إن وُجد)
+    const lineItems = cart.map(c => {
+      const unitPrice = c.price;
+      const unitDiscount = c.discount || 0;
+      const netUnit = Math.max(0, unitPrice - unitDiscount);
+      return {
+        description: c.name,
+        descriptionEn: c.nameEn || '',
+        qty: c.qty,
+        unitPrice,
+        unitDiscount,
+        netUnitPrice: netUnit,
+        total: +(netUnit * c.qty).toFixed(2),
+      };
+    });
+    // إعدادات الإيصال المدمجة (فرع + شركة)
     const branchReceiptSettings = activeProjectId
       ? await resolveReceiptSettings(activeProjectId, companySettings)
       : companySettings;
-    const platformName = isDelivery
-      ? (selectedPlatform?.name || (platformId ? '' : t('توصيل مباشر', 'Direct Delivery', lang)))
-      : '';
+
+    // تحديد نوع البيع واسم العميل بشكل صحيح (منع "زبون نقدي" مع منصة)
+    let saleType = 'DINE_IN'; // DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM
+    let effectiveClientName = customerName || t('زبون نقدي', 'Cash Customer', lang);
+    let effectiveClientId = customerId || '';
+    let platformName = '';
+
+    if (isPlatformSale) {
+      saleType = 'PLATFORM';
+      platformName = selectedPlatform?.name || '';
+      // في بيع المنصة: العميل = اسم المنصة (لا "زبون نقدي")
+      effectiveClientName = platformName;
+      effectiveClientId = '';
+    } else if (isDelivery) {
+      saleType = 'DIRECT_DELIVERY';
+      platformName = t('توصيل مباشر', 'Direct Delivery', lang);
+    } else if (invoiceType === 'CONSTRUCTION') {
+      saleType = customerId && customer && !customer.isCash ? 'CREDIT' : 'DINE_IN';
+    } else {
+      saleType = 'TAKEAWAY';
+    }
+
+    // النقد المستلم والباقي (للبيع النقدي)
+    const cashReceivedAmount = parseFloat(cashReceived) || totalPaid;
+    const changeAmount = Math.max(0, cashReceivedAmount - total);
+
     const invoice = {
       invoiceNo,
       invoiceType, // CONSTRUCTION=صالة / SERVICE=توصيل
+      saleType, // DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM | CREDIT
       projectId: activeProjectId || '',
       projectName: activeProjectName || branchLabel,
-      clientId: customerId || '',
-      clientName: customerName || t('زبون نقدي', 'Cash Customer', lang),
+      clientId: effectiveClientId,
+      clientName: effectiveClientName,
       date: new Date().toISOString(),
       lineItems,
       subtotal: +subtotal.toFixed(2),
-      // Feature 1: خصم الزبون
-      discountPercentage,
-      discountAmount,
-      // Feature 2: رسوم التوصيل
+      // الخصومات (ثلاثة أنواع)
+      itemDiscountsTotal: +itemDiscountsTotal.toFixed(2),
+      discountPercentage, // خصم العميل (%)
+      customerDiscountAmount: +customerDiscountAmount.toFixed(2),
+      manualDiscountType: manualDiscount.type,
+      manualDiscountValue: parseFloat(manualDiscount.value) || 0,
+      manualDiscountAmount: +manualDiscountAmount.toFixed(2),
+      discountAmount: +discountAmount.toFixed(2), // إجمالي الخصومات
+      // رسوم التوصيل
       deliveryFee: effectiveDeliveryFee,
       vatRate: 0.15,
       vatAmount: vatCalc.vat,
       totalAmount: total,
-      // مبيعات المنصات آجلة دائماً — paidAmount=0 و status=PARTIALLY_PAID
-      // تُحصّل لاحقاً عبر كشف/تسوية المنصة.
-      paidAmount: isPlatformSale ? 0 : totalPaid,
-      status: isPlatformSale ? 'PARTIALLY_PAID' : (isFullyPaid ? 'PAID' : 'PARTIALLY_PAID'),
+      // مبيعات المنصات: آجلة (paidAmount=0). النقدي: paidAmount=الإجمالي. الآجل: 0.
+      paidAmount: isPlatformSale ? 0 : (isFullyPaid ? total : totalPaid),
+      // الحالة يحددها الخادم عند الاعتماد (PAID/APPROVED) — لا نضبطها هنا.
+      status: 'DRAFT',
       description: isPlatformSale
         ? `${t('طلب منصة', 'Platform Order')}: ${platformName}`
-        : `${t('طاولة', 'Table', lang)}: ${tableLabel}`,
-      // Feature 3: المنصة والعمولة (للمعلومة فقط)
-      platformId: isDelivery ? platformId : '',
+        : (saleType === 'DIRECT_DELIVERY'
+          ? t('توصيل مباشر', 'Direct Delivery', lang)
+          : (saleType === 'TAKEAWAY'
+            ? t('استلام', 'Takeaway', lang)
+            : `${t('طاولة', 'Table', lang)}: ${tableLabel}`)),
+      // المنصة والعمولة
+      platformId: isPlatformSale ? platformId : '',
       platformName,
       platformCommission,
+      platformCommissionVat: isPlatformSale
+        ? +(platformCommission * (Number(selectedPlatform?.commissionVatRate) || 0.15)).toFixed(2)
+        : 0,
+      isPlatformSale,
       notes: JSON.stringify({
         tableId: activeTable?.tableId || '',
         tableName: tableLabel,
+        saleType,
         payments: isPlatformSale ? [] : payments,
         cashier,
-        platform: isDelivery ? { platformId, platformName, platformCommission } : null,
+        platform: isPlatformSale
+          ? { platformId, platformName, platformCommission, platformCommissionVat: +(platformCommission * (Number(selectedPlatform?.commissionVatRate) || 0.15)).toFixed(2) }
+          : null,
         isPlatformSale,
         deliveryFee: effectiveDeliveryFee,
         discountPercentage,
+        customerDiscountAmount: +customerDiscountAmount.toFixed(2),
+        manualDiscount: { type: manualDiscount.type, value: parseFloat(manualDiscount.value) || 0, amount: +manualDiscountAmount.toFixed(2) },
+        itemDiscountsTotal: +itemDiscountsTotal.toFixed(2),
+        cashReceived: cashReceivedAmount,
+        change: changeAmount,
         items: lineItems,
         branchSettings: branchReceiptSettings,
       }),
@@ -690,29 +799,18 @@ export default function POS() {
     let saved = null;
     let backendOk = false;
     try {
-      // 1) إنشاء الإيصال كـ DRAFT عبر OperationEngine
+      // 1) إنشاء الإيصال كـ DRAFT
       const draftInvoice = { ...invoice, status: 'DRAFT' };
       saved = await OperationEngine.createSalesInvoice(draftInvoice, [], customers);
 
-      // 2) اعتماد الإيصال فوراً ← ترحيل القيد المحاسبي
+      // 2) اعتماد الإيصال ← ترحيل القيد + تحديد الحالة (PAID للنقدي، APPROVED للآجل/المنصة)
+      //    الخادم يقرر الحالة بناءً على payments و isPlatformSale — لا نحدّثها يدوياً.
       if (saved?.id) {
         try {
-          await OperationEngine.approveSalesInvoice(saved.id);
+          const approved = await OperationEngine.approveSalesInvoice(saved.id);
+          saved = { ...saved, ...(approved?.data || approved || {}) };
         } catch (approveErr) {
           console.warn('Auto-approve failed:', approveErr);
-        }
-
-        // 3) لغير مبيعات المنصات: نعليم الإيصال كـ PAID
-        if (!isPlatformSale) {
-          try {
-            await base44.entities.SalesInvoice.update(saved.id, {
-              status: 'PAID',
-              paidAmount: total,
-            });
-            saved = { ...saved, status: 'PAID', paidAmount: total };
-          } catch (updErr) {
-            console.warn('Update to PAID failed:', updErr);
-          }
         }
       }
       backendOk = true;
@@ -1118,7 +1216,7 @@ export default function POS() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm text-foreground truncate">{item.name}</div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <div className="flex items-center gap-1">
                             <Button
                               variant="outline" size="icon"
@@ -1143,12 +1241,28 @@ export default function POS() {
                           <span className="text-xs text-muted-foreground">
                             {formatCurrency(item.price, lang)} × {item.qty}
                           </span>
+                          {/* خصم على الصنف (مبلغ ثابت لكل وحدة) */}
+                          <div className="flex items-center gap-1 ms-auto">
+                            <span className="text-[10px] text-muted-foreground">{t('خصم', 'Disc', lang)}:</span>
+                            <Input
+                              type="number" min="0" step="0.01"
+                              value={item.discount || ''}
+                              onChange={e => setItemDiscount(item.itemId, e.target.value)}
+                              className="h-6 w-14 text-xs px-1"
+                              placeholder="0"
+                            />
+                          </div>
                         </div>
                       </div>
                       <div className="text-end shrink-0">
                         <div className="font-bold text-sm text-foreground">
-                          {formatCurrency(item.price * item.qty, lang)}
+                          {formatCurrency(Math.max(0, (item.price - (item.discount || 0)) * item.qty), lang)}
                         </div>
+                        {(item.discount || 0) > 0 && (
+                          <div className="text-[10px] text-rose-600 line-through">
+                            {formatCurrency(item.price * item.qty, lang)}
+                          </div>
+                        )}
                         <Button
                           variant="ghost" size="icon"
                           className="size-6 text-destructive hover:text-destructive mt-0.5"
@@ -1167,16 +1281,57 @@ export default function POS() {
           {/* الملخّص المالي */}
           <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{t('المجموع الفرعي', 'Subtotal', lang)}</span>
-              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
+              <span className="text-muted-foreground">{t('المجموع قبل الخصومات', 'Gross before discounts', lang)}</span>
+              <span className="font-medium">{formatCurrency(subtotalAfterItemDiscounts, lang)}</span>
             </div>
-            {/* Feature 1: بند الخصم */}
-            {discountAmount > 0 && (
-              <div className="flex items-center justify-between text-sm text-rose-700">
-                <span>{t(`خصم (${discountPercentage}%)`, `Discount (${discountPercentage}%)`, lang)}</span>
-                <span>-{formatCurrency(discountAmount, lang)}</span>
+            {/* خصومات الأصناف */}
+            {itemDiscountsTotal > 0 && (
+              <div className="flex items-center justify-between text-xs text-rose-600">
+                <span>{t('خصومات الأصناف', 'Item discounts', lang)}</span>
+                <span>-{formatCurrency(itemDiscountsTotal, lang)}</span>
               </div>
             )}
+            {/* خصم العميل */}
+            {customerDiscountAmount > 0 && (
+              <div className="flex items-center justify-between text-xs text-rose-700">
+                <span>{t(`خصم العميل (${discountPercentage}%)`, `Customer discount (${discountPercentage}%)`, lang)}</span>
+                <span>-{formatCurrency(customerDiscountAmount, lang)}</span>
+              </div>
+            )}
+            {/* خصم يدوي على الفاتورة */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{t('خصم يدوي', 'Manual discount', lang)}:</span>
+              <div className="flex gap-1">
+                <Button
+                  type="button" variant="outline" size="sm"
+                  className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'AMOUNT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
+                  onClick={() => setManualDiscount(d => ({ ...d, type: 'AMOUNT' }))}
+                >
+                  {t('مبلغ', 'Amount', lang)}
+                </Button>
+                <Button
+                  type="button" variant="outline" size="sm"
+                  className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'PERCENT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
+                  onClick={() => setManualDiscount(d => ({ ...d, type: 'PERCENT' }))}
+                >
+                  %
+                </Button>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={manualDiscount.value}
+                  onChange={e => setManualDiscount(d => ({ ...d, value: e.target.value }))}
+                  className="h-6 w-16 text-xs px-1"
+                  placeholder="0"
+                />
+              </div>
+              {manualDiscountAmount > 0 && (
+                <span className="text-xs text-rose-700 ms-auto">-{formatCurrency(manualDiscountAmount, lang)}</span>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-sm border-t pt-1">
+              <span className="text-muted-foreground">{t('القاعدة الخاضعة للضريبة', 'Taxable base', lang)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
+            </div>
             {/* Feature 2: بند رسوم التوصيل */}
             {isDelivery && effectiveDeliveryFee > 0 && (
               <div className="flex items-center justify-between text-sm text-blue-700">
@@ -1189,7 +1344,7 @@ export default function POS() {
               <span className="font-medium">{formatCurrency(vatCalc.vat, lang)}</span>
             </div>
             {/* Feature 3: عمولة المنصة (معلومة فقط) */}
-            {isDelivery && platformCommission > 0 && (
+            {isPlatformSale && platformCommission > 0 && (
               <div className="flex items-center justify-between text-xs text-amber-700 italic">
                 <span>{t(`عمولة المنصة (${selectedPlatform?.commissionRate}%)`, `Platform commission (${selectedPlatform?.commissionRate}%)`, lang)}</span>
                 <span>{formatCurrency(platformCommission, lang)}</span>
@@ -1199,6 +1354,19 @@ export default function POS() {
               <span>{t('الإجمالي', 'Total', lang)}</span>
               <span className="text-emerald-700">{formatCurrency(total, lang)}</span>
             </div>
+            {/* النقد المستلم والباقي (للبيع النقدي) */}
+            {!isPlatformSale && totalPaid >= total && total > 0 && parseFloat(cashReceived) > total && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-2 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t('المستلم من الزبون', 'Received from customer', lang)}</span>
+                  <span className="font-mono font-medium">{formatCurrency(parseFloat(cashReceived), lang)}</span>
+                </div>
+                <div className="flex items-center justify-between font-bold text-blue-700">
+                  <span>{t('الباقي للزبون', 'Change to customer', lang)}</span>
+                  <span className="font-mono">{formatCurrency(Math.max(0, parseFloat(cashReceived) - total), lang)}</span>
+                </div>
+              </div>
+            )}
 
             {/* المدفوعات المطبّقة */}
             {payments.length > 0 && !isPlatformSale && (

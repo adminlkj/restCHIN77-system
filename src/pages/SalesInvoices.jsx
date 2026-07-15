@@ -234,6 +234,7 @@ export default function SalesInvoices() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('رقم الإيصال', 'Receipt No.', lang)}</TableHead>
+                <TableHead>{t('النوع', 'Type', lang)}</TableHead>
                 <TableHead>{t('الزبون', 'Customer', lang)}</TableHead>
                 <TableHead>{t('الطلب', 'Order', lang)}</TableHead>
                 <TableHead>{t('التاريخ', 'Date', lang)}</TableHead>
@@ -245,14 +246,39 @@ export default function SalesInvoices() {
             </TableHeader>
             <TableBody>
               {loading
-                ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>)}</TableRow>)
+                ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 9 }).map((_, j) => <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>)}</TableRow>)
                 : filtered.length === 0
-                  ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('لا توجد إيصالات', 'No receipts', lang)}</TableCell></TableRow>
+                  ? <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">{t('لا توجد إيصالات', 'No receipts', lang)}</TableCell></TableRow>
                   : filtered.map(item => {
                     const st = INVOICE_STATUS[item.status] || INVOICE_STATUS.DRAFT;
+                    // استخراج نوع البيع من notes (saleType) لعرض شارة واضحة
+                    let saleType = '';
+                    let platformName = '';
+                    try {
+                      const notes = item.notes ? JSON.parse(item.notes) : {};
+                      saleType = notes.saleType || '';
+                      platformName = notes.platform?.platformName || item.platformName || '';
+                    } catch { /* ignore */ }
+                    const SALE_TYPE_BADGE = {
+                      DINE_IN:          { ar: 'صالة',          en: 'Dine-in',          cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+                      TAKEAWAY:         { ar: 'استلام',        en: 'Takeaway',          cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+                      DIRECT_DELIVERY:  { ar: 'توصيل مباشر',   en: 'Direct Delivery',   cls: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
+                      PLATFORM:         { ar: platformName || 'منصة', en: platformName || 'Platform', cls: 'bg-rose-100 text-rose-700 border-rose-200' },
+                      CREDIT:           { ar: 'آجل',           en: 'Credit',            cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+                    };
+                    const badge = saleType ? (SALE_TYPE_BADGE[saleType] || null) : null;
                     return (
                       <TableRow key={item.id} className="hover:bg-muted/30">
                         <TableCell className="font-mono text-xs font-medium">{item.invoiceNo}</TableCell>
+                        <TableCell>
+                          {badge ? (
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badge.cls}`}>
+                              {lang === 'ar' ? badge.ar : badge.en}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">{item.clientName || '—'}</TableCell>
                         <TableCell className="text-sm">{item.projectName || '—'}</TableCell>
                         <TableCell className="text-xs">{formatDate(item.date, lang)}</TableCell>
