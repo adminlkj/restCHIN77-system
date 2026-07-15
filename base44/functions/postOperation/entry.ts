@@ -819,7 +819,10 @@ async function createGoodsReceipt(base44, data) {
 
   const po = await base44.asServiceRole.entities.PurchaseOrder.get(data.purchaseOrderId);
   if (!po) throw new Error('أمر الشراء غير موجود');
-  if (isBlank(po.warehouseId)) throw new Error('أمر الشراء بلا مخزن وجهة — لا يمكن إدخال المخزون');
+  // مخزن الوجهة: إن لم يوجد warehouseId، استخدم projectId (الفرع) كمخزن افتراضي.
+  const effectiveWarehouseId = po.warehouseId || po.projectId || '';
+  const effectiveWarehouseName = po.warehouseName || po.projectName || '';
+  if (isBlank(effectiveWarehouseId)) throw new Error('أمر الشراء بلا مخزن وجهة أو فرع — لا يمكن إدخال المخزون');
 
   // البنود المستلمة في هذه الدفعة: [{ boqItemId | description, receivingQty }]
   const incoming = Array.isArray(data.lines) ? data.lines : [];
@@ -868,7 +871,7 @@ async function createGoodsReceipt(base44, data) {
         movementNo, date: payload.date, type: 'RECEIVE', sourceType: 'SUPPLIER',
         itemName: m.line.description, itemCode: m.line.itemNo || '', unit: m.line.unit || '',
         quantity, unitCost, totalCost,
-        toWarehouseId: po.warehouseId, toWarehouseName: po.warehouseName,
+        toWarehouseId: effectiveWarehouseId, toWarehouseName: effectiveWarehouseName,
         supplierId: po.supplierId, supplierName: po.supplierName,
         reference: payload.receiptNo, journalEntryNo: `JE-STK-${movementNo}`,
       });
@@ -878,7 +881,7 @@ async function createGoodsReceipt(base44, data) {
       }
       // 3) زيادة رصيد المخزون بالمطابقة على الاسم.
       await receiveStockByName(base44, {
-        name: m.line.description, unit: m.line.unit, warehouseId: po.warehouseId, warehouseName: po.warehouseName,
+        name: m.line.description, unit: m.line.unit, warehouseId: effectiveWarehouseId, warehouseName: effectiveWarehouseName,
         quantity, unitCost,
       });
       // 4) تراكم الكمية المستلمة على بند الأمر.
