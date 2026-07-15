@@ -31,6 +31,37 @@
     },
     "notes": {
       "type": "string"
+    },
+    "isCash": {
+      "type": "boolean",
+      "default": true,
+      "description": "عميل نقدي (بدون ذمة) أم عميل حساب (له ذمة)"
+    },
+    "discountPercentage": {
+      "type": "number",
+      "default": 0,
+      "description": "نسبة خصم ثابتة تطبّق تلقائياً على فواتير هذا العميل"
+    },
+    "creditLimit": {
+      "type": "number",
+      "default": 0,
+      "description": "الحد الائتماني الأقصى للعميل (0 = غير محدود)"
+    },
+    "creditDays": {
+      "type": "number",
+      "default": 0,
+      "description": "مدة السماح بالائتمان بالأيام (0 = نقدي فوري)"
+    },
+    "customerCategory": {
+      "type": "string",
+      "enum": ["REGULAR", "VIP", "WHOLESALE", "EMPLOYEE", "PLATFORM"],
+      "default": "REGULAR",
+      "description": "تصنيف العميل: عادي/VIP/جملة/موظف/منصة"
+    },
+    "currentBalance": {
+      "type": "number",
+      "default": 0,
+      "description": "الرصيد الحالي (يُحسب من القيود، لا يُخزن كقيمة ثابتة)"
     }
   },
   "required": [

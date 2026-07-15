@@ -186,9 +186,16 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
         </div>
       ) : null}
 
+      {settings.crNumber ? (
+        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
+          {T('السجل التجاري', 'CR No.')}: <span dir="ltr">{settings.crNumber}</span>
+        </div>
+      ) : null}
+
       {settings.phone ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
           {T('هاتف', 'Tel')}: <span dir="ltr">{settings.phone}</span>
+          {settings.phone2 ? ` · ${settings.phone2}` : ''}
         </div>
       ) : null}
 

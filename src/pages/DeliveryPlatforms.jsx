@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Pencil, Trash2, RefreshCw, Bike, FileText, DollarSign,
-  TrendingUp, Calculator, Eye, Search, Landmark,
+  TrendingUp, Calculator, Eye, Search, Landmark, Printer, Calendar,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
 import { OperationEngine } from '@/lib/businessEngine';
+import { printHtml } from '@/lib/printDocument';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -43,6 +45,7 @@ const EMPTY_FORM = {
 
 export default function DeliveryPlatforms() {
   const { lang } = useStore();
+  const { settings } = useCompanySettings();
 
   const [view, setView] = useState('platforms'); // 'platforms' | 'statements' | 'settlements'
   const [items, setItems] = useState([]);
@@ -50,6 +53,7 @@ export default function DeliveryPlatforms() {
   const [settlements, setSettlements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [settlementSearch, setSettlementSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -70,6 +74,9 @@ export default function DeliveryPlatforms() {
   const [settleTarget, setSettleTarget] = useState(null); // platform statement object
   const [settleForm, setSettleForm] = useState({
     date: new Date().toISOString().slice(0, 10),
+    periodFrom: '',
+    periodTo: '',
+    dueDate: '',
     settledAmount: '',
     paymentMethod: 'BANK_TRANSFER',
     settlementAccountCode: '1112',
@@ -277,8 +284,12 @@ export default function DeliveryPlatforms() {
   const openSettleDialog = (statement) => {
     setSettleTarget(statement);
     // اقتراح: تسوية كامل المعلّق دفعة واحدة
+    // نطاق الفترة يُعبّأ تلقائياً من فلتر التاريخ المعمول به في الكشوفات
     setSettleForm({
       date: new Date().toISOString().slice(0, 10),
+      periodFrom: dateFrom || '',
+      periodTo: dateTo || '',
+      dueDate: '',
       settledAmount: statement.pending > 0 ? statement.pending.toFixed(2) : '',
       paymentMethod: 'BANK_TRANSFER',
       settlementAccountCode: statement.platform.settlementAccountCode || '1112',
@@ -286,6 +297,29 @@ export default function DeliveryPlatforms() {
       notes: '',
     });
     setSettleDialogOpen(true);
+  };
+
+  // مولّد بديل لـ openSettleDialog يبدأ من بيانات المنصة فقط (يصلح للنافذة التفصيلية).
+  // يبحث عن كشف المنصة في statements، وإلا يبني كشفاً مؤقتاً.
+  const settleByPlatform = (platform) => {
+    const stmt = statements.find(s => s.platform.id === platform.id) || {
+      platform,
+      invoices: [],
+      settlements: [],
+      orders: 0,
+      salesPreTax: 0,
+      salesVat: 0,
+      salesTotal: 0,
+      commissionRate: Number(platform.commissionRate) || 0,
+      commission: 0,
+      commissionVat: 0,
+      net: 0,
+      paid: 0,
+      pending: 0,
+      settlementMethod: platform.settlementMethod || 'NET',
+    };
+    setDetailOpen(false);
+    openSettleDialog(stmt);
   };
 
   // تنفيذ التسوية عبر OperationEngine (ينشئ سجل PlatformSettlement + قيد JE)
@@ -307,8 +341,9 @@ export default function DeliveryPlatforms() {
       await OperationEngine.createPlatformSettlement({
         platformId: settleTarget.platform.id,
         date: settleForm.date,
-        periodFrom: dateFrom || '',
-        periodTo: dateTo || '',
+        periodFrom: settleForm.periodFrom || '',
+        periodTo: settleForm.periodTo || '',
+        dueDate: settleForm.dueDate || '',
         totalSales: settleTarget.salesTotal,
         totalCommission: settleTarget.commission,
         commissionVat: settleTarget.commissionVat,
@@ -332,6 +367,30 @@ export default function DeliveryPlatforms() {
     }
   };
 
+  // ─── طباعة كشف منصة بصيغة رسمية ───────────────────────────────────
+  // يبني HTML بأسلوب كشف حساب احترافي ثم يفتحه في نافذة طباعة مستقلة عبر printHtml.
+  const printStatement = (platform) => {
+    const stmt = statements.find(s => s.platform.id === platform.id);
+    if (!stmt) {
+      toast.error(t('لا يوجد كشف لهذه المنصة', 'No statement for this platform', lang));
+      return;
+    }
+    const html = buildStatementPrintHtml({
+      statement: stmt,
+      settings,
+      lang,
+      dateFrom,
+      dateTo,
+      formatCurrency,
+      formatDate,
+      t,
+    });
+    printHtml(html, {
+      title: `${t('كشف منصة', 'Platform Statement', lang)} - ${platform.name}`,
+      lang,
+    });
+  };
+
   // ─── أعمدة الطباعة/التصدير للكشوفات ─────────────────────────────────
   const statementExportColumns = [
     { header: { ar: 'المنصة', en: 'Platform' }, value: (r) => r.platform.name },
@@ -347,6 +406,38 @@ export default function DeliveryPlatforms() {
     { header: { ar: 'صافي المستحق', en: 'Net Payable' }, value: (r) => Number(r.net).toFixed(2) },
     { header: { ar: 'المسدّد', en: 'Paid' }, value: (r) => Number(r.paid).toFixed(2) },
     { header: { ar: 'المعلّق', en: 'Pending' }, value: (r) => Number(r.pending).toFixed(2) },
+  ];
+
+  // ─── فلترة التسويات بالبحث (رقم التسوية / المنصة / الرقم المرجعي) ────
+  const filteredSettlements = useMemo(() => {
+    if (!settlementSearch) return settlements;
+    const q = settlementSearch.toLowerCase();
+    return settlements.filter(s =>
+      (s.settlementNo || '').toLowerCase().includes(q) ||
+      (s.platformName || '').toLowerCase().includes(q) ||
+      (s.referenceNo || '').toLowerCase().includes(q)
+    );
+  }, [settlements, settlementSearch]);
+
+  // خريطة المنصات للوصول السريع بالمعرّف
+  const platformById = useMemo(() => {
+    const m = new Map();
+    items.forEach(p => m.set(p.id, p));
+    return m;
+  }, [items]);
+
+  // ─── أعمدة التصدير للتسويات ──────────────────────────────────────────
+  const settlementExportColumns = [
+    { header: { ar: 'رقم التسوية', en: 'Settlement No.' }, value: (r) => r.settlementNo || '' },
+    { header: { ar: 'التاريخ', en: 'Date' }, value: (r) => r.date || '' },
+    { header: { ar: 'المنصة', en: 'Platform' }, value: (r) => r.platformName || platformById.get(r.platformId)?.name || '' },
+    { header: { ar: 'فترة من', en: 'Period From' }, value: (r) => r.periodFrom || '' },
+    { header: { ar: 'فترة إلى', en: 'Period To' }, value: (r) => r.periodTo || '' },
+    { header: { ar: 'تاريخ الاستحقاق', en: 'Due Date' }, value: (r) => r.dueDate || '' },
+    { header: { ar: 'المبلغ', en: 'Amount' }, value: (r) => Number(r.settledAmount || 0).toFixed(2) },
+    { header: { ar: 'الطريقة', en: 'Method' }, value: (r) => r.paymentMethod || '' },
+    { header: { ar: 'الرقم المرجعي', en: 'Reference' }, value: (r) => r.referenceNo || '' },
+    { header: { ar: 'الحالة', en: 'Status' }, value: (r) => r.status || '' },
   ];
 
   return (
@@ -379,6 +470,12 @@ export default function DeliveryPlatforms() {
           className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'statements' ? 'bg-background shadow text-rose-700' : 'text-muted-foreground hover:text-foreground'}`}
         >
           <FileText className="size-4" /> {t('كشوفات المنصات', 'Platform Statements', lang)}
+        </button>
+        <button
+          onClick={() => setView('settlements')}
+          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'settlements' ? 'bg-background shadow text-rose-700' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          <Landmark className="size-4" /> {t('التسويات', 'Settlements', lang)}
         </button>
       </div>
 
@@ -455,6 +552,9 @@ export default function DeliveryPlatforms() {
                     <div className="flex items-center justify-end gap-1 pt-1 border-t">
                       <Button variant="ghost" size="sm" className="gap-1.5 text-xs" onClick={() => openDetail(p)}>
                         <Eye className="size-3.5" /> {t('كشف', 'Statement', lang)}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-rose-700 hover:text-rose-800" onClick={() => printStatement(p)}>
+                        <Printer className="size-3.5" /> {t('طباعة', 'Print', lang)}
                       </Button>
                       <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(p)}>
                         <Pencil className="size-3.5" />
@@ -575,6 +675,14 @@ export default function DeliveryPlatforms() {
                             <Eye className="size-3.5" /> {t('كشف', 'Detail', lang)}
                           </Button>
                           <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1 text-xs text-rose-700 hover:text-rose-800"
+                            onClick={() => printStatement(s.platform)}
+                          >
+                            <Printer className="size-3.5" /> {t('طباعة', 'Print', lang)}
+                          </Button>
+                          <Button
                             variant="outline"
                             size="sm"
                             className="gap-1 text-xs"
@@ -591,6 +699,115 @@ export default function DeliveryPlatforms() {
               </TableBody>
             </Table>
           </Card>
+        </>
+      )}
+
+      {/* ══════════════ القسم 3: التسويات (PlatformSettlement) ══════════════ */}
+      {view === 'settlements' && (
+        <>
+          <div className="flex gap-3 items-end">
+            <div className="relative flex-1">
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                value={settlementSearch}
+                onChange={e => setSettlementSearch(e.target.value)}
+                placeholder={t('بحث برقم التسوية / المنصة / الرقم المرجعي...', 'Search by settlement no / platform / reference...', lang)}
+                className="ps-9"
+              />
+            </div>
+            <TableToolbar
+              columns={settlementExportColumns}
+              rows={filteredSettlements}
+              title={{ ar: 'تسويات منصات التوصيل', en: 'Delivery Platform Settlements' }}
+            />
+          </div>
+
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('رقم التسوية', 'Settlement No.', lang)}</TableHead>
+                  <TableHead>{t('التاريخ', 'Date', lang)}</TableHead>
+                  <TableHead>{t('المنصة', 'Platform', lang)}</TableHead>
+                  <TableHead>{t('الفترة', 'Period', lang)}</TableHead>
+                  <TableHead>{t('الاستحقاق', 'Due Date', lang)}</TableHead>
+                  <TableHead className="text-end">{t('المبلغ', 'Amount', lang)}</TableHead>
+                  <TableHead>{t('الطريقة', 'Method', lang)}</TableHead>
+                  <TableHead>{t('الرقم المرجعي', 'Reference', lang)}</TableHead>
+                  <TableHead className="text-center">{t('الحالة', 'Status', lang)}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      {t('جاري التحميل...', 'Loading...', lang)}
+                    </TableCell>
+                  </TableRow>
+                ) : filteredSettlements.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      {t('لا توجد تسويات', 'No settlements', lang)}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredSettlements.map(st => {
+                    const platform = platformById.get(st.platformId);
+                    const methodLabel = st.paymentMethod === 'BANK_TRANSFER'
+                      ? t('تحويل بنكي', 'Bank Transfer', lang)
+                      : st.paymentMethod === 'CASH'
+                        ? t('نقداً', 'Cash', lang)
+                        : st.paymentMethod === 'CARD'
+                          ? t('بطاقة', 'Card', lang)
+                          : st.paymentMethod || '—';
+                    return (
+                      <TableRow key={st.id}>
+                        <TableCell className="font-mono text-xs font-semibold" dir="ltr">{st.settlementNo || '—'}</TableCell>
+                        <TableCell className="text-xs">{formatDate(st.date, lang)}</TableCell>
+                        <TableCell>
+                          <div className="font-medium text-xs">{st.platformName || platform?.name || '—'}</div>
+                          {platform?.code && <div className="text-[10px] text-muted-foreground font-mono" dir="ltr">{platform.code}</div>}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground" dir="ltr">
+                          {st.periodFrom || st.periodTo
+                            ? `${st.periodFrom || '…'} → ${st.periodTo || '…'}`
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{formatDate(st.dueDate, lang) || '—'}</TableCell>
+                        <TableCell className="text-end font-mono font-semibold text-emerald-700" dir="ltr">
+                          {formatCurrency(Number(st.settledAmount) || 0, lang)}
+                        </TableCell>
+                        <TableCell className="text-xs">{methodLabel}</TableCell>
+                        <TableCell>
+                          {st.referenceNo ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-mono text-blue-700" dir="ltr">
+                              {st.referenceNo}
+                            </span>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary"
+                            className={st.status === 'POSTED'
+                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                              : st.status === 'DRAFT'
+                                ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                : 'bg-rose-100 text-rose-700 border border-rose-200'}>
+                            {st.status === 'POSTED' ? t('مرحّلة', 'Posted', lang)
+                              : st.status === 'DRAFT' ? t('مسودة', 'Draft', lang)
+                              : st.status === 'CANCELLED' ? t('ملغاة', 'Cancelled', lang)
+                              : st.status || '—'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+          <p className="text-sm text-muted-foreground">
+            {filteredSettlements.length} {t('تسوية', 'settlements', lang)}
+          </p>
         </>
       )}
 
@@ -790,19 +1007,29 @@ export default function DeliveryPlatforms() {
             </Table>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDetailOpen(false)}>
               {t('إغلاق', 'Close', lang)}
             </Button>
             {detailPlatform && (
-              <Button
-                onClick={() => settlePlatform(detailPlatform)}
-                disabled={settling}
-                className="gap-2 bg-rose-600 hover:bg-rose-700"
-              >
-                <DollarSign className="size-4" />
-                {settling ? t('جاري التسوية...', 'Settling...', lang) : t('تسوية الإيصالات المعلّقة', 'Settle Pending', lang)}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-1.5 text-rose-700 hover:text-rose-800 border-rose-200 hover:bg-rose-50"
+                  onClick={() => printStatement(detailPlatform)}
+                >
+                  <Printer className="size-4" />
+                  {t('طباعة الكشف', 'Print Statement', lang)}
+                </Button>
+                <Button
+                  onClick={() => settleByPlatform(detailPlatform)}
+                  disabled={settling}
+                  className="gap-2 bg-rose-600 hover:bg-rose-700"
+                >
+                  <DollarSign className="size-4" />
+                  {settling ? t('جاري التسوية...', 'Settling...', lang) : t('تسوية الإيصالات المعلّقة', 'Settle Pending', lang)}
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
@@ -823,7 +1050,7 @@ export default function DeliveryPlatforms() {
 
       {/* ══════════════ نافذة التسوية الحقيقية ══════════════ */}
       <Dialog open={settleDialogOpen} onOpenChange={setSettleDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="size-5 text-emerald-600" />
@@ -891,6 +1118,21 @@ export default function DeliveryPlatforms() {
                     <Input type="number" min="0" step="0.01" value={settleForm.settledAmount} onChange={e => setSettleForm(f => ({ ...f, settledAmount: e.target.value }))} dir="ltr" />
                   </div>
                 </div>
+                {/* فترة التسوية + تاريخ الاستحقاق */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1"><Calendar className="size-3" /> {t('فترة من', 'Period From', lang)}</Label>
+                    <Input type="date" value={settleForm.periodFrom} onChange={e => setSettleForm(f => ({ ...f, periodFrom: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1"><Calendar className="size-3" /> {t('فترة إلى', 'Period To', lang)}</Label>
+                    <Input type="date" value={settleForm.periodTo} onChange={e => setSettleForm(f => ({ ...f, periodTo: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1"><Calendar className="size-3" /> {t('تاريخ الاستحقاق', 'Due Date', lang)}</Label>
+                    <Input type="date" value={settleForm.dueDate} onChange={e => setSettleForm(f => ({ ...f, dueDate: e.target.value }))} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t('طريقة الاستلام', 'Receipt Method', lang)}</Label>
@@ -915,8 +1157,11 @@ export default function DeliveryPlatforms() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">{t('رقم مرجعي', 'Reference No.', lang)}</Label>
-                  <Input value={settleForm.referenceNo} onChange={e => setSettleForm(f => ({ ...f, referenceNo: e.target.value }))} placeholder={t('إشعار تحويل، رقم إيصال…', 'Transfer advice, receipt no…', lang)} dir="ltr" />
+                  <Label className="text-xs flex items-center gap-1">
+                    <Landmark className="size-3" /> {t('رقم مرجعي', 'Reference No.', lang)}
+                  </Label>
+                  <Input value={settleForm.referenceNo} onChange={e => setSettleForm(f => ({ ...f, referenceNo: e.target.value }))} placeholder={t('إشعار تحويل، رقم إيصال…', 'Transfer advice, receipt no…', lang)} dir="ltr" className="font-mono" />
+                  <p className="text-[10px] text-muted-foreground">{t('سيظهر بوضوح في كشف التسوية وقائمة التسويات.', 'Will be shown prominently in the settlement statement and list.', lang)}</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">{t('ملاحظات', 'Notes', lang)}</Label>
@@ -975,4 +1220,164 @@ function DetailStat({ label, value }) {
       <div className="text-sm font-bold mt-0.5" dir="ltr">{value}</div>
     </div>
   );
+}
+
+// ─── مولّد HTML لكشف منصة قابل للطباعة ───────────────────────────────
+// يبني مستنداً رسمياً يتضمّن: ترويسة الشركة، بيانات المنصة (الاسم/الكود/العمولة/طريقة التسوية)،
+// فترة الكشف، ملخّصاً محاسبياً (طلبات/مبيعات/ضريبة/عمولة/صافي/محصل/معلّق)،
+// جدول الإيصالات التفصيلي، وجدول التسويات المرحّلة (مع الرقم المرجعي بوضوح).
+function buildStatementPrintHtml({ statement, settings, lang, dateFrom, dateTo, formatCurrency, formatDate, t }) {
+  const primary = settings.primaryColor || '#e11d48';
+  const p = statement.platform;
+  const invs = statement.invoices || [];
+  const setts = statement.settlements || [];
+  const money = (v) => formatCurrency(Number(v) || 0, lang);
+  const periodLabel = dateFrom || dateTo
+    ? `${dateFrom || '…'} → ${dateTo || '…'}`
+    : (invs.length
+      ? `${formatDate(invs[invs.length - 1].date || invs[invs.length - 1].created_date, lang)} → ${formatDate(invs[0].date || invs[0].created_date, lang)}`
+      : t('كل الفترات', 'All periods', lang));
+
+  const companyName = lang === 'ar'
+    ? (settings.companyName || settings.companyNameEn || '')
+    : (settings.companyNameEn || settings.companyName || '');
+
+  const contactBits = [
+    settings.address && [settings.address, settings.city].filter(Boolean).join('، '),
+    settings.phone && `${t('هاتف', 'Tel', lang)}: ${settings.phone}`,
+    settings.vatNumber && `${t('الرقم الضريبي', 'VAT', lang)}: ${settings.vatNumber}`,
+    settings.crNumber && `${t('السجل التجاري', 'CR', lang)}: ${settings.crNumber}`,
+  ].filter(Boolean);
+
+  const settlementMethodLabel = p.settlementMethod === 'GROSS'
+    ? t('إجمالي (تحويل بالإجمالي + فاتورة عمولة)', 'Gross (full transfer + commission invoice)', lang)
+    : t('صافي (المنصة تخصم العمولة)', 'Net (platform deducts commission)', lang);
+
+  const infoRow = (label, val) => val
+    ? `<div style="margin-bottom:3px"><span style="color:#6b7280;font-size:11px">${label}:</span> <strong>${val}</strong></div>`
+    : '';
+
+  // ─── صفوف الإيصالات ───
+  const invoiceRows = invs.length ? invs.map(inv => `
+    <tr style="border-top:1px solid #e5e7eb">
+      <td style="padding:6px 8px;white-space:nowrap;color:#6b7280;font-family:monospace" dir="ltr">${formatDate(inv.date || inv.created_date, lang)}</td>
+      <td style="padding:6px 8px;font-family:monospace;font-size:11px" dir="ltr">${inv.invoiceNo || '—'}</td>
+      <td style="padding:6px 8px">${inv.clientName || '—'}</td>
+      <td style="padding:6px 8px;text-align:end" dir="ltr">${money(inv.totalAmount)}</td>
+      <td style="padding:6px 8px;text-align:end;color:#be123c" dir="ltr">${money(inv.platformCommission)}</td>
+      <td style="padding:6px 8px;text-align:center">${inv.status || '—'}</td>
+    </tr>`).join('') : `<tr><td colspan="6" style="text-align:center;padding:18px;color:#9ca3af">${t('لا توجد إيصالات', 'No invoices', lang)}</td></tr>`;
+
+  // ─── صفوف التسويات ───
+  const settlementRows = setts.length ? setts.map(st => {
+    const methodLabel = st.paymentMethod === 'BANK_TRANSFER'
+      ? t('تحويل بنكي', 'Bank Transfer', lang)
+      : st.paymentMethod === 'CASH'
+        ? t('نقداً', 'Cash', lang)
+        : st.paymentMethod === 'CARD'
+          ? t('بطاقة', 'Card', lang)
+          : (st.paymentMethod || '—');
+    return `
+      <tr style="border-top:1px solid #e5e7eb">
+        <td style="padding:6px 8px;white-space:nowrap;color:#6b7280;font-family:monospace" dir="ltr">${formatDate(st.date, lang)}</td>
+        <td style="padding:6px 8px;font-family:monospace;font-size:11px" dir="ltr">${st.settlementNo || '—'}</td>
+        <td style="padding:6px 8px;text-align:end;font-weight:600" dir="ltr">${money(st.settledAmount)}</td>
+        <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#1d4ed8" dir="ltr">${st.referenceNo || '—'}</td>
+        <td style="padding:6px 8px">${methodLabel}</td>
+      </tr>`;
+  }).join('') : `<tr><td colspan="5" style="text-align:center;padding:18px;color:#9ca3af">${t('لا توجد تسويات مرحّلة', 'No posted settlements', lang)}</td></tr>`;
+
+  // ─── بطاقات الملخّص ───
+  const summaryTile = (label, value, color) => `
+    <div style="flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;background:#f9fafb">
+      <div style="font-size:10.5px;color:#6b7280;margin-bottom:3px">${label}</div>
+      <div style="font-size:15px;font-weight:700;color:${color}" dir="ltr">${value}</div>
+    </div>`;
+
+  return `
+    <div style="max-width:920px;margin:0 auto">
+      ${settings.headerImageUrl ? `<img src="${settings.headerImageUrl}" style="display:block;width:100%;object-fit:cover;margin-bottom:12px" />` : ''}
+      <div style="border-bottom:3px solid ${primary};padding-bottom:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+          <div style="display:flex;gap:12px;align-items:center">
+            ${settings.logoUrl ? `<img src="${settings.logoUrl}" style="height:60px;width:60px;object-fit:contain" />` : ''}
+            <div style="font-weight:800;font-size:19px;color:${primary}">${companyName}</div>
+          </div>
+          <div style="text-align:end">
+            <div style="font-weight:800;font-size:18px;color:${primary}">${t('كشف منصة توصيل', 'Delivery Platform Statement', lang)}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px">${t('الفترة', 'Period', lang)}: <span dir="ltr">${periodLabel}</span></div>
+          </div>
+        </div>
+        ${contactBits.length ? `<div style="font-size:10.5px;color:#475569;margin-top:10px;line-height:1.7">${contactBits.join('  •  ')}</div>` : ''}
+      </div>
+
+      <!-- بيانات المنصة -->
+      <div style="display:flex;justify-content:space-between;gap:20px;font-size:12px;margin-bottom:16px">
+        <div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:4px">${t('المنصة', 'Platform', lang)}</div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:4px">${p.name} ${p.nameEn ? `<span style="color:#6b7280;font-weight:400;font-size:12px" dir="ltr">(${p.nameEn})</span>` : ''}</div>
+          ${infoRow(t('الكود', 'Code', lang), p.code)}
+          ${infoRow(t('نسبة العمولة', 'Commission Rate', lang), `${Number(p.commissionRate || 0).toFixed(2)}%`)}
+          ${infoRow(t('طريقة التسوية', 'Settlement Method', lang), settlementMethodLabel)}
+          ${p.phone ? infoRow(t('الهاتف', 'Phone', lang), p.phone) : ''}
+        </div>
+        <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;text-align:center;min-width:200px;background:#fef2f2">
+          <div style="font-size:11px;color:#6b7280">${t('المتبقي على المنصة', 'Pending from Platform', lang)}</div>
+          <div style="font-size:24px;font-weight:800;color:#b45309;margin-top:4px" dir="ltr">${money(statement.pending)}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:4px">${t('صافي مستحق', 'Net payable', lang)}: <span dir="ltr">${money(statement.net)}</span> • ${t('محصل', 'Paid', lang)}: <span dir="ltr">${money(statement.paid)}</span></div>
+        </div>
+      </div>
+
+      <!-- ملخّص محاسبي -->
+      <div style="display:flex;gap:8px;margin-bottom:18px">
+        ${summaryTile(t('عدد الطلبات', 'Orders', lang), statement.orders, '#475569')}
+        ${summaryTile(t('المبيعات قبل الضريبة', 'Sales (pre-tax)', lang), money(statement.salesPreTax), '#047857')}
+        ${summaryTile(t('ضريبة المبيعات', 'Sales VAT', lang), money(statement.salesVat), '#475569')}
+        ${summaryTile(t('إجمالي المبيعات', 'Total Sales', lang), money(statement.salesTotal), '#047857')}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:18px">
+        ${summaryTile(t('العمولة', 'Commission', lang), money(statement.commission), '#be123c')}
+        ${summaryTile(t('ضريبة العمولة', 'Commission VAT', lang), money(statement.commissionVat), '#be123c')}
+        ${summaryTile(t('صافي المستحق', 'Net Payable', lang), money(statement.net), '#0d9488')}
+        ${summaryTile(t('المحصل', 'Paid', lang), money(statement.paid), '#1d4ed8')}
+        ${summaryTile(t('المتبقي', 'Pending', lang), money(statement.pending), '#b45309')}
+      </div>
+
+      <!-- جدول الإيصالات -->
+      <div style="font-weight:700;font-size:12px;color:${primary};margin-bottom:6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px">${t('تفاصيل الإيصالات', 'Invoice Details', lang)} (${invs.length})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:18px">
+        <thead>
+          <tr style="background:${primary};color:#fff">
+            <th style="text-align:start;padding:7px 8px">${t('التاريخ', 'Date', lang)}</th>
+            <th style="text-align:start;padding:7px 8px">${t('رقم الإيصال', 'Invoice No.', lang)}</th>
+            <th style="text-align:start;padding:7px 8px">${t('الزبون', 'Customer', lang)}</th>
+            <th style="text-align:end;padding:7px 8px">${t('الإجمالي', 'Total', lang)}</th>
+            <th style="text-align:end;padding:7px 8px">${t('العمولة', 'Commission', lang)}</th>
+            <th style="text-align:center;padding:7px 8px">${t('الحالة', 'Status', lang)}</th>
+          </tr>
+        </thead>
+        <tbody>${invoiceRows}</tbody>
+      </table>
+
+      <!-- جدول التسويات -->
+      <div style="font-weight:700;font-size:12px;color:${primary};margin-bottom:6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px">${t('التسويات المرحّلة', 'Posted Settlements', lang)} (${setts.length})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:18px">
+        <thead>
+          <tr style="background:${primary};color:#fff">
+            <th style="text-align:start;padding:7px 8px">${t('التاريخ', 'Date', lang)}</th>
+            <th style="text-align:start;padding:7px 8px">${t('رقم التسوية', 'Settlement No.', lang)}</th>
+            <th style="text-align:end;padding:7px 8px">${t('المبلغ', 'Amount', lang)}</th>
+            <th style="text-align:start;padding:7px 8px">${t('الرقم المرجعي', 'Reference No.', lang)}</th>
+            <th style="text-align:start;padding:7px 8px">${t('الطريقة', 'Method', lang)}</th>
+          </tr>
+        </thead>
+        <tbody>${settlementRows}</tbody>
+      </table>
+
+      ${settings.footerImageUrl ? `<img src="${settings.footerImageUrl}" style="display:block;width:100%;object-fit:cover;margin-top:24px" />` : ''}
+      <div style="margin-top:24px;border-top:2px solid ${primary};padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#64748b">
+        <span>${companyName}</span>
+        <span>${t('تم إصدار هذا الكشف آلياً بتاريخ', 'Generated automatically on', lang)} ${formatDate(new Date().toISOString(), lang)}</span>
+      </div>
+    </div>`;
 }
