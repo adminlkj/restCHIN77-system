@@ -1063,3 +1063,59 @@ Task: اختبار تتابعي لكل الشاشات على Render
 ✅ بيانات الفرع في الإيصال (useMemo → useEffect)
 ✅ خصم العميل النقدي (إزالة شرط isCash)
 ✅ JE balance عند دفع مبلغ > الإجمالي (adjustmentFactor)
+
+---
+Task ID: procurement-deep-test
+Agent: main (Z.ai Code)
+Task: اختبار تفصيلي ممل لشاشة المشتريات كاملة
+
+Work Log:
+تم اختبار 5 تبويبات بالتفصيل:
+
+تبويب 1: طلبات الشراء ✅
+- PR-0001 موجود (مسودة)
+- اختبار الاعتماد: ✅ تغيّرت الحالة إلى "معتمد"
+- إصلاح: 'CANCELLED' → 'REJECTED' (لم يكن في STATUS map)
+
+تبويب 2: أوامر الشراء ✅ (بعد إصلاح حرج)
+- BUG حرج: PurchaseOrder كان في STATUS_CONTROLLED_DOCUMENTS + FISCAL_GUARDED_ENTITIES
+  → منع تغيير الحالة وإنشاء الأمر
+- إصلاح: إزالة PurchaseOrder/PurchaseRequest من STATUS_CONTROLLED_DOCUMENTS
+  + إزالة PurchaseOrder من FISCAL_GUARDED_ENTITIES
+  + إزالة كيانات المقاولات المحذوفة (Contract, RentalContract, ChangeOrder, إلخ)
+- BUG آخر: BOQItem محذوف → استبدال بـ InventoryItem
+  + OrderLinesEditor يعرف الأصناف من المخزون الآن
+- إنشاء PO-0001: ✅ مورد تجريبي + برجر لحم 10×35 = 350 + ضريبة 52.50 = 402.50
+- اعتماد PO-0001: ✅ تغيّرت الحالة إلى "موافق عليه"
+
+تبويب 3: سندات الاستلام ✅ (بعد إصلاح حرج)
+- BUG حرج: createGoodsReceipt يتطلب warehouseId في أمر الشراء
+  لكن المطاعم قد تستلم للفرع بدون مخزن منفصل
+- إصلاح: effectiveWarehouseId = po.warehouseId || po.projectId
+- إنشاء GRN-0001: ✅ استلام 10 وحدة برجر لحم
+- قيد محاسبي: ✅ 1131 (مخزون) Dr=350 / 2110 (ذمم مورد) Cr=350
+
+تبويب 4: فواتير الموردين ✅
+- إنشاء SUP-INV-001: ✅ مرتبطة بـ GRN-0001
+- اعتماد: ✅ status=APPROVED
+- قيد ضريبة: ✅ 1140 (ض.ق.م. مدفوعة) Dr=52.5 / 2110 (ذمم مورد) Cr=52.5
+
+تببيب 5: سداد الموردين ✅
+- إنشاء سداد: ✅ amount=402.5, method=BANK_TRANSFER
+- قيد سداد: ✅ 2110 (ذمم مورد) Dr=402.5 / 1112 (البنك) Cr=402.5
+
+التحقق من الترابط المحاسبي:
+- ذمم المورد (2110): 350 Cr (استلام) + 52.5 Cr (ضريبة) - 402.5 Dr (سداد) = 0 ✅
+- المخزون (1131): 350 Dr ✅
+- البنك (1112): 402.5 Cr ✅
+- ض.ق.م. (1140): 52.5 Dr ✅
+
+الإصلاحات المنفّذة:
+1. server/entities.js: إزالة PurchaseOrder/PurchaseRequest من STATUS_CONTROLLED + FISCAL_GUARDED
+2. PurchaseRequests.jsx: 'CANCELLED' → 'REJECTED'
+3. PurchaseOrders.jsx: BOQItem → InventoryItem
+4. OrderLinesEditor.jsx: BOQ → InventoryItem (code/name/costPrice)
+5. postOperation/entry.ts: createGoodsReceipt fallback to projectId
+
+commit: 6c0468d، push: ناجح
+التحقق فعلي على Render: ✅ كل القيود متوازنة والترابط سليم
