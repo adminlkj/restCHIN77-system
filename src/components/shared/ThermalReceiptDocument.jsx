@@ -158,50 +158,104 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
         textAlign: align,
       }}
     >
-      {/* ─── ترويسة المطعم ─── */}
-      {settings.logoUrl ? (
-        <div style={{ textAlign: 'center', marginBottom: 4 }}>
-          <img src={settings.logoUrl} alt="logo" style={{ maxWidth: '120px', maxHeight: '60px', objectFit: 'contain' }} />
-        </div>
-      ) : null}
+      {/* ═══════════════════════════════════════════════════════════════
+          ترويسة الإيصال الحراري — نمط احترافي متّبع في أنظمة نقاط البيع
+          (Oracle Simphony / Toast / Square / Lightspeed):
 
-      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, color: accent }}>
+            [LOGO]              ← منفرد في الأعلى، وسط/يمين/يسار حسب الإعداد
+            اسم الشركة (عربي)   ← وسط
+            اسم الشركة (إنجليزي) ← وسط
+            السجل التجاري        ← وسط
+            الرقم الضريبي        ← وسط
+            ──────────────
+            اسم الفرع            ← وسط
+            العنوان              ← وسط
+            هاتف / هاتف2         ← وسط
+          ═══════════════════════════════════════════════════════════════ */}
+
+      {/* ─── (1) الشعار: مستقل عن شعار الفاتورة A4 ─── */}
+      {(() => {
+        // مصدر الشعار: BRANCH=شعار الفرع العام، CUSTOM=شعار مخصص للإيصال
+        const enabled = settings.thermalLogoEnabled !== false;
+        if (!enabled) return null;
+        const source = settings.thermalLogoSource || 'BRANCH';
+        const logoUrl = source === 'CUSTOM'
+          ? (settings.thermalLogoUrl || '')
+          : (settings.logoUrl || ''); // شعار الفرع العام
+        if (!logoUrl) return null;
+
+        // الأبعاد: تحكم كامل حسب نوع الطابعة (58mm/80mm)
+        const width = Math.min(Number(settings.thermalLogoWidth) || 180, 220);  // حد أقصى 220
+        const height = Math.min(Number(settings.thermalLogoHeight) || 90, 120); // حد أقصى 120
+        const marginBottom = Number(settings.thermalLogoMarginBottom) || 10;
+        const align = (settings.thermalLogoAlign || 'CENTER').toLowerCase();
+        const fit = (settings.thermalLogoFit || 'CONTAIN').toLowerCase();
+
+        // objectFit: ORIGINAL → لا نحدّد width/height قسراً
+        const imgStyle = fit === 'original'
+          ? { maxWidth: `${width}px`, maxHeight: `${height}px` }
+          : { width: `${width}px`, height: `${height}px`, objectFit: fit };
+
+        return (
+          <div style={{ textAlign: align, marginBottom, marginTop: 2 }}>
+            <img
+              src={logoUrl}
+              alt="logo"
+              style={{ ...imgStyle, display: align === 'center' ? 'inline-block' : 'block', margin: align === 'center' ? '0 auto' : (align === 'right' ? '0 0 0 auto' : '0 auto 0 0') }}
+            />
+          </div>
+        );
+      })()}
+
+      {/* ─── (2) اسم الشركة (عربي) ─── */}
+      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, color: accent, marginTop: 2 }}>
         {(rtl ? settings.companyName : (settings.companyNameEn || settings.companyName)) || (rtl ? 'مطعمنا' : 'Our Restaurant')}
       </div>
 
+      {/* ─── (3) اسم الشركة (إنجليزي) ─── */}
       {settings.companyNameEn && rtl && settings.companyName ? (
         <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#555', marginBottom: 2 }}>{settings.companyNameEn}</div>
       ) : null}
 
+      {/* ─── (4) السجل التجاري ─── */}
       {settings.crNumber ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
           {T('السجل التجاري', 'CR')}: <span dir="ltr">{settings.crNumber}</span>
         </div>
       ) : null}
 
+      {/* ─── (5) الرقم الضريبي ─── */}
       {settings.vatNumber ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
           {T('الرقم الضريبي', 'VAT')}: <span dir="ltr">{settings.vatNumber}</span>
         </div>
       ) : null}
 
-      {/* اسم الفرع — يظهر إن كان الإيصال مرتبطاً بفرع محدّد */}
+      {/* ─── فاصل بين بيانات الشركة وبيانات الفرع ─── */}
+      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0 2px' }}>{divider}</div>
+
+      {/* ─── (6) اسم الفرع ─── */}
       {settings.branchName ? (
-        <div style={{ textAlign: 'center', fontSize: 10, color: primary, fontWeight: 700, marginTop: 2 }}>
-          {settings.branchName}{settings.city ? ` - ${settings.city}` : ''}
+        <div style={{ textAlign: 'center', fontSize: 11, color: primary, fontWeight: 700, marginTop: 2 }}>
+          {settings.branchName}{settings.branchNameEn ? ` — ${settings.branchNameEn}` : ''}
         </div>
       ) : null}
 
+      {/* ─── (7) عنوان الفرع (المدينة + العنوان التفصيلي) ─── */}
+      {settings.city || settings.address ? (
+        <div style={{ textAlign: 'center', fontSize: 9, color: '#555', maxWidth: '95%', margin: '1px auto' }}>
+          {[
+            settings.city,
+            settings.address && settings.address !== settings.city ? settings.address : '',
+          ].filter(Boolean).join(' - ')}
+        </div>
+      ) : null}
+
+      {/* ─── (8) هاتف الفرع (هاتف + هاتف2) ─── */}
       {settings.phone ? (
         <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
           {T('هاتف', 'Tel')}: <span dir="ltr">{settings.phone}</span>
           {settings.phone2 ? ` · ${settings.phone2}` : ''}
-        </div>
-      ) : null}
-
-      {(settings.address && !settings.city) ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555', maxWidth: '95%', margin: '0 auto' }}>
-          {settings.address}
         </div>
       ) : null}
 

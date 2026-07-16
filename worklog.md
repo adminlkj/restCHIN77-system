@@ -1630,3 +1630,79 @@ Stage Summary:
 - جميع الشاشات الست تعمل بشكل صحيح
 - التقارير الستة سليمة ومتوازنة
 - الكود نظيف (lint 0، build ناجح)
+
+---
+Task ID: thermal-receipt-logo-redesign
+Agent: main (Z.ai Code)
+Task: إعادة تصميم شعار الإيصال الحراري بشكل احترافي + استقلالية كاملة عن شعار الفاتورة A4
+
+Work Log:
+المشكلة: شعار الإيصال الحراري كان يشارك شعار الفاتورة A4، غير متمركز، حجم ثابت، المعاينة مختلفة عن الطباعة.
+
+الحل المُطبّق (5 ملفات):
+
+1. base44/entities/BranchSetting.jsonc — إضافة 8 حقول جديدة:
+   - thermalLogoEnabled (bool, default true)
+   - thermalLogoSource (BRANCH | CUSTOM, default BRANCH)
+   - thermalLogoUrl (string) — شعار مخصص للإيصال
+   - thermalLogoWidth (number, default 180, max 220)
+   - thermalLogoHeight (number, default 90, max 120)
+   - thermalLogoAlign (CENTER | RIGHT | LEFT, default CENTER)
+   - thermalLogoMarginBottom (number, default 10)
+   - thermalLogoFit (CONTAIN | COVER | ORIGINAL, default CONTAIN)
+
+2. src/lib/branchSettings.js:
+   - DEFAULT_BRANCH_SETTINGS: إضافة الحقول الجديدة
+   - resolveReceiptSettings: تمرير الحقول الحرارية (مستقلة عن logoUrl العام)
+   - phone2 أصبح يُمرر (كان يُفقد سابقاً)
+
+3. src/components/shared/ThermalReceiptDocument.jsx — إعادة تصميم الترويسة:
+   الترتيب الجديد (نمط Oracle Simphony/Toast/Square/Lightspeed):
+     [LOGO]              ← منفرد في الأعلى، وسط/يمين/يسار حسب الإعداد
+     اسم الشركة (عربي)   ← وسط، خط 15px وزن 800
+     اسم الشركة (إنجليزي) ← وسط، خط 9px
+     السجل التجاري        ← وسط
+     الرقم الضريبي        ← وسط
+     ──────────────       ← فاصل
+     اسم الفرع            ← وسط، خط 11px وزن 700
+     العنوان (مدينة + عنوان) ← وسط
+     هاتف / هاتف2         ← وسط
+   - الشعار يستخدم thermalLogoWidth/Height/Align/MarginBottom/Fit
+   - حد أقصى للأبعاد: 220px عرض، 120px ارتفاع
+   - مصدر الشعار: BRANCH (شعار الفرع العام) أو CUSTOM (thermalLogoUrl)
+   - ORIGINAL fit: لا يفرض width/height، يستخدم maxWidth/maxHeight فقط
+
+4. src/components/settings/BranchSettingsCard.jsx — قسم جديد كامل:
+   "إعدادات الإيصال الحراري" مع:
+   - مفتاح إظهار/إخفاء الشعار (Switch)
+   - اختيار مصدر الشعار: BRANCH | CUSTOM (أزرار راديو مرئية)
+   - رفع شعار مخصص للإيصال (يظهر فقط عند CUSTOM)
+   - حقول العرض/الارتفاع (max 220/120) مع التحقق
+   - حقل المسافة أسفل الشعار
+   - 3 أزرار محاذاة: يسار/وسط/يمين
+   - 3 أزرار طريقة عرض: احتواء/تعبئة/أصلي
+   - تلميح الطابعة (58mm: 140-160px، 80mm: 180-220px)
+   - معاينة حيّة تستخدم ThermalReceiptDocument الفعلي (ليست نسخة!)
+   - إزالة ReceiptHeaderPreview القديم (كان نسخة مختلفة عن الطباعة)
+
+5. التوضيح في واجهة المستخدم:
+   - شعار الفرع العام = "للفاتورة A4 وعرض النظام" (مع نص توضيحي)
+   - شعار الإيصال الحراري = "مستقل للإيصال فقط"
+   - كل قسم له أيقونة مختلفة (ImageIcon vs Receipt)
+
+الاستقلالية التامة:
+  - logoUrl (شعار الفرع العام) → الفاتورة A4 + لوحة التحكم + شاشة الدخول
+  - thermalLogo* → الإيصال الحراري فقط
+  - تغيير أحدهما لا يؤثر على الآخر
+
+التحقق:
+- lint: 0 أخطاء
+- build: ناجح (2731 module)
+- المعاينة في الإعدادات = نفس المكوّن الفعلي الذي يُطبع (ReceiptPreview → ThermalReceipt → Print)
+
+Stage Summary:
+- شعار الإيصال الحراري مستقل بالكامل عن شعار الفاتورة A4
+- نمط احترافي: شعار في المنتصف بالأعلى (مثل Oracle/Toast/Square/Lightspeed)
+- تحكم كامل: مصدر، أبعاد، محاذاة، مسافة، طريقة عرض
+- دعم الطابعات: 58mm و 80mm
+- المعاينة = الطباعة (لا فرق)

@@ -21,13 +21,22 @@ export const DEFAULT_BRANCH_SETTINGS = {
   phone2: '',            // هاتف إضافي
   address: '',           // العنوان التفصيلي
   city: '',              // المدينة/الحي
-  logoUrl: '',           // شعار الفرع
+  logoUrl: '',           // شعار الفرع (للفاتورة A4 وعرض النظام)
   vatNumber: '',         // الرقم الضريبي للفرع (إن اختلف)
   primaryColor: '#d97706',
   accentColor: '#1f2d3d',
   managerName: '',       // اسم مدير الفرع
   posTerminalId: '',     // معرّف نقطة البيع
   isActive: true,
+  // ─── إعدادات الإيصال الحراري (مستقلة عن شعار الفاتورة A4) ───
+  thermalLogoEnabled: true,        // إظهار شعار الإيصال الحراري
+  thermalLogoSource: 'BRANCH',     // BRANCH | CUSTOM
+  thermalLogoUrl: '',              // شعار مخصص للإيصال (عند CUSTOM)
+  thermalLogoWidth: 180,           // عرض الشعار بالبكسل
+  thermalLogoHeight: 90,           // ارتفاع الشعار بالبكسل
+  thermalLogoAlign: 'CENTER',      // CENTER | RIGHT | LEFT
+  thermalLogoMarginBottom: 10,     // المسافة أسفل الشعار بالبكسل
+  thermalLogoFit: 'CONTAIN',       // CONTAIN | COVER | ORIGINAL
 };
 
 // ذاكرة مؤقتة (cache) لتجنّب الطلبات المتكررة — تُحدّث عند كل جلب/حفظ.
@@ -87,6 +96,10 @@ export async function setBranchSettings(branchId, settings) {
 // دمج إعدادات الفرع مع إعدادات الشركة الأم.
 // الأولوية: إعدادات الفرع > إعدادات الشركة > الافتراضي.
 // يعيد Promise لأنه يجلب إعدادات الفرع من قاعدة البيانات.
+//
+// ملاحظة مهمة: شعار الإيصال الحراري مستقل عن شعار الفاتورة A4.
+//   - logoUrl: شعار الفرع العام (يُستخدم في الفاتورة A4 وعرض النظام)
+//   - thermalLogo* : إعدادات الإيصال الحراري فقط (لا تؤثر على الفاتورة A4)
 export async function resolveReceiptSettings(branchId, companySettings = {}) {
   const branch = await getBranchSettings(branchId);
   return {
@@ -98,12 +111,23 @@ export async function resolveReceiptSettings(branchId, companySettings = {}) {
     branchName: branch.branchName || '',
     branchNameEn: branch.branchNameEn || '',
     phone: branch.phone || companySettings.phone || '',
+    phone2: branch.phone2 || '',
     address: branch.address || companySettings.address || '',
     city: branch.city || companySettings.city || '',
+    // شعار الفرع العام (للفاتورة A4 وعرض النظام) — مستقل عن الإيصال الحراري
     logoUrl: branch.logoUrl || companySettings.logoUrl || '',
     vatNumber: branch.vatNumber || companySettings.vatNumber || '',
     primaryColor: branch.primaryColor || companySettings.primaryColor || '#d97706',
     accentColor: branch.accentColor || companySettings.accentColor || '#1f2d3d',
+    // ─── إعدادات الإيصال الحراري (مستقلة تماماً عن شعار الفاتورة A4) ───
+    thermalLogoEnabled: branch.thermalLogoEnabled !== undefined ? branch.thermalLogoEnabled : true,
+    thermalLogoSource: branch.thermalLogoSource || 'BRANCH',
+    thermalLogoUrl: branch.thermalLogoUrl || '',
+    thermalLogoWidth: Number(branch.thermalLogoWidth) || 180,
+    thermalLogoHeight: Number(branch.thermalLogoHeight) || 90,
+    thermalLogoAlign: branch.thermalLogoAlign || 'CENTER',
+    thermalLogoMarginBottom: Number(branch.thermalLogoMarginBottom) || 10,
+    thermalLogoFit: branch.thermalLogoFit || 'CONTAIN',
   };
 }
 

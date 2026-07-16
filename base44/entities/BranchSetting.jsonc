@@ -32,11 +32,53 @@
     },
     "logoUrl": {
       "type": "string",
-      "description": "رابط شعار الفرع"
+      "description": "رابط شعار الفرع (يُستخدم في الفاتورة A4 وعرض النظام)"
     },
     "vatNumber": {
       "type": "string",
       "description": "الرقم الضريبي للفرع (إن اختلف عن الشركة)"
+    },
+    "thermalLogoEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "إظهار شعار الإيصال الحراري"
+    },
+    "thermalLogoSource": {
+      "type": "string",
+      "enum": ["BRANCH", "CUSTOM"],
+      "default": "BRANCH",
+      "description": "مصدر شعار الإيصال الحراري: BRANCH=شعار الفرع، CUSTOM=شعار خاص بالإيصال"
+    },
+    "thermalLogoUrl": {
+      "type": "string",
+      "description": "رابط شعار الإيصال الحراري المخصص (عند thermalLogoSource=CUSTOM)"
+    },
+    "thermalLogoWidth": {
+      "type": "number",
+      "default": 180,
+      "description": "عرض شعار الإيصال الحراري بالبكسل"
+    },
+    "thermalLogoHeight": {
+      "type": "number",
+      "default": 90,
+      "description": "ارتفاع شعار الإيصال الحراري بالبكسل"
+    },
+    "thermalLogoAlign": {
+      "type": "string",
+      "enum": ["CENTER", "RIGHT", "LEFT"],
+      "default": "CENTER",
+      "description": "محاذاة شعار الإيصال الحراري"
+    },
+    "thermalLogoMarginBottom": {
+      "type": "number",
+      "default": 10,
+      "description": "المسافة أسفل شعار الإيصال الحراري بالبكسل"
+    },
+    "thermalLogoFit": {
+      "type": "string",
+      "enum": ["CONTAIN", "COVER", "ORIGINAL"],
+      "default": "CONTAIN",
+      "description": "طريقة عرض الشعار: CONTAIN=احتواء، COVER=تعبئة، ORIGINAL=الحجم الأصلي"
     },
     "primaryColor": {
       "type": "string",

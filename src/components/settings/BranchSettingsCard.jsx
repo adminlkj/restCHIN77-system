@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Store, Loader2, Save, Upload, RefreshCw, Image as ImageIcon,
-  CreditCard, Eye, Phone, MapPin, User, Palette,
+  CreditCard, Eye, Phone, MapPin, User, Palette, Receipt, Settings2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/components/ui/use-toast';
@@ -18,6 +19,7 @@ import { useCompanySettings } from '@/hooks/useCompanySettings';
 import {
   getBranchSettings, setBranchSettings, DEFAULT_BRANCH_SETTINGS,
 } from '@/lib/branchSettings';
+import ThermalReceiptDocument from '@/components/shared/ThermalReceiptDocument';
 
 // ═══════════════════════════════════════════════════════════════════════
 // بطاقة إعدادات الفروع — تتيح اختيار فرع وتحرير إعداداته الخاصة:
@@ -139,6 +141,71 @@ export default function BranchSettingsCard() {
     }
   };
 
+  // ─── رفع شعار الإيصال الحراري (مستقل عن شعار الفرع العام) ─────────
+  const thermalFileInputRef = useRef(null);
+  const [thermalUploading, setThermalUploading] = useState(false);
+  const handleThermalLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setThermalUploading(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      set('thermalLogoUrl', file_url);
+      set('thermalLogoSource', 'CUSTOM');
+      toast({ title: t('تم رفع شعار الإيصال الحراري', 'Thermal logo uploaded', lang) });
+    } catch (err) {
+      toast({ title: t('خطأ في الرفع', 'Upload failed', lang), description: err.message, variant: 'destructive' });
+    } finally {
+      setThermalUploading(false);
+      if (thermalFileInputRef.current) thermalFileInputRef.current.value = '';
+    }
+  };
+
+  // ─── معاينة حيّة للإيصال الحراري (تستخدم نفس المكوّن الفعلي) ────────
+  // ندمج إعدادات الفرع الحالية مع إعدادات الشركة لإنشاء كائن settings
+  // مطابق لما سيستلمه ThermalReceiptDocument عند الطباعة الفعلية.
+  const thermalPreviewSettings = useMemo(() => {
+    return {
+      ...companySettings,
+      branchName: form.branchName || '',
+      branchNameEn: form.branchNameEn || '',
+      phone: form.phone || companySettings.phone || '',
+      phone2: form.phone2 || '',
+      address: form.address || companySettings.address || '',
+      city: form.city || companySettings.city || '',
+      logoUrl: form.logoUrl || companySettings.logoUrl || '',
+      vatNumber: form.vatNumber || companySettings.vatNumber || '',
+      primaryColor: form.primaryColor || companySettings.primaryColor || '#d97706',
+      accentColor: form.accentColor || companySettings.accentColor || '#1f2d3d',
+      thermalLogoEnabled: form.thermalLogoEnabled !== undefined ? form.thermalLogoEnabled : true,
+      thermalLogoSource: form.thermalLogoSource || 'BRANCH',
+      thermalLogoUrl: form.thermalLogoUrl || '',
+      thermalLogoWidth: Number(form.thermalLogoWidth) || 180,
+      thermalLogoHeight: Number(form.thermalLogoHeight) || 90,
+      thermalLogoAlign: form.thermalLogoAlign || 'CENTER',
+      thermalLogoMarginBottom: Number(form.thermalLogoMarginBottom) || 10,
+      thermalLogoFit: form.thermalLogoFit || 'CONTAIN',
+    };
+  }, [companySettings, form]);
+
+  // فاتورة تجريبية للمعاينة الكاملة للإيصال
+  const SAMPLE_RECEIPT = useMemo(() => ({
+    invoiceNo: 'INV-PREVIEW',
+    date: new Date().toISOString(),
+    cashier: t('الكاشير', 'Cashier', lang),
+    tableNo: '1',
+    lineItems: [
+      { description: t('برجر لحم', 'Beef Burger', lang), qty: 2, unitPrice: 35, total: 70 },
+      { description: t('بطاطس مقلية', 'French Fries', lang), qty: 1, unitPrice: 15, total: 15 },
+    ],
+    subtotal: 85,
+    vatAmount: 12.75,
+    vatRate: 0.15,
+    totalAmount: 97.75,
+    paidAmount: 100,
+    notes: JSON.stringify({ saleType: 'DINE_IN', payments: [{ method: 'cash', amount: 100 }] }),
+  }), [lang]);
+
   // ─── الحفظ ─────────────────────────────────────────────────────────
   const save = async () => {
     if (!selectedBranchId) {
@@ -258,11 +325,16 @@ export default function BranchSettingsCard() {
               </div>
             </div>
 
-            {/* قسم: الشعار */}
+            {/* قسم: الشعار العام (يُستخدم في الفاتورة A4 وعرض النظام) */}
             <div>
-              <h4 className="text-sm font-semibold mb-3 text-foreground flex items-center gap-2">
-                <ImageIcon className="size-4" />{t('شعار الفرع', 'Branch Logo', lang)}
+              <h4 className="text-sm font-semibold mb-1 text-foreground flex items-center gap-2">
+                <ImageIcon className="size-4" />{t('شعار الفرع (للفاتورة A4 وعرض النظام)', 'Branch Logo (A4 Invoice & System)', lang)}
               </h4>
+              <p className="text-xs text-muted-foreground mb-3">
+                {t('هذا الشعار يظهر في الفاتورة A4 ولوحة التحكم. لا يؤثر على الإيصال الحراري (له شعار مستقل بالأسفل).',
+                   'This logo appears in A4 invoice & dashboard. Does NOT affect thermal receipt (it has its own logo below).',
+                   lang)}
+              </p>
               <div className="flex flex-wrap items-center gap-4">
                 {form.logoUrl ? (
                   <img
@@ -341,16 +413,244 @@ export default function BranchSettingsCard() {
               </div>
             </div>
 
-            {/* معاينة ترويسة الإيصال */}
-            <div>
-              <h4 className="text-sm font-semibold mb-3 text-foreground flex items-center gap-2">
-                <Eye className="size-4" />{t('معاينة ترويسة الإيصال', 'Receipt Header Preview', lang)}
+            {/* ════════════════════════════════════════════════════════════
+                قسم: إعدادات الإيصال الحراري (مستقلة عن شعار الفاتورة A4)
+                نمط احترافي: شعار في الأعلى وسط/يمين/يسار + تحكم بالأبعاد
+                حسب نوع الطابعة (58mm أو 80mm)
+                ════════════════════════════════════════════════════════════ */}
+            <div className="border-t pt-4 mt-4">
+              <h4 className="text-sm font-semibold mb-1 text-foreground flex items-center gap-2">
+                <Receipt className="size-4 text-amber-600" />
+                {t('إعدادات الإيصال الحراري', 'Thermal Receipt Settings', lang)}
               </h4>
-              <ReceiptHeaderPreview
-                companySettings={companySettings}
-                branchSettings={form}
-                lang={lang}
-              />
+              <p className="text-xs text-muted-foreground mb-4">
+                {t('شعار مستقل للإيصال الحراري فقط — لا يؤثر على الفاتورة A4 ولا عرض النظام. اختر الشعار والأبعاد والمحاذاة حسب نوع الطابعة (58mm أو 80mm).',
+                   'Independent logo for thermal receipt only — does NOT affect A4 invoice or system display. Choose logo, size & alignment per printer type (58mm or 80mm).',
+                   lang)}
+              </p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* ─── يمين: عناصر التحكم ─── */}
+                <div className="space-y-4">
+                  {/* إظهار الشعار */}
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label className="text-sm font-medium">{t('إظهار شعار الإيصال', 'Show Receipt Logo', lang)}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t('إذا أُغلق، لا يظهر أي شعار على الإيصال الحراري.',
+                           'If off, no logo is shown on the thermal receipt.',
+                           lang)}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.thermalLogoEnabled !== false}
+                      onCheckedChange={(v) => set('thermalLogoEnabled', v)}
+                    />
+                  </div>
+
+                  {/* مصدر الشعار */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">{t('مصدر الشعار', 'Logo Source', lang)}</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => set('thermalLogoSource', 'BRANCH')}
+                        className={`flex items-center gap-2 rounded-md border p-2.5 text-xs transition ${
+                          (form.thermalLogoSource || 'BRANCH') === 'BRANCH'
+                            ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        <span className={`size-3 rounded-full border-2 ${(form.thermalLogoSource || 'BRANCH') === 'BRANCH' ? 'border-amber-500 bg-amber-500' : 'border-muted-foreground'}`} />
+                        {t('شعار الفرع', 'Branch Logo', lang)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => set('thermalLogoSource', 'CUSTOM')}
+                        className={`flex items-center gap-2 rounded-md border p-2.5 text-xs transition ${
+                          form.thermalLogoSource === 'CUSTOM'
+                            ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        <span className={`size-3 rounded-full border-2 ${form.thermalLogoSource === 'CUSTOM' ? 'border-amber-500 bg-amber-500' : 'border-muted-foreground'}`} />
+                        {t('شعار خاص بالإيصال', 'Custom Receipt Logo', lang)}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {t('BRANCH = يستخدم شعار الفرع العام (نفس شعار الفاتورة A4). CUSTOM = شعار مخصص للإيصال فقط.',
+                         'BRANCH = uses the branch logo (same as A4 invoice). CUSTOM = a separate logo just for the receipt.',
+                         lang)}
+                    </p>
+                  </div>
+
+                  {/* رفع شعار مخصص (يظهر فقط عند CUSTOM) */}
+                  {form.thermalLogoSource === 'CUSTOM' ? (
+                    <div className="rounded-md border p-3 space-y-3 bg-muted/30">
+                      <Label className="text-xs font-medium">{t('شعار الإيصال المخصص', 'Custom Receipt Logo', lang)}</Label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {form.thermalLogoUrl ? (
+                          <img
+                            src={form.thermalLogoUrl}
+                            alt="thermal logo"
+                            className="size-16 rounded border p-1 object-contain bg-white"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="size-16 rounded border border-dashed flex items-center justify-center text-muted-foreground">
+                            <Receipt className="size-5" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-[180px] space-y-2">
+                          <input
+                            ref={thermalFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleThermalLogoUpload}
+                            className="hidden"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => thermalFileInputRef.current?.click()}
+                            disabled={thermalUploading}
+                            className="gap-1.5"
+                          >
+                            {thermalUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                            {t('رفع شعار', 'Upload Logo', lang)}
+                          </Button>
+                          <Input
+                            value={form.thermalLogoUrl || ''}
+                            onChange={(e) => set('thermalLogoUrl', e.target.value)}
+                            dir="ltr"
+                            placeholder="https://..."
+                            className="text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* الأبعاد + المحاذاة */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label={`${t('عرض الشعار (px)', 'Logo Width (px)', lang)} · max 220`}>
+                      <Input
+                        type="number"
+                        min="40"
+                        max="220"
+                        value={form.thermalLogoWidth ?? 180}
+                        onChange={(e) => set('thermalLogoWidth', Math.min(220, Math.max(40, Number(e.target.value) || 180)))}
+                        dir="ltr"
+                      />
+                    </Field>
+                    <Field label={`${t('ارتفاع الشعار (px)', 'Logo Height (px)', lang)} · max 120`}>
+                      <Input
+                        type="number"
+                        min="20"
+                        max="120"
+                        value={form.thermalLogoHeight ?? 90}
+                        onChange={(e) => set('thermalLogoHeight', Math.min(120, Math.max(20, Number(e.target.value) || 90)))}
+                        dir="ltr"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label={t('المسافة أسفل الشعار (px)', 'Logo Bottom Margin (px)', lang)}>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={form.thermalLogoMarginBottom ?? 10}
+                      onChange={(e) => set('thermalLogoMarginBottom', Math.max(0, Number(e.target.value) || 0))}
+                      dir="ltr"
+                    />
+                  </Field>
+
+                  {/* المحاذاة */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">{t('محاذاة الشعار', 'Logo Alignment', lang)}</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { v: 'LEFT', label: t('يسار', 'Left', lang) },
+                        { v: 'CENTER', label: t('وسط', 'Center', lang) },
+                        { v: 'RIGHT', label: t('يمين', 'Right', lang) },
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => set('thermalLogoAlign', opt.v)}
+                          className={`rounded-md border p-2 text-xs transition ${
+                            (form.thermalLogoAlign || 'CENTER') === opt.v
+                              ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 font-medium'
+                              : 'border-input hover:bg-accent'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* طريقة العرض (Fit) */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">{t('طريقة عرض الشعار', 'Logo Fit Mode', lang)}</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { v: 'CONTAIN', label: t('احتواء', 'Contain', lang), hint: t('داخل المساحة', 'Inside area') },
+                        { v: 'COVER', label: t('تعبئة', 'Cover', lang), hint: t('يملأ المساحة', 'Fill area') },
+                        { v: 'ORIGINAL', label: t('أصلي', 'Original', lang), hint: t('حجم طبيعي', 'Natural size') },
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => set('thermalLogoFit', opt.v)}
+                          className={`rounded-md border p-2 text-xs transition flex flex-col items-center gap-0.5 ${
+                            (form.thermalLogoFit || 'CONTAIN') === opt.v
+                              ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 font-medium'
+                              : 'border-input hover:bg-accent'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          <span className="text-[10px] text-muted-foreground">{opt.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* تلميح الطابعة */}
+                  <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-md p-2.5 flex items-start gap-2">
+                    <Settings2 className="size-3.5 shrink-0 mt-0.5 text-blue-600" />
+                    <span>
+                      {t('للطابعة 58mm: استخدم عرض 140-160px. للطابعة 80mm: استخدم عرض 180-220px. حافظ على نسبة الأبعاد لتفادي التشوه.',
+                         'For 58mm printer: use width 140-160px. For 80mm printer: use width 180-220px. Keep aspect ratio to avoid distortion.',
+                         lang)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* ─── يسار: المعاينة الحيّة (نفس المكوّن الفعلي!) ─── */}
+                <div>
+                  <Label className="text-xs font-medium mb-2 block flex items-center gap-1.5">
+                    <Eye className="size-3.5" />
+                    {t('معاينة حيّة (نفس الإيصال المطبوع)', 'Live Preview (same as printed)', lang)}
+                  </Label>
+                  <div className="rounded-md border bg-slate-100 dark:bg-slate-900 p-3 overflow-auto max-h-[600px]">
+                    <div className="bg-white shadow-md mx-auto" style={{ maxWidth: 320, padding: 4 }}>
+                      <ThermalReceiptDocument
+                        invoice={SAMPLE_RECEIPT}
+                        settings={thermalPreviewSettings}
+                        lang={lang}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-2 text-center">
+                    {t('هذه المعاينة تطابق تماماً ما سيُطبع — لا فرق بين المعاينة والطباعة.',
+                       'This preview exactly matches what will be printed — no difference between preview and print.',
+                       lang)}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* زر الحفظ */}
@@ -364,89 +664,5 @@ export default function BranchSettingsCard() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-// ─── مكوّن المعاينة ───────────────────────────────────────────────────
-// يعرض ترويسة الإيصال كما ستظهر في الطباعة (طباعة هندسة resolveReceiptSettings):
-//   1) شعار الفرع
-//   2) اسم الشركة (LARGE BOLD)
-//   3) اسم الشركة بالإنجليزي (صغير)
-//   4) اسم الفرع (متوسط + بادئة "فرع:")
-//   5) رقم ضريبي، هاتف، عنوان
-function ReceiptHeaderPreview({ companySettings, branchSettings, lang }) {
-  const rtl = lang === 'ar';
-  const dir = rtl ? 'rtl' : 'ltr';
-  const align = rtl ? 'right' : 'left';
-
-  const primary = branchSettings.primaryColor || companySettings.primaryColor || '#d97706';
-  const accent = branchSettings.accentColor || companySettings.accentColor || '#1f2d3d';
-  const logoUrl = branchSettings.logoUrl || companySettings.logoUrl || '';
-  const companyName = companySettings.companyName || '';
-  const companyNameEn = companySettings.companyNameEn || '';
-  const branchName = branchSettings.branchName || '';
-  const phone = branchSettings.phone || companySettings.phone || '';
-  const vatNumber = branchSettings.vatNumber || companySettings.vatNumber || '';
-  const address = branchSettings.address || companySettings.address || '';
-  const city = branchSettings.city || companySettings.city || '';
-
-  const T = (ar, en) => (rtl ? ar : en);
-
-  return (
-    <div
-      dir={dir}
-      style={{
-        background: '#fff',
-        color: '#000',
-        border: '1px solid #e2e8f0',
-        borderRadius: 8,
-        padding: 12,
-        fontFamily: "'Cairo', 'Tahoma', sans-serif",
-        textAlign: align,
-        maxWidth: 320,
-      }}
-    >
-      {logoUrl ? (
-        <div style={{ textAlign: 'center', marginBottom: 6 }}>
-          <img src={logoUrl} alt="logo" style={{ maxWidth: '120px', maxHeight: '60px', objectFit: 'contain' }} />
-        </div>
-      ) : null}
-
-      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 18, color: accent, lineHeight: 1.3 }}>
-        {(rtl ? companyName : (companyNameEn || companyName)) || (rtl ? 'مطعمنا' : 'Our Restaurant')}
-      </div>
-
-      {companyNameEn && rtl && companyName ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 11, color: '#555', marginBottom: 2 }}>{companyNameEn}</div>
-      ) : null}
-
-      {branchName ? (
-        <div style={{ textAlign: 'center', fontSize: 13, color: primary, fontWeight: 700, marginTop: 4 }}>
-          {T('فرع:', 'Branch:')} {branchName}
-        </div>
-      ) : null}
-
-      {branchName && (vatNumber || phone || address || city) ? (
-        <div style={{ textAlign: 'center', color: '#bbb', fontSize: 10, margin: '4px 0' }}>{'·'.repeat(28)}</div>
-      ) : null}
-
-      {vatNumber ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: '#555' }}>
-          {T('الرقم الضريبي', 'VAT No.')}: <span dir="ltr">{vatNumber}</span>
-        </div>
-      ) : null}
-
-      {phone ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: '#555' }}>
-          {T('هاتف', 'Tel')}: <span dir="ltr">{phone}</span>
-        </div>
-      ) : null}
-
-      {(address || city) ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: '#555' }}>
-          {[address, city].filter(Boolean).join(' - ')}
-        </div>
-      ) : null}
-    </div>
   );
 }
