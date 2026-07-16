@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Pencil, Trash2, Upload, Download, FileSpreadsheet, UtensilsCrossed,
   FolderPlus, Search, RefreshCw, ArrowUp, ArrowDown, AlertCircle,
+  ArrowRightLeft, Check, X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,9 +23,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, nextCodeFromList } from '@/lib/utils-binaa';
+import { cn } from '@/lib/utils';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { toast } from 'sonner';
@@ -147,6 +150,13 @@ export default function MenuManagement() {
   const itemsRef = useRef([]);
   const [importPreview, setImportPreview] = useState(null); // array of parsed rows
   const [importing, setImporting] = useState(false);
+
+  // ─── نقل الوجبات بين الأقسام (Bulk Transfer) ─────────────────────────
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [quickTransferring, setQuickTransferring] = useState(null); // item id being moved inline
 
   // ─── تحميل البيانات ─────────────────────────────────────────────────
   const load = async () => {
@@ -398,6 +408,111 @@ export default function MenuManagement() {
       await load();
     } catch (err) {
       toast.error(errorMessage(err, t('فشل الحذف', 'Delete failed', lang)));
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // نقل الوجبات بين الأقسام (Bulk + Quick Transfer)
+  // ═══════════════════════════════════════════════════════════════════════
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (prev.size === filteredItems.length && filteredItems.length > 0) return new Set();
+      return new Set(filteredItems.map((it) => it.id));
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // نقل سريع لوجبة واحدة إلى قسم آخر (قائمة منسدلة داخل الصف)
+  const quickTransfer = async (item, targetCatId) => {
+    if (!targetCatId || targetCatId === item.categoryId) return;
+    setQuickTransferring(item.id);
+    try {
+      const cat = catById.get(targetCatId);
+      await base44.entities.InventoryItem.update(item.id, {
+        categoryId: targetCatId,
+        categoryName: cat?.name || '',
+      });
+      toast.success(t(
+        `تم نقل "${item.name}" إلى "${cat?.name || ''}"`,
+        `Moved "${item.name}" to "${cat?.name || ''}"`,
+        lang
+      ));
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err, t('فشل النقل', 'Transfer failed', lang)));
+    } finally {
+      setQuickTransferring(null);
+    }
+  };
+
+  // فتح حوار النقل الجماعي
+  const openTransferDialog = () => {
+    if (selectedIds.size === 0) return;
+    setTransferTarget('');
+    setTransferOpen(true);
+  };
+
+  // تنفيذ النقل الجماعي للوجبات المحددة إلى القسم الهدف
+  const confirmBulkTransfer = async () => {
+    if (!transferTarget) {
+      toast.error(t('اختر القسم الهدف', 'Select target category', lang));
+      return;
+    }
+    const targetCat = catById.get(transferTarget);
+    if (!targetCat) {
+      toast.error(t('القسم غير صالح', 'Invalid category', lang));
+      return;
+    }
+    setTransferLoading(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const payload = ids.map((id) => ({
+        id,
+        categoryId: transferTarget,
+        categoryName: targetCat.name,
+      }));
+      // محاولة النقل الجماعي أولاً، فإن فشل نُنفّذ تحديثات فردية
+      let okCount = 0;
+      let failCount = 0;
+      try {
+        await base44.entities.InventoryItem.bulkUpdate(payload);
+        okCount = payload.length;
+      } catch (bulkErr) {
+        console.warn('bulkUpdate failed, falling back to individual updates:', bulkErr);
+        for (const p of payload) {
+          try {
+            await base44.entities.InventoryItem.update(p.id, {
+              categoryId: p.categoryId,
+              categoryName: p.categoryName,
+            });
+            okCount++;
+          } catch (e) {
+            failCount++;
+          }
+        }
+      }
+      toast.success(t(
+        `تم نقل ${okCount} وجبة إلى "${targetCat.name}"${failCount ? ` — فشل ${failCount}` : ''}`,
+        `Moved ${okCount} item(s) to "${targetCat.name}"${failCount ? ` — ${failCount} failed` : ''}`,
+        lang
+      ));
+      setSelectedIds(new Set());
+      setTransferOpen(false);
+      setTransferTarget('');
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err, t('فشل النقل', 'Transfer failed', lang)));
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -756,15 +871,70 @@ export default function MenuManagement() {
             </CardContent></Card>
           </div>
 
+          {/* شريط النقل الجماعي العائم — يظهر عند تحديد وجبات */}
+          {selectedIds.size > 0 && (
+            <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 shadow-md p-2.5">
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-900 dark:text-amber-200">
+                <ArrowRightLeft className="size-4" />
+                <span>
+                  {t(
+                    `تم تحديد ${selectedIds.size} وجبة`,
+                    `${selectedIds.size} item(s) selected`,
+                    lang
+                  )}
+                </span>
+              </div>
+              <div className="flex-1" />
+              <Button
+                variant="outline" size="sm"
+                onClick={clearSelection}
+                className="gap-1.5"
+              >
+                <X className="size-3.5" />
+                {t('إلغاء التحديد', 'Clear', lang)}
+              </Button>
+              <Button
+                size="sm"
+                onClick={openTransferDialog}
+                className="gap-1.5 bg-amber-600 hover:bg-amber-700"
+              >
+                <ArrowRightLeft className="size-4" />
+                {t('نقل إلى قسم', 'Transfer to Category', lang)}
+              </Button>
+            </div>
+          )}
+
+          {/* تلميح النقل السريع */}
+          <div className="mb-2 flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900/40 border rounded-md p-2">
+            <ArrowRightLeft className="size-3.5 shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              {t(
+                'لنقل وجبة بين الأقسام: حدّد خانة الوجبة (أو عدة وجبات) ثم اضغط «نقل إلى قسم». أو غيّر القسم مباشرة من القائمة المنسدلة في كل صف لنقل سريع.',
+                'To move an item between categories: tick the checkbox (or multiple) then click "Transfer to Category". Or change the category directly from the dropdown in each row for quick transfer.',
+                lang
+              )}
+            </span>
+          </div>
+
           {/* جدول الوجبات */}
           <Card>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10 text-center">
+                      <Checkbox
+                        checked={
+                          filteredItems.length > 0 &&
+                          selectedIds.size === filteredItems.length
+                        }
+                        onCheckedChange={toggleSelectAll}
+                        aria-label={t('تحديد الكل', 'Select all', lang)}
+                      />
+                    </TableHead>
                     <TableHead className="w-24">{t('الرمز', 'Code', lang)}</TableHead>
                     <TableHead>{t('الوجبة', 'Item', lang)}</TableHead>
-                    <TableHead>{t('القسم', 'Category', lang)}</TableHead>
+                    <TableHead className="min-w-[180px]">{t('القسم (نقل سريع)', 'Category (quick move)', lang)}</TableHead>
                     <TableHead className="text-end">{t('سعر الشراء', 'Cost', lang)}</TableHead>
                     <TableHead className="text-end">{t('سعر البيع', 'Sale', lang)}</TableHead>
                     <TableHead className="text-end">{t('هامش الربح', 'Margin', lang)}</TableHead>
@@ -776,14 +946,14 @@ export default function MenuManagement() {
                   {loading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <TableRow key={i}>
-                        {Array.from({ length: 8 }).map((_, j) => (
+                        {Array.from({ length: 9 }).map((_, j) => (
                           <TableCell key={j}><div className="h-4 bg-muted animate-pulse rounded" /></TableCell>
                         ))}
                       </TableRow>
                     ))
                   ) : filteredItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
                         <UtensilsCrossed className="size-10 mx-auto mb-2 opacity-40" />
                         {t('لا توجد وجبات مطابقة', 'No matching items', lang)}
                       </TableCell>
@@ -794,8 +964,24 @@ export default function MenuManagement() {
                       const cost = parseFloat(it.costPrice) || 0;
                       const sale = parseFloat(it.salePrice ?? it.unitCost) || 0;
                       const margin = sale - cost;
+                      const isSelected = selectedIds.has(it.id);
+                      const isMoving = quickTransferring === it.id;
                       return (
-                        <TableRow key={it.id} className="hover:bg-muted/30">
+                        <TableRow
+                          key={it.id}
+                          className={
+                            isSelected
+                              ? 'bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/40'
+                              : 'hover:bg-muted/30'
+                          }
+                        >
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleSelect(it.id)}
+                              aria-label={t('تحديد الوجبة', 'Select item', lang)}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono text-xs text-muted-foreground">{it.code}</TableCell>
                           <TableCell>
                             <div className="font-medium text-foreground">{it.name}</div>
@@ -804,13 +990,43 @@ export default function MenuManagement() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {cat ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 text-xs">
-                                {cat.name}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
+                            <Select
+                              value={it.categoryId || ''}
+                              onValueChange={(v) => quickTransfer(it, v)}
+                              disabled={isMoving}
+                            >
+                              <SelectTrigger
+                                className={cn(
+                                  'h-8 w-full min-w-[160px] text-xs gap-1',
+                                  cat
+                                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                    : 'border-rose-200 bg-rose-50 text-rose-700'
+                                )}
+                              >
+                                {isMoving ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <RefreshCw className="size-3 animate-spin" />
+                                    {t('جاري النقل...', 'Moving...', lang)}
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <ArrowRightLeft className="size-3 shrink-0 opacity-60" />
+                                    <span className="truncate">{cat?.name || t('بدون قسم', 'No category', lang)}</span>
+                                  </span>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {categories.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    <span className="flex items-center gap-1.5">
+                                      {c.id === it.categoryId && <Check className="size-3 text-emerald-600" />}
+                                      {c.name}
+                                      {c.nameEn && <span className="text-muted-foreground text-[10px]">— {c.nameEn}</span>}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell className="text-end text-sm">{formatCurrency(cost, lang)}</TableCell>
                           <TableCell className="text-end text-sm font-semibold text-emerald-700">{formatCurrency(sale, lang)}</TableCell>
@@ -1137,6 +1353,111 @@ export default function MenuManagement() {
                   {t('تأكيد الاستيراد', 'Confirm Import', lang)}
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════ حوار النقل الجماعي بين الأقسام ════════════ */}
+      <Dialog open={transferOpen} onOpenChange={(o) => { if (!transferLoading) { setTransferOpen(o); if (!o) setTransferTarget(''); } }}>
+        <DialogContent className="max-w-md" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="size-5 text-amber-600" />
+              {t('نقل الوجبات إلى قسم', 'Transfer Items to Category', lang)}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              {t(
+                `سيتم نقل ${selectedIds.size} وجبة إلى القسم المختار.`,
+                `${selectedIds.size} item(s) will be moved to the selected category.`,
+                lang
+              )}
+            </p>
+            {/* معاينة الوجبات المحددة */}
+            <div className="max-h-32 overflow-y-auto rounded-md border bg-slate-50 dark:bg-slate-900/40 p-2">
+              <ul className="text-xs space-y-1">
+                {Array.from(selectedIds).slice(0, 20).map((id) => {
+                  const it = items.find((x) => x.id === id);
+                  if (!it) return null;
+                  const fromCat = catById.get(it.categoryId);
+                  return (
+                    <li key={id} className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground truncate">{it.name}</span>
+                      <span className="text-muted-foreground shrink-0">
+                        {fromCat?.name || t('بدون قسم', '—', lang)}
+                      </span>
+                    </li>
+                  );
+                })}
+                {selectedIds.size > 20 && (
+                  <li className="text-muted-foreground italic">
+                    {t(`و${selectedIds.size - 20} وجبة أخرى...`, `+${selectedIds.size - 20} more...`, lang)}
+                  </li>
+                )}
+              </ul>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">
+                {t('القسم الهدف', 'Target Category', lang)} *
+              </Label>
+              <Select value={transferTarget} onValueChange={setTransferTarget}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('اختر القسم الجديد', 'Select new category', lang)} />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span className="flex items-center gap-1.5">
+                        {c.name}
+                        {c.nameEn && <span className="text-muted-foreground text-[11px]">— {c.nameEn}</span>}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {transferTarget && (() => {
+              const targetCat = catById.get(transferTarget);
+              if (!targetCat) return null;
+              const staying = Array.from(selectedIds).filter((id) => {
+                const it = items.find((x) => x.id === id);
+                return it && it.categoryId !== transferTarget;
+              }).length;
+              const already = selectedIds.size - staying;
+              return (
+                <div className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-2">
+                  {staying > 0 ? (
+                    t(
+                      `${staying} وجبة سيتم نقلها من أقسامها الحالية إلى «${targetCat.name}»${already ? ` — ${already} موجودة أصلاً في هذا القسم` : ''}`,
+                      `${staying} item(s) will be moved from their current categories to "${targetCat.name}"${already ? ` — ${already} already in this category` : ''}`,
+                      lang
+                    )
+                  ) : (
+                    t(
+                      'كل الوجبات المحددة موجودة أصلاً في هذا القسم.',
+                      'All selected items are already in this category.',
+                      lang
+                    )
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setTransferOpen(false); setTransferTarget(''); }} disabled={transferLoading}>
+              {t('إلغاء', 'Cancel', lang)}
+            </Button>
+            <Button onClick={confirmBulkTransfer} disabled={transferLoading} className="bg-amber-600 hover:bg-amber-700 gap-1.5">
+              {transferLoading ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="size-4" />
+              )}
+              {transferLoading
+                ? t('جاري النقل...', 'Moving...', lang)
+                : t('تأكيد النقل', 'Confirm Transfer', lang)}
             </Button>
           </DialogFooter>
         </DialogContent>
