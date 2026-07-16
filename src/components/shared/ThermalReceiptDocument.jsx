@@ -350,32 +350,28 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
 
       {/* ─── ملخّص الإجماليات ─── */}
       <div style={{ fontSize: 11 }}>
-        {/* المجموع الفرعي (قبل الخصومات) */}
+        {/* (1) المجموع الفرعي (قبل الخصومات) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
           <span>{T('المجموع الفرعي', 'Subtotal')}</span>
-          <span dir="ltr"><Money value={subtotal + discountAmount + itemDiscountsTotal} /></span>
+          <span dir="ltr"><Money value={subtotal + discountAmount} /></span>
         </div>
-        {/* الخصومات — تفصيل واضح */}
-        {itemDiscountsTotal > 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
-            <span>{T('خصم الأصناف', 'Item Discount')}</span>
-            <span dir="ltr">-<Money value={itemDiscountsTotal} /></span>
-          </div>
-        ) : null}
+        {/* (أُزيل خصم الأصناف — القاعدة 4: الخصم على الفاتورة لا على الأصناف) */}
+        {/* (2) خصم العميل — تلقائي من بطاقة العميل */}
         {customerDiscountAmount > 0 ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
             <span>{T(`خصم العميل (${Math.round(discountPercentage)}%)`, `Customer Discount (${Math.round(discountPercentage)}%)`)}</span>
             <span dir="ltr">-<Money value={customerDiscountAmount} /></span>
           </div>
         ) : null}
+        {/* (3) خصم المنصة — للفواتير المنصة فقط (القواعد 3 + 6) */}
         {manualDiscountAmount > 0 ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', color: '#dc2626' }}>
-            <span>{T('خصم يدوي', 'Manual Discount')}</span>
+            <span>{T('خصم المنصة', 'Platform Discount')}</span>
             <span dir="ltr">-<Money value={manualDiscountAmount} /></span>
           </div>
         ) : null}
-        {/* صافي قبل الضريبة */}
-        {(itemDiscountsTotal > 0 || customerDiscountAmount > 0 || manualDiscountAmount > 0) ? (
+        {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة) */}
+        {(customerDiscountAmount > 0 || manualDiscountAmount > 0) ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 600, borderTop: '1px dotted #ddd', paddingTop: 2 }}>
             <span>{T('صافي قبل الضريبة', 'Net before VAT')}</span>
             <span dir="ltr"><Money value={subtotal} /></span>

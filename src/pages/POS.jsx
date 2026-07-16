@@ -21,8 +21,12 @@ import { base44 } from '@/api/base44Client';
 import {
   t, formatCurrency, formatDate, genInvoiceNo,
 } from '@/lib/utils-binaa';
-import { calcVAT, OperationEngine } from '@/lib/businessEngine';
+import { OperationEngine } from '@/lib/businessEngine';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import {
+  computeInvoiceTotals,
+  getCustomerDiscountPct,
+} from '@/lib/discountEngine';
 import { getBranchSettings, resolveReceiptSettings } from '@/lib/branchSettings';
 import {
   saveDraftToTable, getTableDraft, clearTableDraft,
@@ -247,9 +251,9 @@ export default function POS() {
 
     const tid = setTimeout(() => {
       if (skipAutoClearRef.current) return;
-      const discountPct = (customer && !customer.isCash)
-        ? (parseFloat(customer.discountPercentage) || 0)
-        : 0;
+      // خصم العميل يُطبّق تلقائياً من بطاقة العميل (محرّك الخصومات الجديد).
+      // العميل النقدي = 0% (القاعدة 1). العميل المسجّل = discountPercentage (القاعدة 2).
+      const discountPct = getCustomerDiscountPct(customer);
 
       if (cart.length > 0) {
         // حفظ/تحديث المسودة في الطاولة — تُصبح الطاولة DRAFT تلقائياً
@@ -330,16 +334,14 @@ export default function POS() {
         nameEn: item.nameEn || '',
         price: parseFloat(item.salePrice ?? item.unitCost) || 0,
         qty: 1,
-        discount: 0, // خصم على هذا الصنف (مبلغ ثابت لكل وحدة)
+        // ملاحظة: لا حقل `discount` على الصنف — القاعدة 4 من محرّك الخصومات.
+        // الخصومات تُطبّق على إجمالي الفاتورة فقط (خصم العميل + خصم المنصة للفواتير المنصة).
+        // خصم الصنف سيُدار مستقبلاً من شاشة "العروض والفعاليات" (Promotions).
       }];
     });
   };
 
-  // خصم على صنف محدد في السلة (مبلغ ثابت لكل وحدة)
-  const setItemDiscount = (itemId, discount) => {
-    const d = Math.max(0, parseFloat(discount) || 0);
-    setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, discount: d } : c));
-  };
+  // (أُزيلت setItemDiscount — لا خصم على مستوى الصنف وفق القاعدة 4)
 
   const changeQty = (itemId, delta) => {
     setCart(prev => prev
@@ -374,60 +376,45 @@ export default function POS() {
     setCustomerName('');
   };
 
-  // ─── حسابات الخصومات والضريبة والإجمالي ──────────────────────────────
-  // الخصومات ثلاثة أنواع (تُطبّق بالترتيب):
-  //   1) خصم على الصنف (item.discount لكل وحدة) — يُخفض سعر الصنف قبل المجموع
-  //   2) خصم العميل (customer.discountPercentage) — نسبة على المجموع بعد خصم الأصناف
-  //   3) خصم يدوي على الفاتورة (manualDiscount) — مبلغ ثابت أو نسبة على ما بعد العميل
-  // القاعدة الخاضعة للضريبة = subtotal - customerDiscount - manualDiscount + deliveryFee
-  // الضريبة تُحسب على الصافي بعد الخصوم.
-  const discountPercentage = useMemo(() => {
-    if (!customer) return 0;
-    // خصم العميل يُطبّق سواء كان نقدياً أو حساباً — الخصم حق ثابت للعميل
-    return parseFloat(customer.discountPercentage) || 0;
-  }, [customer]);
+  // ─── محرّك الخصومات الجديد (Restaurant Discount Engine) ──────────────
+  // القواعد النهائية:
+  //   القاعدة 1: العميل النقدي = لا خصم (Customer Discount = 0%).
+  //   القاعدة 2: العميل المسجّل = خصم تلقائي من بطاقة العميل (غير قابل للتعديل من POS).
+  //   القاعدة 3: المنصات فقط يُسمح لها بخصم يدوي (كوبون/حملة/تعويض).
+  //   القاعدة 4: لا خصم على مستوى الصنف — كل الخصومات على إجمالي الفاتورة.
+  //   القاعدة 5: الترتيب: Subtotal → Customer Discount → Manual (Platform) → Taxable → VAT → Total.
+  //   القاعدة 6: لا جمع خصم عميل + خصم يدوي إلا للمنصات.
+  //   القاعدة 7: مصدر الخصم = Client.discountPercentage فقط (يُعدّل من شاشة الزبائن).
+  //   القاعدة 8: خصم الصنف مستقبلاً من شاشة العروض (Promotions) — حالياً ممنوع.
+  //
+  // كل الحسابات في مكان واحد: computeInvoiceTotals (src/lib/discountEngine.js).
 
-  // المجموع الفرعي قبل الخصومات (شامل خصومات الأصناف المنفردة)
-  const subtotalAfterItemDiscounts = useMemo(
-    () => cart.reduce((s, c) => s + Math.max(0, (c.price - (c.discount || 0)) * c.qty), 0),
-    [cart]
-  );
-  // إجمالي خصومات الأصناف (للعرض في الإيصال)
-  const itemDiscountsTotal = useMemo(
-    () => cart.reduce((s, c) => s + (c.discount || 0) * c.qty, 0),
-    [cart]
+  const discountPercentage = useMemo(
+    () => getCustomerDiscountPct(customer),
+    [customer]
   );
 
-  // خصم العميل (نسبة على المجموع بعد خصومات الأصناف)
-  const customerDiscountAmount = useMemo(
-    () => +(subtotalAfterItemDiscounts * (discountPercentage / 100)).toFixed(2),
-    [subtotalAfterItemDiscounts, discountPercentage]
+  // حساب مركزي للفاتورة وفق القواعد الثمانية
+  const totals = useMemo(
+    () => computeInvoiceTotals({
+      cart,
+      customer,
+      manualDiscount,
+      deliveryFee: effectiveDeliveryFee,
+      isPlatformSale,
+      vatRate: 0.15,
+    }),
+    [cart, customer, manualDiscount, effectiveDeliveryFee, isPlatformSale]
   );
 
-  // المجموع بعد خصم العميل
-  const subtotalAfterCustomerDiscount = useMemo(
-    () => Math.max(0, subtotalAfterItemDiscounts - customerDiscountAmount),
-    [subtotalAfterItemDiscounts, customerDiscountAmount]
-  );
-
-  // خصم يدوي على الفاتورة (مبلغ ثابت أو نسبة)
-  const manualDiscountAmount = useMemo(() => {
-    const v = parseFloat(manualDiscount.value) || 0;
-    if (v <= 0) return 0;
-    if (manualDiscount.type === 'PERCENT') {
-      return +(subtotalAfterCustomerDiscount * (v / 100)).toFixed(2);
-    }
-    return Math.min(v, subtotalAfterCustomerDiscount); // لا يتجاوز المتبقي
-  }, [manualDiscount, subtotalAfterCustomerDiscount]);
-
-  // المجموع الفرعي النهائي (بعد كل الخصومات، قبل التوصيل والضريبة)
-  const subtotal = useMemo(
-    () => Math.max(0, subtotalAfterCustomerDiscount - manualDiscountAmount),
-    [subtotalAfterCustomerDiscount, manualDiscountAmount]
-  );
-
-  // إجمالي الخصومات (للعرض)
-  const discountAmount = +(customerDiscountAmount + manualDiscountAmount).toFixed(2);
+  // تفكيك النتائج للاستخدام في الواجهة وبناء الفاتورة
+  const subtotal = totals.subtotal;                          // المجموع الفرعي (بدون خصم صنف)
+  const customerDiscountAmount = totals.customerDiscountAmount;
+  const manualDiscountAmount = totals.manualDiscountAmount;
+  const manualDiscountAllowed = totals.manualDiscountAllowed;
+  const discountAmount = totals.discountAmount;              // إجمالي الخصومات
+  // itemDiscountsTotal = 0 دائماً (أُزيل خصم الصنف — القاعدة 4)
+  const itemDiscountsTotal = 0;
 
   // بحث ذكي عن الزبائن: بالاسم أو رقم الجوال أو نسبة الخصم.
   // يُفلتر محلياً من قائمة customers المحمّلة، دون طلب شبكة إضافي.
@@ -486,14 +473,13 @@ export default function POS() {
   // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
   const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
 
-  // القاعدة الخاضعة للضريبة = subtotal (بعد كل الخصومات) + deliveryFee
-  const vatBase = useMemo(
-    () => Math.max(0, subtotal + effectiveDeliveryFee),
-    [subtotal, effectiveDeliveryFee]
-  );
-
-  const vatCalc = useMemo(() => calcVAT(vatBase, 0.15), [vatBase]);
-  const total = vatCalc.total; // = vatBase + vat
+  // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
+  // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
+  //   Taxable → + Delivery Fee → VAT → Grand Total
+  const vatBase = totals.vatBase;
+  const vat = totals.vat;
+  const total = totals.total;
+  // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
 
   // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
   const platformCommission = useMemo(() => {
@@ -692,19 +678,19 @@ export default function POS() {
     // بناء الإيصال
     const year = new Date().getFullYear();
     const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
-    // بنود الفاتورة تشمل خصم الصنف (إن وُجد)
+    // بنود الفاتورة — لا خصم على مستوى الصنف (القاعدة 4).
+    // كل الخصومات تُطبّق على إجمالي الفاتورة (خصم العميل + خصم المنصة للمنصات فقط).
     const lineItems = cart.map(c => {
       const unitPrice = c.price;
-      const unitDiscount = c.discount || 0;
-      const netUnit = Math.max(0, unitPrice - unitDiscount);
+      const lineTotal = +(unitPrice * c.qty).toFixed(2);
       return {
         description: c.name,
         descriptionEn: c.nameEn || '',
         qty: c.qty,
         unitPrice,
-        unitDiscount,
-        netUnitPrice: netUnit,
-        total: +(netUnit * c.qty).toFixed(2),
+        unitDiscount: 0, // لا خصم على الصنف (القاعدة 4)
+        netUnitPrice: unitPrice,
+        total: lineTotal,
       };
     });
     // إعدادات الإيصال المدمجة (فرع + شركة)
@@ -752,18 +738,19 @@ export default function POS() {
       date: new Date().toISOString(),
       lineItems,
       subtotal: +subtotal.toFixed(2),
-      // الخصومات (ثلاثة أنواع)
-      itemDiscountsTotal: +itemDiscountsTotal.toFixed(2),
-      discountPercentage, // خصم العميل (%)
+      // الخصومات (القواعد 1-8 — محرّك الخصومات الجديد)
+      // ملاحظة: لا itemDiscountsTotal — أُزيل خصم الصنف (القاعدة 4)
+      itemDiscountsTotal: 0,
+      discountPercentage, // خصم العميل (%) — تلقائي من بطاقة العميل
       customerDiscountAmount: +customerDiscountAmount.toFixed(2),
-      manualDiscountType: manualDiscount.type,
-      manualDiscountValue: parseFloat(manualDiscount.value) || 0,
+      manualDiscountType: manualDiscountAllowed ? manualDiscount.type : 'AMOUNT',
+      manualDiscountValue: manualDiscountAllowed ? (parseFloat(manualDiscount.value) || 0) : 0,
       manualDiscountAmount: +manualDiscountAmount.toFixed(2),
       discountAmount: +discountAmount.toFixed(2), // إجمالي الخصومات
       // رسوم التوصيل
       deliveryFee: effectiveDeliveryFee,
       vatRate: 0.15,
-      vatAmount: vatCalc.vat,
+      vatAmount: vat,
       totalAmount: total,
       // مبيعات المنصات: آجلة (paidAmount=0). النقدي: paidAmount=الإجمالي. الآجل: 0.
       paidAmount: isPlatformSale ? 0 : (isFullyPaid ? total : totalPaid),
@@ -1255,28 +1242,13 @@ export default function POS() {
                           <span className="text-xs text-muted-foreground">
                             {formatCurrency(item.price, lang)} × {item.qty}
                           </span>
-                          {/* خصم على الصنف (مبلغ ثابت لكل وحدة) */}
-                          <div className="flex items-center gap-1 ms-auto">
-                            <span className="text-[10px] text-muted-foreground">{t('خصم', 'Disc', lang)}:</span>
-                            <Input
-                              type="number" min="0" step="0.01"
-                              value={item.discount || ''}
-                              onChange={e => setItemDiscount(item.itemId, e.target.value)}
-                              className="h-6 w-14 text-xs px-1"
-                              placeholder="0"
-                            />
-                          </div>
+                          {/* (أُزيل خصم الصنف — القاعدة 4: الخصم على الفاتورة لا على الأصناف) */}
                         </div>
                       </div>
                       <div className="text-end shrink-0">
                         <div className="font-bold text-sm text-foreground">
-                          {formatCurrency(Math.max(0, (item.price - (item.discount || 0)) * item.qty), lang)}
+                          {formatCurrency(item.price * item.qty, lang)}
                         </div>
-                        {(item.discount || 0) > 0 && (
-                          <div className="text-[10px] text-rose-600 line-through">
-                            {formatCurrency(item.price * item.qty, lang)}
-                          </div>
-                        )}
                         <Button
                           variant="ghost" size="icon"
                           className="size-6 text-destructive hover:text-destructive mt-0.5"
@@ -1294,58 +1266,63 @@ export default function POS() {
 
           {/* الملخّص المالي */}
           <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
+            {/* (1) المجموع قبل الخصومات */}
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t('المجموع قبل الخصومات', 'Gross before discounts', lang)}</span>
-              <span className="font-medium">{formatCurrency(subtotalAfterItemDiscounts, lang)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
             </div>
-            {/* خصومات الأصناف */}
-            {itemDiscountsTotal > 0 && (
-              <div className="flex items-center justify-between text-xs text-rose-600">
-                <span>{t('خصومات الأصناف', 'Item discounts', lang)}</span>
-                <span>-{formatCurrency(itemDiscountsTotal, lang)}</span>
-              </div>
-            )}
-            {/* خصم العميل */}
+            {/* (أُزيلت خصومات الأصناف — القاعدة 4: لا خصم على مستوى الصنف) */}
+            {/* (2) خصم العميل — تلقائي من بطاقة العميل (القواعد 1 + 2 + 7) */}
             {customerDiscountAmount > 0 && (
               <div className="flex items-center justify-between text-xs text-rose-700">
-                <span>{t(`خصم العميل (${discountPercentage}%)`, `Customer discount (${discountPercentage}%)`, lang)}</span>
+                <span>
+                  {t(`خصم العميل (${discountPercentage}%)`, `Customer discount (${discountPercentage}%)`, lang)}
+                  <span className="text-[10px] text-muted-foreground ms-1">({t('تلقائي', 'auto', lang)})</span>
+                </span>
                 <span>-{formatCurrency(customerDiscountAmount, lang)}</span>
               </div>
             )}
-            {/* خصم يدوي على الفاتورة */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">{t('خصم يدوي', 'Manual discount', lang)}:</span>
-              <div className="flex gap-1">
-                <Button
-                  type="button" variant="outline" size="sm"
-                  className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'AMOUNT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
-                  onClick={() => setManualDiscount(d => ({ ...d, type: 'AMOUNT' }))}
-                >
-                  {t('مبلغ', 'Amount', lang)}
-                </Button>
-                <Button
-                  type="button" variant="outline" size="sm"
-                  className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'PERCENT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
-                  onClick={() => setManualDiscount(d => ({ ...d, type: 'PERCENT' }))}
-                >
-                  %
-                </Button>
-                <Input
-                  type="number" min="0" step="0.01"
-                  value={manualDiscount.value}
-                  onChange={e => setManualDiscount(d => ({ ...d, value: e.target.value }))}
-                  className="h-6 w-16 text-xs px-1"
-                  placeholder="0"
-                />
+            {/* (3) خصم يدوي — للمنصات فقط (القواعد 3 + 6) */}
+            {manualDiscountAllowed ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {t('خصم منصة', 'Platform discount', lang)}:
+                </span>
+                <div className="flex gap-1">
+                  <Button
+                    type="button" variant="outline" size="sm"
+                    className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'AMOUNT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
+                    onClick={() => setManualDiscount(d => ({ ...d, type: 'AMOUNT' }))}
+                  >
+                    {t('مبلغ', 'Amount', lang)}
+                  </Button>
+                  <Button
+                    type="button" variant="outline" size="sm"
+                    className={`h-6 px-2 text-[10px] ${manualDiscount.type === 'PERCENT' ? 'bg-emerald-100 border-emerald-400' : ''}`}
+                    onClick={() => setManualDiscount(d => ({ ...d, type: 'PERCENT' }))}
+                  >
+                    %
+                  </Button>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    value={manualDiscount.value}
+                    onChange={e => setManualDiscount(d => ({ ...d, value: e.target.value }))}
+                    className="h-6 w-16 text-xs px-1"
+                    placeholder="0"
+                  />
+                </div>
+                {manualDiscountAmount > 0 && (
+                  <span className="text-xs text-rose-700 ms-auto">-{formatCurrency(manualDiscountAmount, lang)}</span>
+                )}
               </div>
-              {manualDiscountAmount > 0 && (
-                <span className="text-xs text-rose-700 ms-auto">-{formatCurrency(manualDiscountAmount, lang)}</span>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-sm border-t pt-1">
-              <span className="text-muted-foreground">{t('القاعدة الخاضعة للضريبة', 'Taxable base', lang)}</span>
-              <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
-            </div>
+            ) : null}
+            {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة) = بعد كل الخصومات */}
+            {(customerDiscountAmount > 0 || manualDiscountAmount > 0) && (
+              <div className="flex items-center justify-between text-sm border-t pt-1">
+                <span className="text-muted-foreground">{t('صافي قبل الضريبة', 'Net before VAT', lang)}</span>
+                <span className="font-medium">{formatCurrency(totals.taxableAmount, lang)}</span>
+              </div>
+            )}
             {/* Feature 2: بند رسوم التوصيل */}
             {isDelivery && effectiveDeliveryFee > 0 && (
               <div className="flex items-center justify-between text-sm text-blue-700">
@@ -1355,7 +1332,7 @@ export default function POS() {
             )}
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t('ضريبة القيمة المضافة (15%)', 'VAT (15%)', lang)}</span>
-              <span className="font-medium">{formatCurrency(vatCalc.vat, lang)}</span>
+              <span className="font-medium">{formatCurrency(vat, lang)}</span>
             </div>
             {/* Feature 3: عمولة المنصة (معلومة فقط) */}
             {isPlatformSale && platformCommission > 0 && (
@@ -1621,10 +1598,7 @@ export default function POS() {
   );
 }
 
-// ─── مساعد حسابي داخلي للمجموع الفرعي (يستخدم قبل تعريف الميمو) ──────
-function subtotal_raw(cartArr) {
-  return cartArr.reduce((s, c) => s + (c.price * c.qty), 0);
-}
+// (أُزيلت subtotal_raw — كود ميت، المحرّك المركزي يحسب المجموع الفرعي)
 
 // ─── نافذة إضافة زبون نقدي سريع من POS ───────────────────────────────────
 // تُنشئ زبوناً نقدياً (isCash=true) مع نسبة خصم ثابتة تُطبّق تلقائياً على فواتيره.

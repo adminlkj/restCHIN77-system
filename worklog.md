@@ -1796,3 +1796,62 @@ Stage Summary:
 - 7 ملفات مُعدّلة + 1 ملف محذوف (InvoiceSettingsCard.jsx)
 - الكود نظيف (lint 0، build ناجح)
 - الأداء المتوقع: أخف بكثير، أسرع، أقل طلبات API
+
+---
+Task ID: discount-engine-refactor
+Agent: main (Z.ai Code)
+Task: محرّك خصومات المطعم — Restaurant Discount Engine (8 قواعد نهائية)
+
+Work Log:
+تنفيذ القواعد الثمانية النهائية للخصومات في نقطة البيع والإيصال.
+
+الملفات الجديدة/المُعدّلة:
+
+1. **src/lib/discountEngine.js** (NEW — محرّك مركزي خالص)
+   - isCashCustomer(customer): العميل النقدي = لا خصم (القاعدة 1)
+   - getCustomerDiscountPct(customer): خصم تلقائي من بطاقة العميل (القواعد 2 + 7)
+   - canApplyManualDiscount({isPlatformSale}): المنصات فقط (القواعد 3 + 6)
+   - computeInvoiceTotals({cart, customer, manualDiscount, deliveryFee, isPlatformSale, vatRate}):
+     حساب مركزي وفق الترتيب (القاعدة 5):
+       Subtotal → Customer Discount → Manual (Platform Only) → Taxable → + Delivery → VAT → Total
+   - buildDiscountBreakdown(): كائن مختصر للتخزين
+
+2. **src/pages/POS.jsx** (تعديل كبير):
+   - إزالة حقل `discount` من addToCart (القاعدة 4: لا خصم على الصنف)
+   - إزالة setItemDiscount (لم يعد هناك خصم على مستوى السطر)
+   - استبدال 8 useMemo متفرقة بـ computeInvoiceTotals واحد مركزي
+   - إزالة إدخال خصم الصنف من واجهة كل صف في السلة
+   - إخفاء حقل الخصم اليدوي تماماً لغير المنصات (القواعد 3 + 6)
+   - إعادة تسمية "خصم يدوي" → "خصم منصة" (أوضح للمستخدم)
+   - إصلاح auto-save draft: استخدام getCustomerDiscountPct بدل !customer.isCash القديم
+   - إزالة subtotal_raw (كود ميت)
+   - إزالة calcVAT من الاستيراد (المحرّك يحسبها داخلياً)
+   - تحديث بناء الفاتورة: itemDiscountsTotal=0، manualDiscountValue=0 لغير المنصات
+
+3. **src/components/shared/ThermalReceiptDocument.jsx** (تحديث الإيصال):
+   - إزالة عرض "خصم الأصناف" (القاعدة 4)
+   - إعادة تسمية "خصم يدوي" → "خصم المنصة"
+   - ترتيب العرض: المجموع الفرعي → خصم العميل → خصم المنصة → صافي قبل الضريبة → التوصيل → الضريبة → الإجمالي
+   - (itemDiscountsTotal يُقرأ من notes للتوافق مع الفواتير القديمة لكنه دائماً 0 للجديدة)
+
+القواعد المُطبّقة:
+- ✅ القاعدة 1: العميل النقدي = 0% خصم (isCashCustomer → getCustomerDiscountPct يُعيد 0)
+- ✅ القاعدة 2: العميل المسجّل = خصم تلقائي من discountPercentage (غير قابل للتعديل من POS)
+- ✅ القاعدة 3: المنصات فقط يُسمح لها بخصم يدوي (canApplyManualDiscount)
+- ✅ القاعدة 4: لا خصم على الصنف — أُزيل الحقل بالكامل من السلة والإيصال
+- ✅ القاعدة 5: الترتيب في computeInvoiceTotals
+- ✅ القاعدة 6: لا جمع خصمين إلا للمنصات (manualDiscountAllowed يتحكم)
+- ✅ القاعدة 7: مصدر الخصم = Client.discountPercentage (يُعدّل من شاشة الزبائن فقط)
+- ✅ القاعدة 8: خصم الصنف مستقبلاً من شاشة العروض (Promotions) — حالياً ممنوع
+
+التحقق:
+- lint: 0 أخطاء
+- build: ناجح (2731 module)
+- منطق الحساب مركزي في discountEngine.js (قابل للاختبار والصيانة)
+
+Stage Summary:
+- محرّك خصومات احترافي مركزي خالص (8 قواعد)
+- إزالة كاملة لخصم الصنف من POS والإيصال
+- الخصم اليدوي للمنصات فقط
+- خصم العميل تلقائي وغير قابل للتعديل من POS
+- الكود نظيف (lint 0، build ناجح)
