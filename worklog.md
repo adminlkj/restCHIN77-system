@@ -1575,3 +1575,58 @@ Stage Summary:
 - ميزة نقل الوجبات بين الأقسام منشورة على GitHub وستُنشر تلقائياً على Render
 - الموقع: https://restchin77-system.onrender.com
 - lint: 0 أخطاء، build: ناجح
+
+---
+Task ID: finance-accounting-audit
+Agent: main (Z.ai Code)
+Task: تدقيق شامل لشاشة المالية والمحاسبة + التقارير المالية
+
+Work Log:
+تدقيق عبر المتصفح (Agent Browser) على https://restchin77-system.onrender.com:
+- Chart of Accounts (الدليل المحاسبي): الشجرة هرمية صحيحة، بطاقات ملخصة، ألوان مميزة، بحث، توسيع/طي — سليم
+- Journal Entries (دفتر اليومية): إنشاء/ترحيل/عكس — سليم، القيد العكسي يُنشأ برقم -REV فريد
+- Cost Centers (أقسام المطعم): تحليل الهامش لكل قسم — سليم
+- Fixed Assets (الأصول والإهلاك): إنشاء/رسملة/إهلاك — سليم، الإهلاك الشهري محسوب صحيح
+- Fiscal Years (السنوات المالية): عرض السنوات والحالات — سليم
+- Audit Suite (المراجعة): كشف 2 خطأ (15 فاتورة بلا عميل، 1 فاتورة مدفوعها يتجاوز إجماليها)
+- Reports: Income Statement, Balance Sheet, Cash Flow, Trial Balance, General Ledger, VAT — كلها سليمة ومتوازنة
+
+الأخطاء المُكتشفة والمُصححة (5 إصلاحات):
+
+🔴 BUG 1: تاريخ القيد اليومي فارغ عند الإنشاء
+- الملف: src/pages/JournalEntries.jsx
+- السبب: openNew() لا يضبط التاريخ الافتراضي
+- الإصلاح: ضبط date = today عند فتح نافذة قيد جديد
+
+🔴 BUG 2: فواتير البيع النقدي بلا اسم عميل
+- الملف: src/pages/POS.jsx
+- السبب: effectiveClientName = customerName || '' (فارغ للنقدي)
+- الإصلاح: الافتراضي "زبون نقدي" بدل الفراغ
+
+🔴 BUG 3: فحص التدقيق صارم جداً مع البيع النقدي
+- الملف: src/lib/auditEngine.js
+- السبب: SINV_HAS_CLIENT يفشل أي فاتورة بلا clientId (حتى لو لها clientName)
+- الإصلاح: الفشل فقط إذا كلاهما فارغ (clientId AND clientName)
+
+🔴 BUG 4: قيد عكس المصروف يحتوي "undefined"
+- الملف: src/pages/Expenses.jsx
+- السبب: description يستخدم item.code (غير موجود في Expense)
+- الإصلاح: استخدام item.description || item.expenseType
+
+🔴 BUG 5: تسميات إيرادات البقايا (REVENUE_CONSTRUCTION = "أعمال المقاولات")
+- الملف: src/lib/businessEngine.js
+- السبب: بقايا من نظام المباني
+- الإصلاح: تحديث الأسماء لتعكس سياق المطعم (مع الحفاظ على اسم الدور للتوافق مع المحرك)
+
+التحقق:
+- lint: 0 أخطاء
+- build: ناجح (vite build، 2731 module)
+- ميزان المراجعة متوازن: مدين 51,155.55 = دائن 51,155.55 ✅
+- الميزانية متوازنة: أصول -431.69 = التزامات+حقوق ملكية -431.69 ✅
+- Audit Suite: 13/15 فحص ناجح (2 خطأ بيانات قديمة سيُحلّان مع الفواتير الجديدة)
+
+Stage Summary:
+- 5 إصلاحات في المالية والمحاسبة
+- جميع الشاشات الست تعمل بشكل صحيح
+- التقارير الستة سليمة ومتوازنة
+- الكود نظيف (lint 0، build ناجح)

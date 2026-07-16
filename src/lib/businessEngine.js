@@ -22,9 +22,11 @@ export const ACCOUNTS = {
   VAT_RECEIVABLE:        { code: '1300', name: 'ضريبة القيمة المضافة المدفوعة', nameEn: 'VAT Receivable' },
   ACCRUED_SALARIES:      { code: '2200', name: 'رواتب مستحقة الدفع', nameEn: 'Accrued Salaries' },
   // الإيرادات
-  REVENUE_CONSTRUCTION:  { code: '4100', name: 'إيرادات أعمال المقاولات', nameEn: 'Construction Revenue' },
-  REVENUE_RENTAL:        { code: '4200', name: 'إيرادات التأجير', nameEn: 'Rental Revenue' },
-  REVENUE_SERVICE:       { code: '4300', name: 'إيرادات الخدمات', nameEn: 'Service Revenue' },
+  // ملاحظة: اسم الدور REVENUE_CONSTRUCTION محفوظ لأسباب توافق مع المحرك (entry.ts)
+  // لكنه يُمثّل فعلياً إيرادات مبيعات الصالة في سياق المطعم.
+  REVENUE_CONSTRUCTION:  { code: '4100', name: 'إيرادات مبيعات الصالة', nameEn: 'Dine-in Sales Revenue' },
+  REVENUE_RENTAL:        { code: '4200', name: 'إيرادات الحجوزات والمناسبات', nameEn: 'Reservations & Events Revenue' },
+  REVENUE_SERVICE:       { code: '4300', name: 'إيرادات مبيعات التوصيل', nameEn: 'Delivery Sales Revenue' },
   // المصروفات
   EXPENSE_GENERAL:       { code: '5100', name: 'المصروفات العمومية', nameEn: 'General Expenses' },
   EXPENSE_SALARIES:      { code: '5200', name: 'مصروف الرواتب والأجور', nameEn: 'Salaries Expense' },
