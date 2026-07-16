@@ -47,13 +47,8 @@ export const AuthProvider = ({ children }) => {
     base44.auth.logout();
     setUser(null);
     setIsAuthenticated(false);
-    // امسح كاش الإعدادات لتفادي تسريب بيانات مستخدم بين الجلسات.
-    try {
-      // استدعاء ديناميكي لتفادي circular import
-      import('@/hooks/useCompanySettings').then(({ invalidateCompanySettingsCache }) => {
-        invalidateCompanySettingsCache();
-      }).catch(() => {});
-    } catch { /* ignore */ }
+    // ملاحظة: إبطال كاش الإعدادات يتم عبر إعادة تحميل الصفحة (window.location.href).
+    // لا حاجة لاستيراد ديناميكي هنا.
     if (shouldRedirect) window.location.href = '/login';
   };
 
