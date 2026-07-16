@@ -101,7 +101,7 @@ export default function Expenses() {
       await base44.entities.JournalEntry.create({
         entryNo: `${orig.entryNo}-REV-1`,
         date: new Date().toISOString().slice(0, 10),
-        description: `عكس ${orig.entryNo} — مصروف ${item.code}`,
+        description: `عكس ${orig.entryNo} — مصروف ${item.description || item.expenseType || ''}`,
         lines: revLines, totalDebit: orig.totalCredit, totalCredit: orig.totalDebit,
         isPosted: true, sourceType: 'REVERSAL',
       });

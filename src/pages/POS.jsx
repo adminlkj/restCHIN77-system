@@ -707,7 +707,9 @@ export default function POS() {
     // العلاقة الصحيحة: Platform → Invoices → Customer (العميل النهائي)
     // المنصة تُسجّل في platformId/platformName، والعميل النهائي في clientName.
     let saleType = 'DINE_IN';
-    let effectiveClientName = customerName || '';
+    // للنقدية غير المسجّلة: نضع اسماً افتراضياً "زبون نقدي" حتى لا تبقى الفاتورة بلا عميل
+    // (يُفشّل فحص التدقيق ويُربك التقارير).
+    let effectiveClientName = customerName || t('زبون نقدي', 'Cash Customer', lang);
     let effectiveClientId = customerId || '';
     let platformName = '';
 

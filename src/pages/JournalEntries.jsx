@@ -63,7 +63,12 @@ export default function JournalEntries() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ ...empty, entryNo: nextCodeFromList(items, 'JE', 'entryNo'), lines: [{ ...emptyLine }, { ...emptyLine }] });
+    setForm({
+      ...empty,
+      entryNo: nextCodeFromList(items, 'JE', 'entryNo'),
+      date: new Date().toISOString().slice(0, 10),
+      lines: [{ ...emptyLine }, { ...emptyLine }],
+    });
     setDialogOpen(true);
   };
   const openEdit = (item) => { setEditing(item); setForm({ ...empty, ...item, lines: item.lines?.length ? item.lines : [{ ...emptyLine }, { ...emptyLine }] }); setDialogOpen(true); };

@@ -198,7 +198,9 @@ function auditDocuments({ salesInvoices, purchaseOrders, expenses }) {
   const results = [];
 
   // فواتير المبيعات: لا فاتورة بلا عميل، والضريبة تساوي 15% من الأساس
-  const noClient = salesInvoices.filter(i => !i.clientId);
+  // في المطاعم: البيع النقدي للزبون العابر مسموح بلا clientId، لكن يجب أن يكون
+  // هناك clientName (مثل "زبون نقدي"). الفشل فقط إذا كلاهما فارغ.
+  const noClient = salesInvoices.filter(i => !i.clientId && !i.clientName);
   results.push(check({
     id: 'SINV_HAS_CLIENT', group: 'documents', title: 'كل فاتورة مبيعات مرتبطة بعميل',
     passed: noClient.length === 0,
