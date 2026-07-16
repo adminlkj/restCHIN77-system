@@ -1555,3 +1555,23 @@ Stage Summary:
 - ميزة نقل الوجبات بين الأقسام مكتملة بطريقتين: جماعي + سريع
 - الكود نظيف ومراجع (lint 0 أخطاء، build ناجح)
 - الـ commit جاهز محلياً للـ push عند توفر مفتاح SSH
+
+---
+Task ID: bulk-transfer-push
+Agent: main (Z.ai Code)
+Task: إكمال النشر - توفير مفتاح SSH ودفع الـ commit إلى GitHub/Render
+
+Work Log:
+- استلام مفتاح SSH من المستخدم
+- إنشاء ~/.ssh/ وكتابة المفتاح إلى ~/.ssh/id_ed25519 (chmod 600)
+- الدفع عبر git-ssh-wrapper.cjs (بديل ssh باستخدام حزمة ssh2)
+- نتيجة الدفع: 00e520d..70f32f5 main -> main ✅
+
+الـ commits المنشورة:
+- e49df36: feat: نقل الوجبات بين الأقسام (نقل جماعي + نقل سريع)
+- 70f32f5: (commit لاحق)
+
+Stage Summary:
+- ميزة نقل الوجبات بين الأقسام منشورة على GitHub وستُنشر تلقائياً على Render
+- الموقع: https://restchin77-system.onrender.com
+- lint: 0 أخطاء، build: ناجح
