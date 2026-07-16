@@ -139,16 +139,11 @@ export const OperationEngine = {
     return await runOperation({ operation: 'EXPENSE', mode: 'update', id, data: this._buildExpensePayload(data, refs) });
   },
 
-  async createRentalContract(data, equipment, clients) {
-    const payload = { ...data, equipmentName: nameOf(equipment, data.equipmentId, data.equipmentName), clientName: nameOf(clients, data.clientId, data.clientName) };
-    return await runOperation({ operation: 'RENTAL_CONTRACT', mode: 'create', data: payload });
-  },
-
-  async updateRentalContract(id, data, equipment, clients, prevStatus) {
-    const eq = (equipment || []).find(e => e.id === data.equipmentId);
-    const payload = { ...data, equipmentName: eq?.name || data.equipmentName, clientName: nameOf(clients, data.clientId, data.clientName) };
-    return await runOperation({ operation: 'RENTAL_CONTRACT', mode: 'update', id, data: payload, prevStatus, prevEquipmentStatus: eq?.status });
-  },
+  // ─── أُزيلت عمليات المقاولات (Rental/Subcontractor) ───
+  // المطعم لا يملك عقود تأجير معاملات ولا مقاولي باطن.
+  // createRentalContract / updateRentalContract / createRentalInvoice / updateRentalInvoice / approveRentalInvoice
+  // createSubcontractorInvoice / updateSubcontractorInvoice / approveSubcontractorInvoice / createSubcontractorPayment
+  // المحرك الخادم (entry.ts) لا يزال يدعمها للتوافق الخلفي، لكن الواجهة لا تستدعيها.
 
   async createPayrollRun(data) {
     return await runOperation({ operation: 'PAYROLL', mode: 'create', data });
@@ -193,36 +188,6 @@ export const OperationEngine = {
   // اعتماد فاتورة مورد → ترحيل قيد الالتزام وتحويلها إلى معتمدة.
   async approveSupplierInvoice(id) {
     return await runOperation({ operation: 'SUPPLIER_INVOICE', mode: 'approve', id });
-  },
-
-  async createSubcontractorInvoice(data) {
-    return await runOperation({ operation: 'SUBCONTRACTOR_INVOICE', mode: 'create', data });
-  },
-
-  async updateSubcontractorInvoice(id, data) {
-    return await runOperation({ operation: 'SUBCONTRACTOR_INVOICE', mode: 'update', id, data });
-  },
-
-  // اعتماد مستخلص مقاول باطن → ترحيل قيد الالتزام وتحويله إلى معتمد.
-  async approveSubcontractorInvoice(id) {
-    return await runOperation({ operation: 'SUBCONTRACTOR_INVOICE', mode: 'approve', id });
-  },
-
-  async createSubcontractorPayment(data) {
-    return await runOperation({ operation: 'SUBCONTRACTOR_PAYMENT', mode: 'create', data });
-  },
-
-  async createRentalInvoice(data) {
-    return await runOperation({ operation: 'RENTAL_INVOICE', mode: 'create', data });
-  },
-
-  async updateRentalInvoice(id, data) {
-    return await runOperation({ operation: 'RENTAL_INVOICE', mode: 'update', id, data });
-  },
-
-  // اعتماد فاتورة تأجير → ترحيل قيد الإيراد وتحويلها إلى معتمدة.
-  async approveRentalInvoice(id) {
-    return await runOperation({ operation: 'RENTAL_INVOICE', mode: 'approve', id });
   },
 
   // استلام بضاعة (السلسلة: أمر شراء ← استلام جزئي ← مخزون) — يزيد المخزون ويرحّل القيود خلف الكواليس.

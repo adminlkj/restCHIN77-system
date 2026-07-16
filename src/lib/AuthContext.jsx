@@ -47,6 +47,13 @@ export const AuthProvider = ({ children }) => {
     base44.auth.logout();
     setUser(null);
     setIsAuthenticated(false);
+    // امسح كاش الإعدادات لتفادي تسريب بيانات مستخدم بين الجلسات.
+    try {
+      // استدعاء ديناميكي لتفادي circular import
+      import('@/hooks/useCompanySettings').then(({ invalidateCompanySettingsCache }) => {
+        invalidateCompanySettingsCache();
+      }).catch(() => {});
+    } catch { /* ignore */ }
     if (shouldRedirect) window.location.href = '/login';
   };
 

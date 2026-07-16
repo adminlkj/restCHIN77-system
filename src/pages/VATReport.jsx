@@ -37,7 +37,6 @@ export default function VATReport() {
   const { lang } = useStore();
   const { settings } = useCompanySettings();
   const [sales, setSales] = useState([]);
-  const [rentalSales, setRentalSales] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [supplierInvoices, setSupplierInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,13 +46,13 @@ export default function VATReport() {
   const load = async () => {
     setLoading(true);
     try {
-      const [inv, rinv, exp, si] = await Promise.all([
+      // إزالة RentalInvoice (بقايا نظام المقاولات) — المطعم لا يملك فواتير تأجير.
+      const [inv, exp, si] = await Promise.all([
         base44.entities.SalesInvoice.list('-date', 2000),
-        base44.entities.RentalInvoice.list('-date', 2000),
         base44.entities.Expense.list('-date', 2000),
         base44.entities.SupplierInvoice.list('-date', 2000),
       ]);
-      setSales(inv); setRentalSales(rinv); setExpenses(exp); setSupplierInvoices(si);
+      setSales(inv); setExpenses(exp); setSupplierInvoices(si);
     } catch (e) {
       console.error(e);
     }
@@ -63,7 +62,8 @@ export default function VATReport() {
 
   const q = QUARTERS.find(x => x.key === quarter) || QUARTERS[0];
 
-  // الضريبة المخرجة: فواتير المبيعات والتأجير ضمن الفترة (باستثناء المسودات والملغاة).
+  // الضريبة المخرجة: فواتير المبيعات ضمن الفترة (باستثناء المسودات والملغاة).
+  // ملاحظة: فواتير التأجير (RentalInvoice) أُزيلت — بقايا نظام المقاولات.
   const outputRows = useMemo(() => {
     const taxableStatuses = ['APPROVED', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'];
     const salesRows = sales
@@ -77,19 +77,8 @@ export default function VATReport() {
         vat: Number(i.vatAmount) || 0,
         total: Number(i.totalAmount) || 0,
       }));
-    const rentalRows = rentalSales
-      .filter(i => taxableStatuses.includes(i.status) && inPeriod(i.date, year, q.months))
-      .map(i => ({
-        date: i.date,
-        docNo: i.invoiceNo,
-        party: i.clientName,
-        source: t('فاتورة تأجير', 'Rental Invoice', lang),
-        base: (Number(i.baseAmount) || 0) + (Number(i.extraCharges) || 0) + (i.deliveryVatable === false ? 0 : (Number(i.deliveryAmount) || 0)),
-        vat: Number(i.vatAmount) || 0,
-        total: Number(i.totalAmount) || 0,
-      }));
-    return [...salesRows, ...rentalRows].sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [sales, rentalSales, year, q, lang]);
+    return salesRows.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [sales, year, q, lang]);
 
   // الضريبة المدخلة: المصروفات + فواتير الموردين ضمن الفترة.
   const inputRows = useMemo(() => {

@@ -38,17 +38,29 @@ export default function EmployeeWorkspace() {
     setCustodyCount(cus.filter(c => c.status === 'ASSIGNED').length);
   }, [activeEmployeeId]);
 
+  // حمّل بيانات الموظف فقط عند فتح المركز — بدون loadStats (تُؤجّل للـ overview).
   useEffect(() => {
     if (!activeEmployeeId) { setLoading(false); return; }
+    let active = true;
     (async () => {
       setLoading(true);
       try {
         const emp = await base44.entities.Employee.filter({ id: activeEmployeeId });
+        if (!active) return;
         setEmployee(emp[0] || null);
-        await loadStats();
-      } finally { setLoading(false); }
+      } finally {
+        if (active) setLoading(false);
+      }
     })();
-  }, [activeEmployeeId, loadStats]);
+    return () => { active = false; };
+  }, [activeEmployeeId]);
+
+  // حمّل stats فقط عند فتح تبويب "overview" (لا حاجة لها في التبويبات الأخرى).
+  // هذا يقلّل 3 طلبات filter غير ضرورية عند فتح تبويبات السلف/العهد/الحضور/الوثائق.
+  useEffect(() => {
+    if (tab !== 'overview' || !activeEmployeeId) return;
+    loadStats();
+  }, [tab, activeEmployeeId, loadStats]);
 
   if (!activeEmployeeId) {
     return (

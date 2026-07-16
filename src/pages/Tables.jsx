@@ -90,13 +90,21 @@ export default function Tables() {
   useEffect(() => { load(); }, [load]);
 
   // قراءة إعداد عدد الطاولات في كل صف من إعدادات الفرع.
+  // ملاحظة: getBranchSettings دالة async — يجب await داخل useEffect.
   useEffect(() => {
     if (!activeProjectId) { setTablesPerRow(6); return; }
-    try {
-      const s = getBranchSettings(activeProjectId);
-      const v = Number(s?.tablesPerRow);
-      setTablesPerRow(PER_ROW_OPTIONS.includes(v) ? v : 6);
-    } catch { setTablesPerRow(6); }
+    let active = true;
+    (async () => {
+      try {
+        const s = await getBranchSettings(activeProjectId);
+        if (!active) return;
+        const v = Number(s?.tablesPerRow);
+        setTablesPerRow(PER_ROW_OPTIONS.includes(v) ? v : 6);
+      } catch {
+        if (active) setTablesPerRow(6);
+      }
+    })();
+    return () => { active = false; };
   }, [activeProjectId]);
 
   // إعادة التحميل عند العودة للنافذة (auto-refresh on focus)

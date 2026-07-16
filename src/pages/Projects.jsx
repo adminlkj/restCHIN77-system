@@ -82,13 +82,12 @@ export default function Projects() {
   const remove = async () => {
     try {
       // فحوصات الكيانات المرتبطة بالطلب (مطعمية فقط) — أُزيلت فحوصات البناء:
-      // Contract, BOQItem, ProgressBilling, ChangeOrder, ProjectDocument, ContractItem.
+      // Contract, BOQItem, ProgressBilling, ChangeOrder, ProjectDocument, ContractItem,
+      // WorkOrder, DailyReport (بقايا نظام المقاولات).
       const checks = await Promise.all([
         base44.entities.SalesInvoice.filter({ projectId: deleteId }),
         base44.entities.PurchaseOrder.filter({ projectId: deleteId }),
         base44.entities.Expense.filter({ projectId: deleteId }),
-        base44.entities.WorkOrder.filter({ projectId: deleteId }),
-        base44.entities.DailyReport.filter({ projectId: deleteId }),
       ]);
       if (checks.some(list => list.length > 0)) {
         toast.error(t('لا يمكن حذف طلب عليه مستندات أو حركات مرتبطة', 'Cannot delete an order with linked documents or transactions', lang));

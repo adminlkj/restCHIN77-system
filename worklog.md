@@ -1706,3 +1706,93 @@ Stage Summary:
 - تحكم كامل: مصدر، أبعاد، محاذاة، مسافة، طريقة عرض
 - دعم الطابعات: 58mm و 80mm
 - المعاينة = الطباعة (لا فرق)
+
+---
+Task ID: arch-cleanup-performance
+Agent: main (Z.ai Code)
+Task: Performance & Architecture Cleanup — إزالة تحميل شامل + تكرار + بقايا المقاولات
+
+Work Log:
+تحليل السجل من المستخدم كشف 5 مشاكل معمارية. تم إصلاحها جميعاً:
+
+🔴 المشكلة 1: تحميل شامل لكل الوحدات عند فتح أي شاشة
+السبب الجذري: store.jsx يُنشئ كائن value جديد عند كل render →
+NotificationCenter.useCallback([lang, store]) يرى ref جديد →
+useEffect([build]) يُعاد تنفيذه → 7 طلبات list عند كل تنقّل.
+
+الإصلاح (store.jsx):
+- تغليف كل callbacks في useCallback (setActiveItemPersist, setProjectContext, setEmployeeContext, إلخ)
+- تغليف value object في useMemo بالاعتماديات الصحيحة
+- النتيجة: useStore() لا يُعيد render إلا عند تغيير قيمة فعلية
+
+الإصلاح (NotificationCenter.jsx):
+- إزالة `store` من useCallback deps — أخذ lang + setActiveItem + setEmployeeContext فقط
+- استبدال useEffect([build]) بـ useEffect + setInterval كل دقيقتين
+- النتيجة: الجلب يتم مرة واحدة عند التحميل + كل دقيقتين + عند الضغط على زر التحديث يدوياً
+
+🔴 المشكلة 2: CompanySettings.list يتكرر
+السبب: useCompanySettings لا يملك كاش — كل mount يُطلق طلب جديد.
+
+الإصلاح (useCompanySettings.js):
+- إضافة cache على مستوى الوحدة (_cachedRecord, _cachedSettings, _fetchPromise, _lastFetchAt)
+- TTL 5 دقائق — الإعدادات نادرة التغيير
+- dedup للطلبات المتزامنة عبر _fetchPromise
+- invalidateCompanySettingsCache() يُستدعى بعد الحفظ في CompanySettingsCard + PrintSettingsCard
+- إبطال الكاش عند تسجيل الخروج (AuthContext.logout)
+
+🔴 المشكلة 3: EmployeeAdvance/Attendance/Custody.filter يتكرر
+السبب: EmployeeWorkspace.loadStats يُحمّل 3 طلبات filter عند فتح المركز، حتى لو لم تكن
+تبويب "نظرة عامة" نشطة.
+
+الإصلاح (EmployeeWorkspace.jsx):
+- loadStats تُؤجّل — لا تُنفّذ إلا عند فتح تبويب "overview"
+- فصل effect تحميل بيانات الموظف عن effect تحميل stats
+- النتيجة: فتح تبويب السلف/العهد/الحضور/الوثائق لا يُطلق طلبات stats
+
+🔴 المشكلة 4: BranchSetting.filter من Tables.jsx + POS.jsx
+السبب: استدعاء getBranchSettings (async) بدون await داخل useMemo/useEffect —
+يُطلق الطلب لكن النتيجة تُتجاهل (Promise لا يُعالَج).
+
+الإصلاح:
+- Tables.jsx: تحويل من useEffect متزامن إلى useEffect async مع await
+- POS.jsx: تحويل branchSettings من useMemo إلى useEffect+useState
+- النتيجة: البيانات تُقرأ فعلياً وتُطبّق، الطلب الواحد يُكاش (لا تكرار)
+
+🔴 المشكلة 5: بقايا نظام المقاولات
+الإصلاحات:
+- VATReport.jsx: إزالة RentalInvoice.list (لا يوجد تأجير في المطعم) + rentalSales state
+- Projects.jsx: إزالة WorkOrder.filter + DailyReport.filter من فحص الحذف
+- businessEngine.js: إزالة 9 دوال ميتة (createRentalContract, updateRentalContract,
+  createRentalInvoice, updateRentalInvoice, approveRentalInvoice,
+  createSubcontractorInvoice, updateSubcontractorInvoice, approveSubcontractorInvoice,
+  createSubcontractorPayment) — المحرك الخادم يدعمها للتوافق الخلفي فقط
+- InvoiceSettingsCard.jsx: حذف المكوّن الميت بالكامل (213 سطر، غير مستورد)
+
+ملفات أخرى مُراجعة (لا تغيير مطلوب):
+- AppShell.jsx: Project.filter({status:'ACTIVE'}) مشروع (اختيار الفرع النشط تلقائياً)
+- Project entity = Branch في المطعم — كل الاستدعاءات مشروعة
+- MaintenanceRecord مشروع (صيانة معدات المطعم)
+- branchSettings.js cache يعمل بشكل صحيح
+
+التحقق:
+- lint: 0 أخطاء
+- build: ناجح (2731 module)
+- store.jsx value stable (useMemo)
+- NotificationCenter: جلب مرة واحدة + كل دقيقتين (بدلاً من كل تنقّل)
+- CompanySettings: cache 5 دقائق + dedup
+- EmployeeWorkspace: stats مؤجّلة لتبويب overview فقط
+- Tables/POS: branch settings تُقرأ فعلياً
+
+النتيجة المتوقعة:
+- تقليل طلبات API بنسبة 60-80% عند التنقّل بين الشاشات
+- إزالة طلبات CompanySettings.list المتكررة (من ~10 لكل تنقّل إلى 0)
+- إزالة طلبات BranchSetting.filter المُتجاهلة (من 2 لكل فرع إلى 0)
+- إزالة 3 طلبات EmployeeAdvance/Attendance/Custody عند فتح تبويبات الموظفين غير overview
+- إزالة RentalInvoice.list + WorkOrder.filter + DailyReport.filter (بقايا المقاولات)
+- تقليل استهلاك ذاكرة Render
+
+Stage Summary:
+- 5 إصلاحات معمارية كبرى
+- 7 ملفات مُعدّلة + 1 ملف محذوف (InvoiceSettingsCard.jsx)
+- الكود نظيف (lint 0، build ناجح)
+- الأداء المتوقع: أخف بكثير، أسرع، أقل طلبات API

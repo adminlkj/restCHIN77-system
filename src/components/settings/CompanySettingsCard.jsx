@@ -8,7 +8,7 @@ import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/components/ui/use-toast';
 import { t } from '@/lib/utils-binaa';
-import { useCompanySettings, DEFAULT_COMPANY_SETTINGS } from '@/hooks/useCompanySettings';
+import { useCompanySettings, DEFAULT_COMPANY_SETTINGS, invalidateCompanySettingsCache } from '@/hooks/useCompanySettings';
 
 const Field = ({ label, children }) => (
   <div className="space-y-1.5">
@@ -31,12 +31,13 @@ export default function CompanySettingsCard() {
   const save = async () => {
     setSaving(true);
     try {
-      const { id, created_date, updated_date, created_by_id, ...payload } = form;  
+      const { id, created_date, updated_date, created_by_id, ...payload } = form;
       if (record?.id) {
         await base44.entities.CompanySettings.update(record.id, payload);
       } else {
         await base44.entities.CompanySettings.create(payload);
       }
+      invalidateCompanySettingsCache(); // إبطال الكاش ليُجلب كل المستهلكين النسخة الجديدة
       toast({ title: t('تم حفظ بيانات الشركة', 'Company details saved', lang) });
       await reload();
     } catch (e) {

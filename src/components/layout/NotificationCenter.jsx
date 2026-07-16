@@ -5,10 +5,13 @@ import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate } from '@/lib/utils-binaa';
 
 const DAY = 864e5;
+// فاصل التحديث التلقائي: دقيقتان (بدلاً من إعادة الجلب عند كل تغيير في store).
+const REFRESH_INTERVAL = 120_000;
 
 export default function NotificationCenter() {
-  const store = useStore();
-  const { lang } = store;
+  // نأخذ فقط ما نحتاجه من store (lang + setActiveItem + setEmployeeContext).
+  // لا نأخذ كائن store كاملاً لتفادي إعادة بناء useCallback عند كل render.
+  const { lang, setActiveItem, setEmployeeContext } = useStore();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState([]);
@@ -24,6 +27,12 @@ export default function NotificationCenter() {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
+  // ─── بناء الإشعارات ───
+  // deps: lang فقط (setActiveItem/setEmployeeContext أصبحت stable بعد إصلاح store.jsx).
+  // هذا يمنع إعادة الجلب عند كل تنقّل/تغيير سياق — الجلب يتم:
+  //   1) مرة واحدة عند التحميل
+  //   2) كل دقيقتين (REFRESH_INTERVAL)
+  //   3) عند الضغط على زر التحديث يدوياً
   const build = useCallback(async () => {
     setLoading(true);
     const now = Date.now();
@@ -49,7 +58,7 @@ export default function NotificationCenter() {
             titleAr: `فاتورة متأخرة: ${inv.invoiceNo}`, titleEn: `Overdue invoice: ${inv.invoiceNo}`,
             metaAr: `${inv.clientName || ''} · متبقٍ ${formatCurrency(unpaid, lang)}`,
             metaEn: `${inv.clientName || ''} · ${formatCurrency(unpaid, lang)} due`,
-            go: () => store.setActiveItem('sales'),
+            go: () => setActiveItem('sales'),
           });
         }
       });
@@ -64,7 +73,7 @@ export default function NotificationCenter() {
             titleAr: `فاتورة مورد مستحقة: ${inv.invoiceNo}`, titleEn: `Supplier invoice due: ${inv.invoiceNo}`,
             metaAr: `${inv.supplierName || ''} · ${formatCurrency(unpaid, lang)}`,
             metaEn: `${inv.supplierName || ''} · ${formatCurrency(unpaid, lang)}`,
-            go: () => store.setActiveItem('supplier-invoices'),
+            go: () => setActiveItem('supplier-invoices'),
           });
         }
       });
@@ -76,7 +85,7 @@ export default function NotificationCenter() {
           id: `adv-${a.id}`, Icon: HandCoins, tone: 'amber',
           titleAr: 'سلفة موظف مفتوحة', titleEn: 'Open employee advance',
           metaAr: `متبقٍ ${formatCurrency(rem, lang)}`, metaEn: `${formatCurrency(rem, lang)} remaining`,
-          go: () => { store.setEmployeeContext(a.employeeId, ''); store.setActiveItem('employee-workspace'); },
+          go: () => { setEmployeeContext(a.employeeId, ''); setActiveItem('employee-workspace'); },
         });
       });
 
@@ -86,7 +95,7 @@ export default function NotificationCenter() {
           id: `doc-${d.id}`, Icon: FileClock, tone: 'orange',
           titleAr: `وثيقة تنتهي قريباً: ${d.name}`, titleEn: `Document expiring: ${d.name}`,
           metaAr: `تنتهي ${formatDate(d.expiryDate, lang)}`, metaEn: `Expires ${formatDate(d.expiryDate, lang)}`,
-          go: () => { store.setEmployeeContext(d.employeeId, ''); store.setActiveItem('employee-workspace'); },
+          go: () => { setEmployeeContext(d.employeeId, ''); setActiveItem('employee-workspace'); },
         });
       });
 
@@ -96,7 +105,7 @@ export default function NotificationCenter() {
           id: `mnt-${m.id}`, Icon: Wrench, tone: 'cyan',
           titleAr: 'صيانة معدة قيد التنفيذ', titleEn: 'Equipment maintenance in progress',
           metaAr: m.description || '', metaEn: m.description || '',
-          go: () => store.setActiveItem('equipment-maintenance'),
+          go: () => setActiveItem('equipment-maintenance'),
         });
       });
 
@@ -106,7 +115,7 @@ export default function NotificationCenter() {
           id: `pay-${p.id}`, Icon: FileClock, tone: 'cyan',
           titleAr: `مسير رواتب معلق: ${p.code}`, titleEn: `Pending payroll: ${p.code}`,
           metaAr: `${formatCurrency(p.netAmount || 0, lang)}`, metaEn: `${formatCurrency(p.netAmount || 0, lang)}`,
-          go: () => store.setActiveItem('payroll-runs'),
+          go: () => setActiveItem('payroll-runs'),
         });
       });
 
@@ -117,16 +126,22 @@ export default function NotificationCenter() {
           titleAr: `أمر شراء معلق: ${po.orderNo}`, titleEn: `Pending purchase order: ${po.orderNo}`,
           metaAr: `${po.supplierName || ''} · ${formatCurrency((po.totalAmount || 0) + (po.vatAmount || 0), lang)}`,
           metaEn: `${po.supplierName || ''} · ${formatCurrency((po.totalAmount || 0) + (po.vatAmount || 0), lang)}`,
-          go: () => store.setActiveItem('purchase-orders'),
+          go: () => setActiveItem('purchase-orders'),
         });
       });
 
       setTasks(items);
     } catch { /* silent — notifications are non-critical */ }
     finally { setLoading(false); }
-  }, [lang, store]);
+  }, [lang, setActiveItem, setEmployeeContext]);
 
-  useEffect(() => { build(); }, [build]);
+  // ─── تحميل مرة واحدة عند التحميل + تحديث دوري كل دقيقتين ───
+  // بدلاً من إعادة الجلب عند كل تغيير في store (الذي كان يسبب 7 طلبات لكل تنقّل).
+  useEffect(() => {
+    build();
+    const timer = setInterval(build, REFRESH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [build]);
 
   const tones = {
     rose: 'bg-rose-50 text-rose-600',

@@ -150,10 +150,19 @@ export default function POS() {
   const skipAutoClearRef = useRef(false);
 
   // اسم الفرع من إعدادات الفرع (المدمجة مع إعدادات الشركة)
-  const branchSettings = useMemo(
-    () => activeProjectId ? getBranchSettings(activeProjectId) : {},
-    [activeProjectId]
-  );
+  // ملاحظة: getBranchSettings دالة async — useMemo يُرجع Promise! استخدم useEffect+useState.
+  const [branchSettings, setBranchSettings] = useState({});
+  useEffect(() => {
+    if (!activeProjectId) { setBranchSettings({}); return; }
+    let active = true;
+    (async () => {
+      try {
+        const s = await getBranchSettings(activeProjectId);
+        if (active) setBranchSettings(s || {});
+      } catch { if (active) setBranchSettings({}); }
+    })();
+    return () => { active = false; };
+  }, [activeProjectId]);
   const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
   const tableLabel = activeTable?.tableName || t('طاولة', 'Table', lang);
 
