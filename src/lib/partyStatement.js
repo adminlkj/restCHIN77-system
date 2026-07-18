@@ -48,6 +48,34 @@ export function buildPartyStatement(entries, accounts, party, period = {}) {
   const nameKey = norm(party.name);
   const movements = [];
 
+  // يحدد هل ينتمي سطر القيد لهذا الطرف (بالمعرّف الصريح أو بمطابقة الاسم).
+  const lineBelongsToParty = (line, je) => {
+    if (line.partyId) return line.partyId === party.id;
+    if (nameKey) {
+      const text = `${norm(line.partyName)} ${norm(line.description)} ${norm(je.description)}`;
+      return text.includes(nameKey);
+    }
+    return false;
+  };
+
+  // ─── الرصيد الافتتاحي: تجميع كل حركات الطرف قبل بداية الفترة ──────────────
+  // دون هذا الرصيد، كشف حساب لفترة محدّدة يُظهر رصيداً صفراً حتى لو كان على
+  // العميل/المورد مستحقات سابقة — وهو خطأ جوهري في متابعة الذمم.
+  let openingBalance = 0;
+  if (period.from) {
+    for (const je of entries) {
+      if (!je.isPosted) continue;
+      if (je.date >= period.from) continue; // قبل بداية الفترة فقط
+      if (period.to && je.date > period.to) continue;
+      for (const line of je.lines || []) {
+        if (line.accountCode !== arCode) continue;
+        if (!lineBelongsToParty(line, je)) continue;
+        openingBalance += (Number(line.debit) || 0) - (Number(line.credit) || 0);
+      }
+    }
+    openingBalance = +openingBalance.toFixed(2);
+  }
+
   for (const je of entries) {
     if (!je.isPosted) continue;
     if (period.from && je.date < period.from) continue;
@@ -55,16 +83,7 @@ export function buildPartyStatement(entries, accounts, party, period = {}) {
 
     for (const line of je.lines || []) {
       if (line.accountCode !== arCode) continue;
-
-      // مطابقة الطرف: أولاً بالمعرّف الصريح، وإلا بمطابقة الاسم نصّياً (قيود قديمة).
-      let belongs = false;
-      if (line.partyId) {
-        belongs = line.partyId === party.id;
-      } else if (nameKey) {
-        const text = `${norm(line.partyName)} ${norm(line.description)} ${norm(je.description)}`;
-        belongs = text.includes(nameKey);
-      }
-      if (!belongs) continue;
+      if (!lineBelongsToParty(line, je)) continue;
 
       movements.push({
         entryNo: je.entryNo,
@@ -79,7 +98,8 @@ export function buildPartyStatement(entries, accounts, party, period = {}) {
 
   movements.sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : (a.entryNo > b.entryNo ? 1 : -1)));
 
-  let running = 0;
+  // الرصيد الجاري يبدأ من الرصيد الافتتاحي المرحّل.
+  let running = openingBalance;
   const rows = movements.map(m => {
     running += m.debit - m.credit;
     return { ...m, balance: +running.toFixed(2) };
@@ -87,12 +107,13 @@ export function buildPartyStatement(entries, accounts, party, period = {}) {
 
   const totalDebit = +rows.reduce((s, r) => s + r.debit, 0).toFixed(2);
   const totalCredit = +rows.reduce((s, r) => s + r.credit, 0).toFixed(2);
-  const net = +(totalDebit - totalCredit).toFixed(2);
+  // صافي الفترة + الرصيد الافتتاحي = الرصيد الفعلي المستحق.
+  const net = +(openingBalance + totalDebit - totalCredit).toFixed(2);
 
   // للعميل: net موجب = مستحق علينا تحصيله. للمورد: net سالب (رصيد دائن) = مستحق علينا سداده.
   const outstanding = party.type === 'SUPPLIER' ? +Math.abs(Math.min(net, 0)).toFixed(2) : +Math.max(net, 0).toFixed(2);
 
-  return { rows, totalDebit, totalCredit, net, outstanding };
+  return { rows, openingBalance, totalDebit, totalCredit, net, outstanding };
 }
 
 /**

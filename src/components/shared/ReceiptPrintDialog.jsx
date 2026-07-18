@@ -26,7 +26,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
 
   // دمج إعدادات الشركة مع إعدادات الفرع المرتبط بالإيصال (إن وُجد).
   // resolveReceiptSettings دالة async (تتصل بالخادم)، لذا نستخدم useEffect.
-  const [settings, setSettings] = useState(companySettings);
+  const [settings, setSettings] = useState(companySettings || {});
 
   useEffect(() => {
     let active = true;
@@ -44,7 +44,10 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
       }
     })();
     return () => { active = false; };
-  }, [invoice?.projectId, invoice?.branchId, companySettings]);
+  // نعتمد على معرّف الفرع فقط — لا على كائن companySettings (مرجعه يتغيّر كل تصيير
+  // مما يسبّب حلقة إعادة تصيير لا نهائية وتجمّد النظام عند إعادة فتح الإيصال).
+     
+  }, [invoice?.projectId, invoice?.branchId]);
 
   // جلب سجل العميل الكامل لعرض تفاصيله (السجل، الرقم الضريبي، الهاتف)
   useEffect(() => {

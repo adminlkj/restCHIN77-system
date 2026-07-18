@@ -20,7 +20,6 @@ import PartyStatementReport from '@/components/partners/PartyStatementReport';
 export default function PartyStatementSection({ partyType, parties = [] }) {
   const { lang } = useStore();
   const isSupplier = partyType === 'SUPPLIER';
-  const accent = isSupplier ? 'amber' : 'emerald';
 
   const [entries, setEntries] = useState([]);
   const [accounts, setAccounts] = useState([]);

@@ -10,6 +10,7 @@
 
 import { base44 } from '@/api/base44Client';
 import { flattenPostedLines, buildTrialBalance } from '@/lib/ledgerEngine';
+import { resolveVatRate } from '@/lib/businessEngine';
 
 // عتبة التقريب: أي فرق يتجاوزها يعتبر فشلاً (هللة واحدة).
 const EPSILON = 0.01;
@@ -212,8 +213,11 @@ function auditDocuments({ salesInvoices, purchaseOrders, expenses }) {
   const vatWrong = salesInvoices.filter(i => {
     const base = Number(i.subtotal) || 0;
     if (base <= 0) return false;
+    // احترام الفواتير صفرية الضريبة (vatRate === 0): لا تُفحص ضد 15%.
+    const rate = resolveVatRate(i.vatRate);
+    if (rate !== 0.15) return false;
     const expected = money(base * 0.15);
-    return i.vatAmount != null && diff(i.vatAmount, expected) > EPSILON && Number(i.vatRate || 0.15) === 0.15;
+    return i.vatAmount != null && diff(i.vatAmount, expected) > EPSILON;
   });
   results.push(check({
     id: 'SINV_VAT_CORRECT', group: 'documents', title: 'ضريبة فواتير المبيعات = 15% من الأساس',

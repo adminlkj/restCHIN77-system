@@ -11,12 +11,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, genInvoiceNo, INVOICE_STATUS } from '@/lib/utils-binaa';
-import { calcVAT, OperationEngine } from '@/lib/businessEngine';
+import { calcVAT, resolveVatRate, OperationEngine } from '@/lib/businessEngine';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
 import { toast } from 'sonner';
+
+// Escape a literal string for safe use as a RegExp source (prevents regex injection
+// from user-entered invoice numbers when filtering JournalEntry.entryNo via $regex).
+const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 
 const TYPES = {
   CONSTRUCTION: { ar: 'صالة',     en: 'Dine-in' },
@@ -109,8 +114,14 @@ export default function SalesInvoices() {
       return toast.error(t('لا يمكن عكس إيصال عليه مدفوعات — اعكس المدفوعات أولاً', 'Cannot reverse a receipt with payments — reverse payments first', lang));
     setReversingId(item.id);
     try {
-      const allJE = await base44.entities.JournalEntry.filter({ isPosted: true });
-      const jes = allJE.filter(je => je.sourceType === 'SalesInvoice' && (je.entryNo || '').includes(item.invoiceNo));
+      // Server-side filter by sourceType + entryNo $regex replaces the prior unbounded
+      // `filter({ isPosted: true })` (N+1 fix: cuts payload from "all posted JEs" to
+      // just the SalesInvoice JEs whose entryNo contains this invoiceNo).
+      const jes = await base44.entities.JournalEntry.filter({
+        isPosted: true,
+        sourceType: 'SalesInvoice',
+        entryNo: { $regex: escapeRegex(item.invoiceNo) },
+      }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط بهذا الإيصال', 'No linked journal entry found', lang));
       const orig = jes[0];
       const revNo = `${orig.entryNo}-REV-1`;
@@ -132,7 +143,9 @@ export default function SalesInvoices() {
   };
 
   // الحسابات تأتي من Business Engine — SSOT
-  const { base: sub, vat: vatAmount, total: totalAmount } = calcVAT(form.subtotal, parseFloat(form.vatRate) || 0.15);
+  // الحسابات تأتي من Business Engine — SSOT.
+  // resolveVatRate تحترم نسبة 0% (صفرية الضريبة) بدلاً من إسقاطها إلى 0.15.
+  const { base: _sub, vat: vatAmount, total: totalAmount } = calcVAT(form.subtotal, resolveVatRate(form.vatRate));
 
   const save = async () => {
     if (!form.invoiceNo || !form.clientId)

@@ -56,7 +56,7 @@ const GRID_BY_PER_ROW = {
 const PER_ROW_OPTIONS = [3, 4, 5, 6, 8];
 
 export default function Tables() {
-  const { lang, activeProjectId, activeProjectName, setProjectContext, setActiveItem } = useStore();
+  const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
   const OpenArrow = lang === 'ar' ? ArrowLeft : ArrowRight;
 
   const [tables, setTables] = useState([]);

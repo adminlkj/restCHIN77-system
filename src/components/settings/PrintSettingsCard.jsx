@@ -71,7 +71,7 @@ export default function PrintSettingsCard() {
   const save = async () => {
     setSaving(true);
     try {
-      const { id, created_date, updated_date, created_by_id, ...payload } = form;
+      const { id: _id, created_date: _created_date, updated_date: _updated_date, created_by_id: _created_by_id, ...payload } = form;
       if (record?.id) {
         await base44.entities.CompanySettings.update(record.id, payload);
       } else {

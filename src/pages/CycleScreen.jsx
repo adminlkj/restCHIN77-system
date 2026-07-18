@@ -95,7 +95,7 @@ const TAB_CONTENT = {
 };
 
 export default function CycleScreen({ cycleKey }) {
-  const { lang } = useStore();
+  const { lang, activeItem } = useStore();
   const { user: currentUser } = useAuth();
   const userLoaded = !!currentUser;
   const cycle = CYCLE_BY_KEY[cycleKey];
@@ -106,7 +106,13 @@ export default function CycleScreen({ cycleKey }) {
     return cycle.tabs.filter(tb => !userLoaded || canAccess(currentUser, tb.key));
   }, [cycle, currentUser, userLoaded]);
 
-  const [activeTab, setActiveTab] = useState(visibleTabs[0]?.key);
+  // Initialize activeTab from the store's activeItem when it matches one of the
+  // cycle's tab keys (so deep-links / cross-screen setActiveItem(<tabKey>) land
+  // on the requested tab, not the first tab of the cycle). Falls back to the
+  // first visible tab otherwise.
+  const tabKeys = useMemo(() => visibleTabs.map(t => t.key), [visibleTabs]);
+  const initialTab = tabKeys.includes(activeItem) ? activeItem : visibleTabs[0]?.key;
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Keep active tab valid when the visible set changes (e.g. cycle switch)
   useEffect(() => {

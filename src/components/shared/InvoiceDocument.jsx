@@ -59,7 +59,7 @@ export default function InvoiceDocument({ invoice, settings, client, lang = 'ar'
 
   const primary = settings.primaryColor || '#c8891f';
   const accent = settings.accentColor || '#1f2d3d';
-  const typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.RENTAL;
+  const _typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.RENTAL;
 
   const subtotal = invoice.subtotal != null ? invoice.subtotal : (invoice.totalAmount || 0) - (invoice.vatAmount || 0);
   const vat = invoice.vatAmount || 0;
@@ -260,7 +260,7 @@ export default function InvoiceDocument({ invoice, settings, client, lang = 'ar'
               { ar: 'رمز السويفت', en: 'SWIFT Code', value: settings.swiftCode, ltr: true, upper: true },
               { ar: 'رقم الحساب', en: 'Account No.', value: settings.bankAccountNumber, ltr: true },
               { ar: 'رقم الآيبان', en: 'IBAN', value: settings.iban, ltr: true, upper: true },
-            ].filter(col => col.value).map((col, i, arr) => (
+            ].filter(col => col.value).map((col, i, _arr) => (
               <div key={i} style={{ flex: 1, padding: '8px 6px', borderInlineStart: i > 0 ? border : 'none' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: accent }}>{col.ar}</div>
                 <div style={{ fontSize: 8, color: '#9ca3af', marginBottom: 3 }}>{col.en}</div>

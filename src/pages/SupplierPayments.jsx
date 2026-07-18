@@ -21,6 +21,10 @@ import { OperationEngine } from '@/lib/businessEngine';
 import { toast } from 'sonner';
 import { requiredFields, missingFieldsMessage } from '@/lib/formValidation';
 
+// Escape a literal string for safe use as a RegExp source (prevents regex injection
+// from user-entered payment numbers when filtering JournalEntry.entryNo via $regex).
+const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const METHODS = {
   CASH:          { ar: 'نقدي',       en: 'Cash' },
   BANK_TRANSFER: { ar: 'تحويل بنكي', en: 'Bank Transfer' },
@@ -74,15 +78,21 @@ export default function SupplierPayments() {
     setForm({ ...empty, paymentNo: nextCodeFromList(items, 'PMT', 'paymentNo') });
     setDialogOpen(true);
   };
-  const openEdit = () => toast.error(t('لا يمكن تعديل سند صرف مُرحّل — استخدم العكس', 'Cannot edit a posted payment — use reverse', lang));
-  const askDelete = () => toast.error(t('لا يمكن حذف سند صرف مُرحّل — استخدم العكس', 'Cannot delete a posted payment — use reverse', lang));
+  const _openEdit = () => toast.error(t('لا يمكن تعديل سند صرف مُرحّل — استخدم العكس', 'Cannot edit a posted payment — use reverse', lang));
+  const _askDelete = () => toast.error(t('لا يمكن حذف سند صرف مُرحّل — استخدم العكس', 'Cannot delete a posted payment — use reverse', lang));
 
   const [reversingId, setReversingId] = useState(null);
   const reverse = async (item) => {
     setReversingId(item.id);
     try {
-      const allJE = await base44.entities.JournalEntry.filter({ isPosted: true });
-      const jes = allJE.filter(je => je.sourceType === 'SupplierPayment' && (je.entryNo || '').includes(item.paymentNo));
+      // Server-side filter by sourceType + entryNo $regex replaces the prior unbounded
+      // `filter({ isPosted: true })` (N+1 fix: cuts payload from "all posted JEs" to
+      // just the SupplierPayment JEs whose entryNo contains this paymentNo).
+      const jes = await base44.entities.JournalEntry.filter({
+        isPosted: true,
+        sourceType: 'SupplierPayment',
+        entryNo: { $regex: escapeRegex(item.paymentNo) },
+      }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
       const orig = jes[0];
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));

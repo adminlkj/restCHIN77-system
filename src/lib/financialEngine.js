@@ -139,16 +139,17 @@ export function buildVATReport(journalEntries = [], accountMap = {}, period = {}
     const acc = accountMap[l.accountCode];
     if (!acc) continue;
     if (acc.semanticRole === 'VAT_PAYABLE') {
-      // ضريبة محصّلة — دائن
+      // ضريبة محصّلة — دائن بطبيعتها. القيد العكسي (إلغاء فاتورة) يُحسب
+      // كقيمة سالبة فتُخصم من المحصّل، لذلك لا نتجاهل السالب.
       const amount = l.credit - l.debit;
-      if (amount > 0) {
+      if (amount !== 0) {
         vatCollected += amount;
         collectedLines.push({ ...l, amount });
       }
     } else if (acc.semanticRole === 'VAT_RECEIVABLE') {
-      // ضريبة مدفوعة — مدين
+      // ضريبة مدفوعة — مدين بطبيعتها. القيد العكسي يُخصم من المدفوع.
       const amount = l.debit - l.credit;
-      if (amount > 0) {
+      if (amount !== 0) {
         vatPaid += amount;
         paidLines.push({ ...l, amount });
       }
@@ -167,8 +168,12 @@ export function buildVATReport(journalEntries = [], accountMap = {}, period = {}
 /**
  * يبني التدفقات النقدية من القيود المرحّلة.
  *
- * تدفق داخل = دائن في حسابات النقد/البنك (semanticRole = CASH/BANK)
- * تدفق خارج = مدين في حسابات النقد/البنك
+ * النقد أصل مدين بطبيعته:
+ *   تدفق داخل (استلام نقد) = مدين في حسابات النقد/البنك/العهد (debit > 0)
+ *   تدفق خارج (صرف نقد)   = دائن في حسابات النقد/البنك/العهد (credit > 0)
+ *
+ * يشمل حسابات: CASH, BANK, CUSTODY، وحساب نقدية بطاقات البيع (POS)
+ * الذي قد لا يحمل دوراً دلالياً صريحاً.
  */
 export function buildCashFlow(journalEntries = [], accountMap = {}, period = {}) {
   const lines = flattenPostedLines(journalEntries).filter(l => {
@@ -185,13 +190,21 @@ export function buildCashFlow(journalEntries = [], accountMap = {}, period = {})
   for (const l of lines) {
     const acc = accountMap[l.accountCode];
     if (!acc) continue;
-    if (acc.semanticRole === 'CASH' || acc.semanticRole === 'BANK') {
-      if (l.credit > 0) {
-        inflow += l.credit;
+    // تحديد ما إذا كان الحساب نقدياً: بالدور الدلالي أو بموقعه تحت مجموعة
+    // النقدية (111x) أو بدلالة اسمه (بطاقات/POS/card) — لالتقاط حساب نقدية
+    // بطاقات البيع (1114) الذي قد لا يحمل دوراً دلالياً.
+    const isCash = acc.semanticRole === 'CASH'
+      || acc.semanticRole === 'BANK'
+      || acc.semanticRole === 'CUSTODY'
+      || /^111\d$/.test(acc.code || '');
+    if (isCash) {
+      // النقد أصل مدين: القبض = مدين (inflow)، الصرف = دائن (outflow).
+      if (l.debit > 0) {
+        inflow += l.debit;
         inflowLines.push(l);
       }
-      if (l.debit > 0) {
-        outflow += l.debit;
+      if (l.credit > 0) {
+        outflow += l.credit;
         outflowLines.push(l);
       }
     }

@@ -40,7 +40,11 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
   const primary = settings.primaryColor || '#d97706';
   const accent = settings.accentColor || '#1f2d3d';
 
-  const subtotal = invoice.subtotal != null ? invoice.subtotal : (invoice.totalAmount || 0) - (invoice.vatAmount || 0);
+  // subtotal = الإجمالي الفرعي GROSS (قبل أي خصم). القيمة المخزّنة من POS هي GROSS أصلاً.
+  // عند عدم توفّرها نسترجعها من الإجمالي النهائي: subtotal = total - vat - delivery + discount.
+  const subtotal = invoice.subtotal != null
+    ? Number(invoice.subtotal)
+    : Math.max(0, (Number(invoice.totalAmount) || 0) - (Number(invoice.vatAmount) || 0) - (Number(invoice.deliveryFee) || 0) + (Number(invoice.discountAmount) || 0));
   const discountPercentage = invoice.discountPercentage || 0;
   // خصومات تفصيلية (من notes إن وُجدت)
   let notesObj = {};
@@ -49,11 +53,13 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
       ? JSON.parse(invoice.notes)
       : (typeof invoice.notes === 'object' && invoice.notes ? invoice.notes : {});
   } catch { notesObj = {}; }
-  const itemDiscountsTotal = Number(notesObj.itemDiscountsTotal || invoice.itemDiscountsTotal || 0);
+  const _itemDiscountsTotal = Number(notesObj.itemDiscountsTotal || invoice.itemDiscountsTotal || 0);
   const customerDiscountAmount = Number(notesObj.customerDiscountAmount || invoice.customerDiscountAmount || 0);
   const manualDiscountAmount = Number(notesObj.manualDiscount?.amount || invoice.manualDiscountAmount || 0);
   const discountAmount = invoice.discountAmount || (customerDiscountAmount + manualDiscountAmount);
   const deliveryFee = invoice.deliveryFee || Number(notesObj.deliveryFee) || 0;
+  // صافي قبل الضريبة = الإجمالي (GROSS) ناقص كل الخصومات = الوعاء الخاضع للضريبة.
+  const netBeforeVat = Math.max(0, subtotal - discountAmount);
   const vat = invoice.vatAmount || 0;
   const total = invoice.totalAmount || 0;
   const paid = invoice.paidAmount || 0;
@@ -72,11 +78,11 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
     PLATFORM: { ar: 'منصة', en: 'Platform' },
     CREDIT: { ar: 'آجل', en: 'Credit' },
   };
-  const saleTypeLabel = SALE_TYPE_LABELS[saleType] || null;
+  const _saleTypeLabel = SALE_TYPE_LABELS[saleType] || null;
 
   // بيانات المنصة (لطلبات التوصيل)
   const platformName = invoice.platformName || notesObj.platform?.platformName || '';
-  const platformCommission = invoice.platformCommission || notesObj.platform?.platformCommission || 0;
+  const _platformCommission = invoice.platformCommission || notesObj.platform?.platformCommission || 0;
 
   // طرق الدفع المطبّقة (من notes.payments)
   const PAYMENT_LABELS = {
@@ -97,7 +103,7 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
   }
   appliedPayments = Object.entries(mergedPayments).map(([method, amount]) => ({ method, amount: +amount.toFixed(2) }));
 
-  const typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.CONSTRUCTION;
+  const _typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.CONSTRUCTION;
   const T = (ar, en) => (rtl ? ar : en);
 
   // تاريخ ووقت الإيصال
@@ -350,10 +356,10 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
 
       {/* ─── ملخّص الإجماليات ─── */}
       <div style={{ fontSize: 11 }}>
-        {/* (1) المجموع الفرعي (قبل الخصومات) */}
+        {/* (1) المجموع الفرعي (GROSS — قبل الخصومات) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
           <span>{T('المجموع الفرعي', 'Subtotal')}</span>
-          <span dir="ltr"><Money value={subtotal + discountAmount} /></span>
+          <span dir="ltr"><Money value={subtotal} /></span>
         </div>
         {/* (أُزيل خصم الأصناف — القاعدة 4: الخصم على الفاتورة لا على الأصناف) */}
         {/* (2) خصم العميل — تلقائي من بطاقة العميل */}
@@ -370,11 +376,11 @@ export default function ThermalReceiptDocument({ invoice, settings, client, lang
             <span dir="ltr">-<Money value={manualDiscountAmount} /></span>
           </div>
         ) : null}
-        {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة) */}
+        {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة = GROSS - Discount) */}
         {(customerDiscountAmount > 0 || manualDiscountAmount > 0) ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontWeight: 600, borderTop: '1px dotted #ddd', paddingTop: 2 }}>
             <span>{T('صافي قبل الضريبة', 'Net before VAT')}</span>
-            <span dir="ltr"><Money value={subtotal} /></span>
+            <span dir="ltr"><Money value={netBeforeVat} /></span>
           </div>
         ) : null}
         {deliveryFee > 0 ? (

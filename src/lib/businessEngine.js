@@ -11,34 +11,60 @@ import { base44 } from '@/api/base44Client';
 export const VAT_RATE = 0.15;
 
 // خريطة الحسابات المحاسبية حسب الدور (Role-based, not name-based)
+// ⚠️ الأكواد هنا هي خطة بديلة (fallback) تُستخدم فقط إذا لم يوجد الحساب في
+// الدليل المحاسبي المُدخل (standardChart.js → ChartAccount). يجب أن تتطابق هذه
+// الأكواد مع standardChart.js لضمان أن القيود المُولّدة صحيحة حتى بدون دليل.
 export const ACCOUNTS = {
-  // الأصول
-  CASH:                  { code: '1010', name: 'الصندوق', nameEn: 'Cash' },
-  BANK:                  { code: '1020', name: 'البنك', nameEn: 'Bank' },
-  RECEIVABLES:           { code: '1100', name: 'الذمم المدينة - عملاء', nameEn: 'Accounts Receivable' },
-  // الخصوم
-  PAYABLES:              { code: '2100', name: 'الذمم الدائنة - موردون', nameEn: 'Accounts Payable' },
-  VAT_PAYABLE:           { code: '2300', name: 'ضريبة القيمة المضافة المحصلة', nameEn: 'VAT Payable' },
-  VAT_RECEIVABLE:        { code: '1300', name: 'ضريبة القيمة المضافة المدفوعة', nameEn: 'VAT Receivable' },
-  ACCRUED_SALARIES:      { code: '2200', name: 'رواتب مستحقة الدفع', nameEn: 'Accrued Salaries' },
-  // الإيرادات
+  // الأصول — النقدية (standardChart 111x)
+  CASH:                  { code: '1111', name: 'صندوق الكاشير', nameEn: 'Cashier Cash' },
+  BANK:                  { code: '1112', name: 'البنك', nameEn: 'Bank' },
+  RECEIVABLES:           { code: '1121', name: 'ذمم الزبائن (آجلة)', nameEn: 'Customer Receivables' },
+  VAT_RECEIVABLE:        { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة', nameEn: 'VAT Receivable (Input)' },
+  // الخصوم (standardChart 21xx)
+  PAYABLES:              { code: '2110', name: 'ذمم الموردين', nameEn: 'Accounts Payable' },
+  ACCRUED_SALARIES:      { code: '2140', name: 'رواتب مستحقة الدفع', nameEn: 'Accrued Salaries' },
+  VAT_PAYABLE:           { code: '2160', name: 'ضريبة القيمة المضافة المحصلة', nameEn: 'VAT Payable (Output)' },
+  // الإيرادات (standardChart 41xx)
   // ملاحظة: اسم الدور REVENUE_CONSTRUCTION محفوظ لأسباب توافق مع المحرك (entry.ts)
   // لكنه يُمثّل فعلياً إيرادات مبيعات الصالة في سياق المطعم.
   REVENUE_CONSTRUCTION:  { code: '4100', name: 'إيرادات مبيعات الصالة', nameEn: 'Dine-in Sales Revenue' },
   REVENUE_RENTAL:        { code: '4200', name: 'إيرادات الحجوزات والمناسبات', nameEn: 'Reservations & Events Revenue' },
   REVENUE_SERVICE:       { code: '4300', name: 'إيرادات مبيعات التوصيل', nameEn: 'Delivery Sales Revenue' },
-  // المصروفات
-  EXPENSE_GENERAL:       { code: '5100', name: 'المصروفات العمومية', nameEn: 'General Expenses' },
-  EXPENSE_SALARIES:      { code: '5200', name: 'مصروف الرواتب والأجور', nameEn: 'Salaries Expense' },
-  EXPENSE_PURCHASE:      { code: '5300', name: 'مشتريات ومواد', nameEn: 'Purchases & Materials' },
-  EXPENSE_PROJECT:       { code: '5400', name: 'مصروفات المشاريع', nameEn: 'Project Expenses' },
-  EXPENSE_EQUIPMENT:     { code: '5500', name: 'مصروفات المعدات', nameEn: 'Equipment Expenses' },
-  EXPENSE_EMPLOYEE:      { code: '5600', name: 'مصروفات الموظفين', nameEn: 'Employee Expenses' },
-  EXPENSE_GOVERNMENT:    { code: '5700', name: 'رسوم ومصروفات حكومية', nameEn: 'Government Expenses' },
-  EXPENSE_ADMIN:         { code: '5800', name: 'مصروفات إدارية', nameEn: 'Administrative Expenses' },
+  // المصروفات (standardChart 51xx/52xx)
+  EXPENSE_PURCHASE:      { code: '5110', name: 'تكلفة المواد الغذائية', nameEn: 'Food Cost' },
+  EXPENSE_SALARIES:      { code: '5210', name: 'الرواتب والأجور', nameEn: 'Salaries & Wages' },
+  EXPENSE_EMPLOYEE:      { code: '5215', name: 'بدلات ومكافآت الموظفين', nameEn: 'Allowances & Bonuses' },
+  EXPENSE_GENERAL:       { code: '5220', name: 'المصروفات التشغيلية', nameEn: 'Operating Expenses' },
+  EXPENSE_EQUIPMENT:     { code: '5224', name: 'صيانة المعدات', nameEn: 'Equipment Maintenance' },
+  EXPENSE_PROJECT:       { code: '5150', name: 'مصروفات تجهيز الطلبات', nameEn: 'Order Preparation Expenses' },
+  EXPENSE_GOVERNMENT:    { code: '5250', name: 'رسوم ومصروفات حكومية', nameEn: 'Government Fees' },
+  EXPENSE_ADMIN:         { code: '5240', name: 'مصروفات إدارية', nameEn: 'Administrative Expenses' },
 };
 
 // ─── حسابات الضريبة (Single Source of Truth) ─────────────────────────────────
+
+/**
+ * يحلّ نسبة ضريبة القيمة المضافة من قيمة قد تكون نصاً أو رقماً أو فارغة.
+ *
+ * القاعدة الحرجة: نسبة 0% (صفرية الضريبة — صادرات/معفاة) قيمة شرعية ويجب
+ * احترامها. النمط الشائع `(num(vatRate) || 0.15)` يُسقط الصفر إلى 0.15 فيُطبّق
+ * ضريبة 15% على فاتورة معفاة — خطأ ZATCA جسيم.
+ *
+ *   resolveVatRate(0)       → 0      (صفرية الضريبة)
+ *   resolveVatRate('0')     → 0
+ *   resolveVatRate(0.15)    → 0.15
+ *   resolveVatRate('0.15')  → 0.15
+ *   resolveVatRate(null)    → 0.15   (الافتراضي)
+ *   resolveVatRate('')      → 0.15
+ *   resolveVatRate(undefined) → 0.15
+ */
+export function resolveVatRate(vatRate) {
+  if (vatRate === 0 || vatRate === '0') return 0;
+  const n = parseFloat(vatRate);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return VAT_RATE; // 0.15 الافتراضي
+}
+
 export function calcVAT(amount, rate = VAT_RATE) {
   const base = parseFloat(amount) || 0;
   const vat  = +(base * rate).toFixed(2);
@@ -121,13 +147,12 @@ export const OperationEngine = {
 
   // يحل أسماء الكيانات المرتبطة بالمصروف حسب نوعه
   _buildExpensePayload(data, refs = {}) {
-    const { projects = [], equipment = [], employees = [], subcontractors = [] } = refs;
+    const { projects = [], equipment = [], employees = [] } = refs;
     return {
       ...data,
-      projectName:       nameOf(projects, data.projectId, data.projectName),
-      equipmentName:     nameOf(equipment, data.equipmentId, data.equipmentName),
-      employeeName:      nameOf(employees, data.employeeId, data.employeeName),
-      subcontractorName: nameOf(subcontractors, data.subcontractorId, data.subcontractorName),
+      projectName:   nameOf(projects, data.projectId, data.projectName),
+      equipmentName: nameOf(equipment, data.equipmentId, data.equipmentName),
+      employeeName:  nameOf(employees, data.employeeId, data.employeeName),
     };
   },
 

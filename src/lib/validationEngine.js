@@ -11,6 +11,20 @@ const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
 const num = (v) => parseFloat(v) || 0;
 
 /**
+ * يحلّ نسبة ضريبة القيمة المضافة مع احترام 0% (صفرية الضريبة).
+ * النمط `(num(vatRate) || 0.15)` يُسقط الصفر إلى 0.15 — خطأ على الفواتير المعفاة.
+ *   resolveVatRate(0)  → 0
+ *   resolveVatRate('') → 0.15 (الافتراضي)
+ *   resolveVatRate(0.15) → 0.15
+ */
+function resolveVatRate(vatRate) {
+  if (vatRate === 0 || vatRate === '0') return 0;
+  const n = parseFloat(vatRate);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return 0.15;
+}
+
+/**
  * قواعد التحقق لكل نوع عملية.
  * كل قاعدة: { field, message, test } — test(data) يرجع true إذا القيمة صحيحة.
  */
@@ -21,7 +35,7 @@ const RULES = {
     { message: 'تاريخ الفاتورة مطلوب', test: (d) => !isBlank(d.date) },
     { message: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', test: (d) => num(d.subtotal) > 0 },
     { message: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', test: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
-    { message: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', test: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + (num(d.vatRate) || 0.15)) + 0.01 },
+    { message: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', test: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + resolveVatRate(d.vatRate)) + 0.01 },
   ],
   PURCHASE_ORDER: [
     { message: 'رقم الأمر مطلوب', test: (d) => !isBlank(d.orderNo) },
@@ -36,13 +50,6 @@ const RULES = {
     { message: 'تاريخ المصروف مطلوب', test: (d) => !isBlank(d.date) },
     { message: 'المبلغ يجب أن يكون أكبر من صفر', test: (d) => num(d.amount) > 0 },
   ],
-  RENTAL_CONTRACT: [
-    { message: 'رقم العقد مطلوب', test: (d) => !isBlank(d.contractNo) },
-    { message: 'اختيار المعدة مطلوب', test: (d) => !isBlank(d.equipmentId) },
-    { message: 'اختيار العميل مطلوب', test: (d) => !isBlank(d.clientId) },
-    { message: 'قيمة الإيجار يجب أن تكون أكبر من صفر', test: (d) => num(d.rate) > 0 },
-    { message: 'تاريخ نهاية العقد لا يمكن أن يسبق تاريخ البداية', test: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
-  ],
   PAYROLL: [
     { message: 'كود المسير مطلوب', test: (d) => !isBlank(d.code) },
     { message: 'الشهر مطلوب (1-12)', test: (d) => num(d.month) >= 1 && num(d.month) <= 12 },
@@ -53,6 +60,13 @@ const RULES = {
     { message: 'كود المشروع مطلوب', test: (d) => !isBlank(d.code) },
     { message: 'اسم المشروع مطلوب', test: (d) => !isBlank(d.name) },
     { message: 'تاريخ النهاية لا يمكن أن يسبق تاريخ البداية', test: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
+  ],
+  RENTAL_CONTRACT: [
+    { message: 'رقم العقد مطلوب', test: (d) => !isBlank(d.contractNo) },
+    { message: 'اختيار المعدة مطلوب', test: (d) => !isBlank(d.equipmentId) },
+    { message: 'اختيار العميل مطلوب', test: (d) => !isBlank(d.clientId) },
+    { message: 'قيمة الإيجار يجب أن تكون أكبر من صفر', test: (d) => num(d.rate) > 0 },
+    { message: 'تاريخ نهاية العقد لا يمكن أن يسبق تاريخ البداية', test: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
   ],
 };
 

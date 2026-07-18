@@ -476,7 +476,7 @@ export default function POS() {
   // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
   // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
   //   Taxable → + Delivery Fee → VAT → Grand Total
-  const vatBase = totals.vatBase;
+  const _vatBase = totals.vatBase;
   const vat = totals.vat;
   const total = totals.total;
   // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)

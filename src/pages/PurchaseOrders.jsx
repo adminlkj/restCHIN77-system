@@ -48,7 +48,7 @@ export default function PurchaseOrders() {
   const [suppliers, setSuppliers] = useState([]);
   const [projects, setProjects]   = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  const [requests, setRequests]   = useState([]);
+  const [_requests, setRequests]   = useState([]);
   const [boqItems, setBoqItems]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');

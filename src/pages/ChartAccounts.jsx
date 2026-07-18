@@ -65,6 +65,15 @@ export default function ChartAccounts() {
 
   const handleSave = async (data, openingBalance = 0) => {
     if (editing) {
+      // منع قلب نوع/طبيعة حساب له حركات مرحّلة — يقلب إشارة رصيده في الميزان بأثر رجعي.
+      if ((data.accountType && data.accountType !== editing.accountType) || (data.nature && data.nature !== editing.nature)) {
+        const jes = await base44.entities.JournalEntry.list('-date', 5000);
+        const used = jes.some(je => (je.lines || []).some(l => l.accountCode === editing.code));
+        if (used) {
+          toast({ title: t('لا يمكن تغيير نوع أو طبيعة حساب له قيود مرحّلة', 'Cannot change type or nature of an account with posted entries', lang), variant: 'destructive' });
+          return;
+        }
+      }
       await base44.entities.ChartAccount.update(editing.id, data);
     } else {
       await OperationEngine.createChartAccount(data, openingBalance);
@@ -88,7 +97,7 @@ export default function ChartAccounts() {
       setDeleting(null);
       toast({ title: t('تم الحذف', 'Deleted', lang) });
       await load();
-    } catch (e) { toast({ title: t('فشل الحذف', 'Delete failed', lang), variant: 'destructive' }); setDeleting(null); }
+    } catch { toast({ title: t('فشل الحذف', 'Delete failed', lang), variant: 'destructive' }); setDeleting(null); }
   };
 
   const seedStandardChart = async () => {

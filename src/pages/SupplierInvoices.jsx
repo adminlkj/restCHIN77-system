@@ -22,6 +22,10 @@ import FilePreviewDialog from '@/components/shared/FilePreviewDialog';
 import { OperationEngine } from '@/lib/businessEngine';
 import { toast } from 'sonner';
 
+// Escape a literal string for safe use as a RegExp source (prevents regex injection
+// from user-entered invoice numbers when filtering JournalEntry.entryNo via $regex).
+const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const STATUS = {
   DRAFT:          { ar: 'مسودة',       en: 'Draft',        color: STATUS_TONE.NEUTRAL },
   APPROVED:       { ar: 'معتمدة',      en: 'Approved',     color: STATUS_TONE.INFO },
@@ -43,9 +47,9 @@ export default function SupplierInvoices() {
   const { lang } = useStore();
   const { settings } = useCompanySettings();
   const [items, setItems] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [_suppliers, setSuppliers] = useState([]);
+  const [_projects, setProjects] = useState([]);
+  const [_orders, setOrders] = useState([]);
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -174,8 +178,14 @@ export default function SupplierInvoices() {
       return toast.error(t('لا يمكن عكس فاتورة عليها مدفوعات — اعكس المدفوعات أولاً', 'Cannot reverse an invoice with payments — reverse payments first', lang));
     setReversingId(item.id);
     try {
-      const allJE = await base44.entities.JournalEntry.filter({ isPosted: true });
-      const jes = allJE.filter(je => je.sourceType === 'SupplierInvoice' && (je.entryNo || '').includes(item.invoiceNo));
+      // Server-side filter by sourceType + entryNo $regex replaces the prior unbounded
+      // `filter({ isPosted: true })` (N+1 fix: cuts payload from "all posted JEs" to
+      // just the SupplierInvoice JEs whose entryNo contains this invoiceNo).
+      const jes = await base44.entities.JournalEntry.filter({
+        isPosted: true,
+        sourceType: 'SupplierInvoice',
+        entryNo: { $regex: escapeRegex(item.invoiceNo) },
+      }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
       const orig = jes[0];
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));

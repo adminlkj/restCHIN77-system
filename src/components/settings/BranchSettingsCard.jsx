@@ -214,7 +214,7 @@ export default function BranchSettingsCard() {
     }
     setSaving(true);
     try {
-      const { id, created_date, updated_date, created_by_id, ...payload } = form;
+      const { id: _id, created_date: _created_date, updated_date: _updated_date, created_by_id: _created_by_id, ...payload } = form;
       await setBranchSettings(selectedBranchId, {
         ...payload,
         branchId: selectedBranchId,

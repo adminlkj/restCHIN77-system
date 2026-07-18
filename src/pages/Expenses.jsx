@@ -76,14 +76,14 @@ export default function Expenses() {
   });
 
   const openNew  = () => { setEditing(null); setForm(buildDefaultForm()); setDialogOpen(true); };
-  const openEdit = (item) => {
+  const _openEdit = (item) => {
     if (item.isPosted || item.status === 'CANCELLED')
       return toast.error(t('لا يمكن تعديل مصروف مرّحل — استخدم العكس', 'Cannot edit a posted expense — use reverse', lang));
     setEditing(item);
     setForm({ ...empty, ...item, _vatEnabled: (item.vatAmount || 0) > 0 });
     setDialogOpen(true);
   };
-  const askDelete = (item) => {
+  const _askDelete = (item) => {
     if (item.isPosted || item.status === 'CANCELLED')
       return toast.error(t('لا يمكن حذف مصروف مرّحل — استخدم العكس', 'Cannot delete a posted expense — use reverse', lang));
     setDeleteId(item.id); setConfirmOpen(true);

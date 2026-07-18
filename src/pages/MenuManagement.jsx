@@ -4,7 +4,6 @@ import {
   FolderPlus, Search, RefreshCw, ArrowUp, ArrowDown, AlertCircle,
   ArrowRightLeft, Check, X,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -495,7 +494,7 @@ export default function MenuManagement() {
               categoryName: p.categoryName,
             });
             okCount++;
-          } catch (e) {
+          } catch {
             failCount++;
           }
         }
@@ -533,11 +532,12 @@ export default function MenuManagement() {
     const isExcel = file.name.match(/\.xlsx?$/i);
     const reader = new FileReader();
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         let rows = [];
         if (isExcel) {
-          // قراءة ملف Excel (.xlsx / .xls)
+          // قراءة ملف Excel (.xlsx / .xls) — dynamic import keeps xlsx out of the main bundle.
+          const XLSX = await import('xlsx');
           const data = new Uint8Array(event.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
           const sheet = workbook.Sheets[workbook.SheetNames[0]];

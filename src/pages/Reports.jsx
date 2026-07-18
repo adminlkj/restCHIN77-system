@@ -31,8 +31,21 @@ export default function Reports({ initialReport = 'income', hideSelector = false
   const load = async () => {
     setLoading(true);
     try {
+      // Server-side filter to cut payload from 5000 → 1000 entries.
+      // - We apply `date.$lte: to` when `to` is set so buildBalanceSheet (which
+      //   needs ALL historical entries up to `to` for cumulative balances) gets
+      //   the full history it needs, while still excluding future entries.
+      // - We deliberately do NOT apply `date.$gte: from` server-side — that
+      //   would break buildBalanceSheet (it needs pre-`from` opening balances).
+      //   The income/cashflow/VAT/trial engines filter `from` client-side via
+      //   their `period` argument, exactly as before.
+      // - We do NOT filter `isPosted` server-side because the entryStatus UI
+      //   control toggles posted/unposted/all client-side, and the financial
+      //   engines always consume posted entries from the same `journal` array.
+      const jeQuery = {};
+      if (to) jeQuery.date = { $lte: to };
       const [je, acc] = await Promise.all([
-        base44.entities.JournalEntry.list('-date', 5000),
+        base44.entities.JournalEntry.filter(jeQuery, '-date', 1000),
         base44.entities.ChartAccount.list('code'),
       ]);
       setJournal(je || []); setAccounts(acc || []);

@@ -14,6 +14,18 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 const VAT_RATE = 0.15;
 
+/**
+ * يحلّ نسبة ضريبة القيمة المضافة مع احترام 0% (صفرية الضريبة — صادرات/معفاة).
+ * النمط `(num(vatRate) || VAT_RATE)` يُسقط الصفر إلى 0.15 فيُطبّق ضريبة 15% على
+ * فاتورة معفاة — خطأ ZATCA. هذه الدالة تحترم الصفر الصريح.
+ */
+function resolveVatRate(vatRate) {
+  if (vatRate === 0 || vatRate === '0') return 0;
+  const n = Number(vatRate);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return VAT_RATE;
+}
+
 // خريطة الحسابات الافتراضية حسب الدور (تُستخدم كخطة بديلة إن لم يوجد حساب في الدليل)
 // خطة بديلة تطابق الشجرة القياسية الحالية — تُستخدم فقط إن لم يوجد الدور في الدليل.
 // ملاحظة محاسبية: البيع النقدي يُذهب للصندوق/البنك/البطاقة حسب طريقة الدفع،
@@ -82,7 +94,7 @@ const RULES = {
     { m: 'تاريخ الفاتورة مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.subtotal) > 0 },
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
-    { m: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', t: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + (num(d.vatRate) || 0.15)) + 0.01 },
+    { m: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', t: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + resolveVatRate(d.vatRate)) + 0.01 },
   ],
   PLATFORM_SETTLEMENT: [
     { m: 'معرّف المنصة مطلوب', t: (d) => !isBlank(d.platformId) },
@@ -997,8 +1009,9 @@ async function createSalesInvoice(base44, data) {
       throw new Error(`رقم الفاتورة "${data.invoiceNo}" مستخدم بالفعل — استخدم رقماً آخر`);
     }
   }
-  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, num(data.vatRate) || VAT_RATE);
-  const payload = { ...data, subtotal, vatRate: num(data.vatRate) || VAT_RATE, vatAmount, totalAmount, paidAmount: num(data.paidAmount), status: 'DRAFT' };
+  const _rate0 = resolveVatRate(data.vatRate);
+  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, _rate0);
+  const payload = { ...data, subtotal, vatRate: _rate0, vatAmount, totalAmount, paidAmount: num(data.paidAmount), status: 'DRAFT' };
   return await base44.asServiceRole.entities.SalesInvoice.create(payload);
 }
 
@@ -1014,8 +1027,9 @@ async function updateSalesInvoice(base44, id, data, prevStatus) {
   if (data.status && data.status !== 'DRAFT') {
     throw new Error('لا يمكن تغيير حالة الفاتورة من التعديل — استخدم زر الاعتماد لترحيل القيد أولاً');
   }
-  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, num(data.vatRate) || VAT_RATE);
-  const payload = { ...data, status: 'DRAFT', subtotal, vatRate: num(data.vatRate) || VAT_RATE, vatAmount, totalAmount, paidAmount: num(data.paidAmount) };
+  const _rate1 = resolveVatRate(data.vatRate);
+  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, _rate1);
+  const payload = { ...data, status: 'DRAFT', subtotal, vatRate: _rate1, vatAmount, totalAmount, paidAmount: num(data.paidAmount) };
   return await base44.asServiceRole.entities.SalesInvoice.update(id, payload);
 }
 
@@ -1055,7 +1069,7 @@ async function approveSalesInvoice(base44, id) {
 
   const je = await buildJE(base44, 'SALES_INVOICE',
     { entryNo: `JE-SINV-${inv.invoiceNo}`, date: inv.date, description: `فاتورة مبيعات ${inv.invoiceNo} — ${inv.clientName}`, sourceType: 'SalesInvoice' },
-    { base: num(inv.subtotal), vat: num(inv.vatAmount), total: num(inv.totalAmount) },
+    { base: +(num(inv.totalAmount) - num(inv.vatAmount)).toFixed(2), vat: num(inv.vatAmount), total: num(inv.totalAmount) },
     () => buildSalesInvoiceJE({
       invoiceNo: inv.invoiceNo, date: inv.date,
       clientId: inv.clientId, clientName: inv.clientName,

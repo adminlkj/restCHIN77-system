@@ -48,7 +48,7 @@ export default function AppShell({ children }) {
       localStorage.removeItem('token');
       localStorage.removeItem('restaurant-mock-session');
       localStorage.setItem('restaurant-logged-out', 'true');
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
     window.location.href = '/login?clear_access_token=true';
   };
 

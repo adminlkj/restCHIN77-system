@@ -41,3 +41,6 @@ next-env.d.ts
 
 # OS / runtime
 Thumbs.db
+
+# Build output (never commit compiled assets)
+/dist

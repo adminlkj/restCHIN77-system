@@ -198,7 +198,7 @@ export default function Dashboard() {
           { key: 'branches', ar: 'الفروع', en: 'Branches', icon: Building2, color: 'bg-blue-100 text-blue-700' },
           { key: 'sales', ar: 'الإيصالات', en: 'Receipts', icon: Receipt, color: 'bg-teal-100 text-teal-700' },
           { key: 'clients', ar: 'الزبائن', en: 'Customers', icon: Users, color: 'bg-violet-100 text-violet-700' },
-          { key: 'reports', ar: 'التقارير', en: 'Reports', icon: TrendingUp, color: 'bg-rose-100 text-rose-700' },
+          { key: 'reports-cycle', ar: 'التقارير', en: 'Reports', icon: TrendingUp, color: 'bg-rose-100 text-rose-700' },
         ].map(item => (
           <button
             key={item.key}
