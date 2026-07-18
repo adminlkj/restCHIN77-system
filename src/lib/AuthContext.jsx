@@ -1,5 +1,8 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { prefetchBranches } from '@/hooks/useBranches';
+import { prefetchAccounts } from '@/hooks/useAccounts';
+import { prefetchClients, prefetchSuppliers } from '@/hooks/useParties';
 
 const AuthContext = createContext();
 
@@ -30,6 +33,17 @@ export const AuthProvider = ({ children }) => {
         setUser(currentUser);
         setIsAuthenticated(true);
         setAuthError(null);
+        // ─── Pre-warm المرجعية بعد الدخول ─────────────────────────────────
+        // نُحمّل الفروع + الدليل المحاسبي + العملاء + الموردين مرة واحدة بعد
+        // الدخول، بدلاً من أن تُجلب كل شاشة هذه البيانات عند mount.
+        // كل الـ hooks تستخدم cache مشترك، فالطلبات المتزامنة dedup تلقائياً.
+        // نُطلقها بالتوازي ولا ننتظرها (fire-and-forget) حتى لا تُؤخّر الواجهة.
+        Promise.all([
+          prefetchBranches(),
+          prefetchAccounts(),
+          prefetchClients(),
+          prefetchSuppliers(),
+        ]).catch(() => { /* silent — كل hook يتعامل مع الفشل */ });
       } else {
         throw new Error('No user session');
       }

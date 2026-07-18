@@ -12,6 +12,8 @@ import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, genInvoiceNo, INVOICE_STATUS } from '@/lib/utils-binaa';
 import { calcVAT, resolveVatRate, OperationEngine } from '@/lib/businessEngine';
+import { useBranches } from '@/hooks/useBranches';
+import { useClients } from '@/hooks/useParties';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -38,8 +40,10 @@ const empty = {
 export default function SalesInvoices() {
   const { lang, activeProjectId, activeProjectName, activeClientId, activeClientName } = useStore();
   const [items, setItems]       = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [clients, setClients]   = useState([]);
+  // الفروع والعملاء تأتي من cache مشترك (useBranches/useClients) بدلاً من
+  // جلبها مستقلة عند كل mount — كانت تُجلب 11 مرة عبر الشاشات.
+  const { branches: projects } = useBranches();
+  const { clients } = useClients();
   const [printInvoice, setPrintInvoice] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -54,12 +58,9 @@ export default function SalesInvoices() {
   const load = async () => {
     setLoading(true);
     try {
-      const [inv, p, c] = await Promise.all([
-        base44.entities.SalesInvoice.list('-created_date', 200),
-        base44.entities.Project.list(),
-        base44.entities.Client.list(),
-      ]);
-      setItems(inv); setProjects(p); setClients(c);
+      // الفروع والعملاء من cache مشترك — لا نجلبهما هنا.
+      const inv = await base44.entities.SalesInvoice.list('-created_date', 200);
+      setItems(inv);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };

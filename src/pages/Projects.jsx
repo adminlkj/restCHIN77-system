@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
+import { useClients } from '@/hooks/useParties';
 import { t, formatDate, PROJECT_STATUS, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
@@ -33,8 +35,14 @@ export default function Projects() {
     setActiveItem('project-workspace');
   };
   const [items, setItems] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // الطلبات/الفروع والزبائن من cache مشترك (useBranches/useClients) بدلاً من
+  // جلبها مستقلة عند كل mount. هذا الـ Hook يُعيل الـ cache بعد كل عملية CRUD
+  // عبر reloadBranches().
+  // ملاحظة: نُبقي state محليّ items كنسخة عمل لتجنّب إعادة كتابة كل الإحالات
+  // في save/remove (nextCodeFromList(items, ...)). نُحدّثه يدويًّا من branches.
+  const { branches, loading, reload: reloadBranches } = useBranches();
+  const { clients } = useClients();
+  useEffect(() => { setItems(branches); }, [branches]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -44,15 +52,8 @@ export default function Projects() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [p, c] = await Promise.all([base44.entities.Project.list('-created_date', 200), base44.entities.Client.list()]);
-      setItems(p); setClients(c);
-    } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load data', lang)); }
-    setLoading(false);
-  };
-  useEffect(() => { load(); }, []);
+  // الفروع والزبائن من cache مشترك — يُجلبان تلقائيًّا من الـ Hook عند mount.
+  // لا حاجة لـ useEffect للتحميل الأولي. زر التحديث فقط يُعيل الـ cache عبر reloadBranches.
 
   const filtered = items.filter(i => {
     const matchSearch = !search || i.name?.toLowerCase().includes(search.toLowerCase()) || i.code?.toLowerCase().includes(search.toLowerCase());
@@ -74,7 +75,9 @@ export default function Projects() {
       const data = { ...form, code: form.code || nextCodeFromList(items, 'PRJ'), clientName: cl?.name || form.clientName };
       if (editing) { await base44.entities.Project.update(editing.id, data); toast.success(t('تم التحديث', 'Updated', lang)); }
       else { await base44.entities.Project.create(data); toast.success(t('تم إنشاء الطلب', 'Order created', lang)); }
-      setDialogOpen(false); load();
+      setDialogOpen(false);
+      // أُعيل الـ cache المشترك بعد إنشاء/تعديل الطلب.
+      reloadBranches();
     } catch (e) { toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang)); }
     setSaving(false);
   };
@@ -94,7 +97,9 @@ export default function Projects() {
         return;
       }
       await base44.entities.Project.delete(deleteId);
-      toast.success(t('تم الحذف', 'Deleted', lang)); load();
+      toast.success(t('تم الحذف', 'Deleted', lang));
+      // أُعيل الـ cache المشترك بعد حذف الطلب.
+      reloadBranches();
     } catch { toast.error(t('فشل الحذف', 'Delete failed', lang)); }
   };
 
@@ -133,7 +138,7 @@ export default function Projects() {
             {Object.entries(PROJECT_STATUS).map(([k, v]) => <SelectItem key={k} value={k}>{lang === 'ar' ? v.ar : v.en}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="icon" onClick={load}><RefreshCw className="size-4" /></Button>
+        <Button variant="outline" size="icon" onClick={reloadBranches}><RefreshCw className="size-4" /></Button>
       </div>
 
       <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">

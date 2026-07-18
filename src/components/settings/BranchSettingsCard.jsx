@@ -13,6 +13,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
 import { useToast } from '@/components/ui/use-toast';
 import { t } from '@/lib/utils-binaa';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
@@ -71,8 +72,16 @@ export default function BranchSettingsCard() {
   const { settings: companySettings } = useCompanySettings();
 
   const [branches, setBranches] = useState([]);
-  const [branchesLoading, setBranchesLoading] = useState(true);
+  // قائمة الفروع من cache مشترك (useBranches) بدلاً من جلبها مستقلة عند كل mount.
+  const { branches: cachedBranches, loading: branchesLoading, reload: reloadBranches } = useBranches();
+  useEffect(() => { setBranches(cachedBranches); }, [cachedBranches]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
+  // اختيار أول فرع تلقائيًّا عند توفر القائمة.
+  useEffect(() => {
+    if (!selectedBranchId && branches.length > 0) {
+      setSelectedBranchId(branches[0].id);
+    }
+  }, [branches, selectedBranchId]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -80,24 +89,7 @@ export default function BranchSettingsCard() {
   const fileInputRef = useRef(null);
 
   // ─── تحميل قائمة الفروع ────────────────────────────────────────────
-  const loadBranches = async () => {
-    setBranchesLoading(true);
-    try {
-      const rows = await base44.entities.Project.list('-created_date', 200);
-      const list = Array.isArray(rows) ? rows : [];
-      setBranches(list);
-      if (!selectedBranchId && list.length > 0) {
-        setSelectedBranchId(list[0].id);
-      }
-    } catch (e) {
-      console.warn('Branch list failed:', e);
-      setBranches([]);
-    } finally {
-      setBranchesLoading(false);
-    }
-  };
-
-  useEffect(() => { loadBranches(); }, []);
+  // الفروع تُجلب تلقائيًّا من الـ Hook عند mount. زر التحديث فقط يُعيل الـ cache.
 
   // ─── تحميل إعدادات الفرع المختار (async) ───────────────────────────
   useEffect(() => {
@@ -283,7 +275,7 @@ export default function BranchSettingsCard() {
               </SelectContent>
             </Select>
           </div>
-          <Button variant="outline" size="icon" onClick={loadBranches} title={t('تحديث', 'Refresh', lang)}>
+          <Button variant="outline" size="icon" onClick={reloadBranches} title={t('تحديث', 'Refresh', lang)}>
             <RefreshCw className="size-4" />
           </Button>
         </div>

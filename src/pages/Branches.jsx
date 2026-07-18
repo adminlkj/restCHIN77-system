@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
 import {
   t, PROJECT_STATUS, nextCodeFromList,
 } from '@/lib/utils-binaa';
@@ -51,7 +52,12 @@ export default function Branches() {
   const OpenArrow = lang === 'ar' ? ArrowLeft : ArrowRight;
 
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // الفروع من cache مشترك (useBranches) بدلاً من جلبها مستقلة عند كل mount.
+  // هذا الـ Hook يُعيل الـ cache بعد كل عملية CRUD عبر reloadBranches().
+  // ملاحظة: نُبقي state محليّ items كنسخة عمل لتجنّب إعادة كتابة كل الإحالات
+  // في save/openNew (nextCodeFromList(items, ...)). نُحدّثه يدويًّا من branches.
+  const { branches, loading, reload: reloadBranches } = useBranches();
+  useEffect(() => { setItems(branches); }, [branches]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -65,19 +71,8 @@ export default function Branches() {
   const [settingsMap, setSettingsMap] = useState({});
 
   // ─── تحميل الفروع ──────────────────────────────────────────────────
-  const load = async () => {
-    setLoading(true);
-    try {
-      const rows = await base44.entities.Project.list('-created_date', 200);
-      setItems(Array.isArray(rows) ? rows : []);
-    } catch (e) {
-      console.warn('Branch list load failed:', e);
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => { load(); }, []);
+  // الفروع تُجلب تلقائيًّا من الـ Hook عند mount. لا حاجة لـ useEffect للتحميل.
+  // زر التحديث فقط يُعيل الـ cache عبر reloadBranches.
 
   // تحميل إعدادات كل فرع بشكل async بعد توفر قائمة الفروع.
   // يُخزّن النتائج في خريطة state لتُعرض في بطاقات الفروع.
@@ -185,7 +180,8 @@ export default function Branches() {
         toast.success(t('تم إنشاء الفرع مع نقطة البيع و10 طاولات افتراضية', 'Branch created with POS terminal and 10 default tables', lang));
       }
       setDialogOpen(false);
-      load();
+      // أُعيل الـ cache المشترك بعد إنشاء/تعديل الفرع.
+      reloadBranches();
     } catch (e) {
       console.error('Branch save failed:', e);
       toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang));
@@ -207,7 +203,8 @@ export default function Branches() {
         return next;
       });
       toast.success(t('تم حذف الفرع وجميع بياناته', 'Branch and its data deleted', lang));
-      load();
+      // أُعيل الـ cache المشترك بعد حذف الفرع.
+      reloadBranches();
     } catch (e) {
       console.error('Branch delete failed:', e);
       toast.error(e?.message || t('فشل الحذف', 'Delete failed', lang));
@@ -250,7 +247,7 @@ export default function Branches() {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="icon" onClick={load}>
+        <Button variant="outline" size="icon" onClick={reloadBranches}>
           <RefreshCw className="size-4" />
         </Button>
       </div>

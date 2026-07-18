@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
 import { t, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
@@ -25,7 +26,8 @@ const empty = { code: '', name: '', type: 'PROJECT', projectId: '', costCenter: 
 export default function Warehouses() {
   const { lang } = useStore();
   const [warehouses, setWarehouses] = useState([]);
-  const [projects, setProjects] = useState([]);
+  // الفروع من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
+  const { branches: projects } = useBranches();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -38,12 +40,9 @@ export default function Warehouses() {
   const load = async () => {
     setLoading(true);
     try {
-      const [wh, pr] = await Promise.all([
-        base44.entities.Warehouse.list('code', 500),
-        base44.entities.Project.list('-created_date', 500),
-      ]);
+      // الفروع من cache مشترك — لا تُجلب هنا.
+      const wh = await base44.entities.Warehouse.list('code', 500);
       setWarehouses(wh || []);
-      setProjects(pr || []);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };

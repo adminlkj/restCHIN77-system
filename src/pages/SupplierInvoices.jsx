@@ -47,8 +47,8 @@ export default function SupplierInvoices() {
   const { lang } = useStore();
   const { settings } = useCompanySettings();
   const [items, setItems] = useState([]);
-  const [_suppliers, setSuppliers] = useState([]);
-  const [_projects, setProjects] = useState([]);
+  // الموردون والفروع من cache مشترك (useSuppliers/useBranches) — لا يُجلبان هنا.
+  // _orders/receipts تُجلب هنا لأن أمر الشراء وسند الاستلام خارج نطاق الذاكرة المشتركة.
   const [_orders, setOrders] = useState([]);
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,14 +66,12 @@ export default function SupplierInvoices() {
   const load = async () => {
     setLoading(true);
     try {
-      const [inv, s, p, po, gr] = await Promise.all([
+      const [inv, po, gr] = await Promise.all([
         base44.entities.SupplierInvoice.list('-created_date', 200),
-        base44.entities.Supplier.list(),
-        base44.entities.Project.list(),
         base44.entities.PurchaseOrder.list('-created_date', 200),
         base44.entities.GoodsReceipt.list('-created_date', 200),
       ]);
-      setItems(inv); setSuppliers(s); setProjects(p); setOrders(po); setReceipts(gr);
+      setItems(inv); setOrders(po); setReceipts(gr);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
 import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
@@ -32,7 +33,8 @@ const empty = {
 export default function PurchaseRequests() {
   const { lang, activeProjectId, activeProjectName } = useStore();
   const [items, setItems] = useState([]);
-  const [projects, setProjects] = useState([]);
+  // الفروع من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
+  const { branches: projects } = useBranches();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -46,11 +48,9 @@ export default function PurchaseRequests() {
   const load = async () => {
     setLoading(true);
     try {
-      const [r, p] = await Promise.all([
-        base44.entities.PurchaseRequest.list('-created_date', 200),
-        base44.entities.Project.list(),
-      ]);
-      setItems(r); setProjects(p);
+      // الفروع من cache مشترك — لا تُجلب هنا.
+      const r = await base44.entities.PurchaseRequest.list('-created_date', 200);
+      setItems(r);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };

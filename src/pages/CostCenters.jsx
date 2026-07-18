@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useBranches } from '@/hooks/useBranches';
+import { useAccounts } from '@/hooks/useAccounts';
 import { t, formatCurrency, formatNumber } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -16,7 +18,10 @@ import { toast } from 'sonner';
 // تحليل أقسام المطعم: إيراد وتكلفة وهامش لكل قسم (طلب/فرع). الكيان Project يُستخدم كقسم مطعم.
 export default function CostCenters() {
   const { lang } = useStore();
-  const [data, setData] = useState({ projects: [], journalEntries: [], chartAccounts: [] });
+  // الفروع والدليل المحاسبي من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
+  const { branches } = useBranches();
+  const { accounts } = useAccounts();
+  const [journalEntries, setJournalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -24,12 +29,9 @@ export default function CostCenters() {
   const load = async () => {
     setLoading(true);
     try {
-      const [projects, journalEntries, chartAccounts] = await Promise.all([
-        base44.entities.Project.list('-created_date', 1000),
-        base44.entities.JournalEntry.list('-date', 5000),
-        base44.entities.ChartAccount.list('code', 1000),
-      ]);
-      setData({ projects, journalEntries, chartAccounts });
+      // الفروع والدليل من cache مشترك — لا يُجلبان هنا.
+      const jes = await base44.entities.JournalEntry.list('-date', 5000);
+      setJournalEntries(jes);
     } catch (err) {
       toast.error(err?.message || t('فشل تحميل البيانات', 'Failed to load data', lang));
     } finally {
@@ -37,6 +39,11 @@ export default function CostCenters() {
     }
   };
   useEffect(() => { load(); }, []);
+
+  const data = useMemo(
+    () => ({ projects: branches, journalEntries, chartAccounts: accounts }),
+    [branches, journalEntries, accounts]
+  );
 
   const analysis = useMemo(
     () => buildCostCenterAnalysis(data, { from, to }),
