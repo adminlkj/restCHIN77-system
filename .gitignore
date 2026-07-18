@@ -28,6 +28,9 @@ node_modules
 .env
 .vite
 
+# Build output (never commit compiled assets)
+/dist
+
 # Uploaded files (user-generated content)
 /uploads
 bun.lock
@@ -41,6 +44,3 @@ next-env.d.ts
 
 # OS / runtime
 Thumbs.db
-
-# Build output (never commit compiled assets)
-/dist

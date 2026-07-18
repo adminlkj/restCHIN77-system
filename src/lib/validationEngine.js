@@ -61,13 +61,6 @@ const RULES = {
     { message: 'اسم المشروع مطلوب', test: (d) => !isBlank(d.name) },
     { message: 'تاريخ النهاية لا يمكن أن يسبق تاريخ البداية', test: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
   ],
-  RENTAL_CONTRACT: [
-    { message: 'رقم العقد مطلوب', test: (d) => !isBlank(d.contractNo) },
-    { message: 'اختيار المعدة مطلوب', test: (d) => !isBlank(d.equipmentId) },
-    { message: 'اختيار العميل مطلوب', test: (d) => !isBlank(d.clientId) },
-    { message: 'قيمة الإيجار يجب أن تكون أكبر من صفر', test: (d) => num(d.rate) > 0 },
-    { message: 'تاريخ نهاية العقد لا يمكن أن يسبق تاريخ البداية', test: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
-  ],
 };
 
 /**

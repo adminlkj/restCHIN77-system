@@ -50,17 +50,6 @@ const SOURCES = [
   },
 ];
 
-// ═══════════════════════════════════════════════════════════════════════
-// ذاكرة مؤقتة على مستوى الوحدة — مشتركة بين كل نسخ GlobalSearch.
-// سابقاً كان الـ cache في useState (يُفقد عند unmount)، فكان المستخدم
-// يُعيد تحميل 6 × 300 = 1800 سجل عند كل فتح للبحث. الآن يبقى الـ cache
-// ثابتاً عبر التنقّل بين الشاشات، ولا يُعاد الجلب إلا عند انتهاء الصلاحية.
-// ═══════════════════════════════════════════════════════════════════════
-let _moduleCache = null;
-let _moduleCacheAt = 0;
-let _moduleFetchPromise = null;
-const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 دقائق
-
 export default function GlobalSearch() {
   const store = useStore();
   const { lang } = store;
@@ -77,33 +66,16 @@ export default function GlobalSearch() {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  // Lazy-load all searchable records once, on first focus.
-  // الـ cache على مستوى الوحدة ليبقى عبر التنقّل (لا يُعاد الجلب إلا بعد 5 دقائق).
+  // Lazy-load all searchable records once, on first focus
   const ensureData = async () => {
-    const now = Date.now();
-    if (_moduleCache && (now - _moduleCacheAt) < SEARCH_CACHE_TTL) {
-      setCache(_moduleCache);
-      return;
-    }
-    if (_moduleFetchPromise) {
-      setCache(await _moduleFetchPromise);
-      return;
-    }
+    if (cache) return;
     setLoading(true);
-    _moduleFetchPromise = (async () => {
-      try {
-        const results = await Promise.all(SOURCES.map(s => base44.entities[s.entity].list('-created_date', 300).catch(() => [])));
-        const map = {};
-        SOURCES.forEach((s, i) => { map[s.key] = results[i]; });
-        _moduleCache = map;
-        _moduleCacheAt = Date.now();
-        return map;
-      } finally {
-        _moduleFetchPromise = null;
-        setLoading(false);
-      }
-    })();
-    setCache(await _moduleFetchPromise);
+    try {
+      const results = await Promise.all(SOURCES.map(s => base44.entities[s.entity].list('-created_date', 300).catch(() => [])));
+      const map = {};
+      SOURCES.forEach((s, i) => { map[s.key] = results[i]; });
+      setCache(map);
+    } finally { setLoading(false); }
   };
 
   const q = query.trim().toLowerCase();

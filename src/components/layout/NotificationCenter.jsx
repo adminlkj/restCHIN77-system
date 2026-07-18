@@ -135,18 +135,13 @@ export default function NotificationCenter() {
     finally { setLoading(false); }
   }, [lang, setActiveItem, setEmployeeContext]);
 
-  // ─── Lazy load: لا نُحمّل الإشعارات إلا عند فتح اللوحة ───
-  // سابقاً كان النظام يُحمّل 7 كيانات (2100 سجل) عند كل تنقّل + كل دقيقتين،
-  // مما يُسبب ضغطاً كبيراً على الـ backend. الآن:
-  //   1) نُحمّل فقط عند فتح المستخدم للوحة (أول مرة)
-  //   2) نُحدّث كل دقيقتين فقط أثناء فتح اللوحة
-  //   3) عند الإغلاق نُلغي التحديث الدوري
+  // ─── تحميل مرة واحدة عند التحميل + تحديث دوري كل دقيقتين ───
+  // بدلاً من إعادة الجلب عند كل تغيير في store (الذي كان يسبب 7 طلبات لكل تنقّل).
   useEffect(() => {
-    if (!open) return;
-    if (tasks.length === 0 && !loading) build();
+    build();
     const timer = setInterval(build, REFRESH_INTERVAL);
     return () => clearInterval(timer);
-  }, [open, build]);
+  }, [build]);
 
   const tones = {
     rose: 'bg-rose-50 text-rose-600',

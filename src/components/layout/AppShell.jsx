@@ -14,7 +14,7 @@ export default function AppShell({ children }) {
   const { sidebarOpen, setSidebarOpen, lang, setActiveItem, activeProjectId, setProjectContext } = useStore();
   // Reuse the already-resolved user from AuthContext (MainApp only renders after
   // auth finished loading), avoiding a second me() call and its race condition.
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   // Only filter the menu by permissions once we actually have a resolved user.
   // While the user is unresolved (e.g. preview/anonymous session), show the full
   // menu — the page-level guard still protects the content.
@@ -40,16 +40,11 @@ export default function AppShell({ children }) {
     : 'U';
 
   const handleLogout = () => {
-    // امسح كل مفاتيح الجلسة، واضبط علم "سجّل الخروج" لمنع الـ mock backend
-    // من إعادة تسجيل الدخول تلقائياً عند إعادة التحميل.
-    try {
-      localStorage.removeItem('binaa-auth-token');
-      localStorage.removeItem('base44_access_token');
-      localStorage.removeItem('token');
-      localStorage.removeItem('restaurant-mock-session');
-      localStorage.setItem('restaurant-logged-out', 'true');
-    } catch { /* ignore */ }
-    window.location.href = '/login?clear_access_token=true';
+    // امسح آخر صفحة نشطة حتى لا يُفتح النظام عليها بعد الخروج،
+    // ثم استدعِ logout الحقيقي (base44.auth.logout) الذي يمسح جلسة الـ SDK
+    // ويعيد التوجيه إلى صفحة تسجيل الدخول.
+    try { localStorage.removeItem('restaurant-active-item'); } catch { /* ignore */ }
+    logout();
   };
 
   return (

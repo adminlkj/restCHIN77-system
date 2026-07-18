@@ -27,12 +27,6 @@ const TRANSITIONS = {
     RECEIVED:  [],
     CANCELLED: [],
   },
-  RENTAL_CONTRACT: {
-    DRAFT:     ['ACTIVE', 'CANCELLED'],
-    ACTIVE:    ['COMPLETED', 'CANCELLED'],
-    COMPLETED: [],
-    CANCELLED: [],
-  },
   PAYROLL: {
     DRAFT:    ['APPROVED'],
     APPROVED: ['PAID'],
@@ -42,12 +36,6 @@ const TRANSITIONS = {
     PLANNING:  ['ACTIVE', 'CANCELLED'],
     ACTIVE:    ['ON_HOLD', 'COMPLETED', 'CANCELLED'],
     ON_HOLD:   ['ACTIVE', 'CANCELLED'],
-    COMPLETED: [],
-    CANCELLED: [],
-  },
-  CONTRACT: {
-    DRAFT:     ['ACTIVE', 'CANCELLED'],
-    ACTIVE:    ['COMPLETED', 'CANCELLED'],
     COMPLETED: [],
     CANCELLED: [],
   },

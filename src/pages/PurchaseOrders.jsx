@@ -10,8 +10,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { useBranches } from '@/hooks/useBranches';
-import { useSuppliers } from '@/hooks/useParties';
 import { t, formatCurrency, STATUS_TONE, nextCodeFromList } from '@/lib/utils-binaa';
 import QuickSupplierDialog from '@/components/purchase/QuickSupplierDialog';
 import { calcVAT, OperationEngine } from '@/lib/businessEngine';
@@ -47,9 +45,8 @@ export default function PurchaseOrders() {
   const { lang, activeProjectId, activeProjectName } = useStore();
   const { settings } = useCompanySettings();
   const [items, setItems]         = useState([]);
-  // الموردون والفروع من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
-  const { suppliers, reload: reloadSuppliers } = useSuppliers();
-  const { branches: projects } = useBranches();
+  const [suppliers, setSuppliers] = useState([]);
+  const [projects, setProjects]   = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [_requests, setRequests]   = useState([]);
   const [boqItems, setBoqItems]   = useState([]);
@@ -68,13 +65,14 @@ export default function PurchaseOrders() {
   const load = async () => {
     setLoading(true);
     try {
-      // الموردون والفروع من cache مشترك — لا يُجلبان هنا.
-      const [o, w, r] = await Promise.all([
+      const [o, s, p, w, r] = await Promise.all([
         base44.entities.PurchaseOrder.list('-created_date', 200),
+        base44.entities.Supplier.list(),
+        base44.entities.Project.list(),
         base44.entities.Warehouse.list(),
         base44.entities.PurchaseRequest.list('-created_date', 200),
       ]);
-      setItems(o); setWarehouses(w); setRequests(r);
+      setItems(o); setSuppliers(s); setProjects(p); setWarehouses(w); setRequests(r);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
@@ -300,8 +298,7 @@ export default function PurchaseOrders() {
         suppliers={suppliers}
         lang={lang}
         onCreated={(supplier) => {
-          // أضيف المورد للذاكرة المشتركة بدلاً من الحالة المحلية.
-          reloadSuppliers();
+          setSuppliers(prev => [supplier, ...prev]);
           setForm(f => ({ ...f, supplierId: supplier.id, supplierName: supplier.name }));
         }}
       />

@@ -5,7 +5,7 @@ import { canAccess } from '@/lib/permissions';
 import { CYCLE_BY_KEY, READY_TABS } from '@/lib/cycles';
 
 // Tab content screens
-import Projects from '@/pages/Projects';
+import Orders from '@/pages/Orders';
 import SalesInvoices from '@/pages/SalesInvoices';
 import ClientPayments from '@/pages/ClientPayments';
 import Equipment from '@/pages/Equipment';
@@ -46,7 +46,7 @@ import Users from '@/pages/Users';
 import Settings from '@/pages/Settings';
 
 const TAB_CONTENT = {
-  projects: <Projects />,
+  projects: <Orders />,
   sales: <SalesInvoices />,
   'client-payments': <ClientPayments />,
   equipment: <Equipment />,
@@ -114,13 +114,17 @@ export default function CycleScreen({ cycleKey }) {
   const initialTab = tabKeys.includes(activeItem) ? activeItem : visibleTabs[0]?.key;
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  // Keep active tab valid when the visible set changes (e.g. cycle switch)
+  // Keep active tab valid when the visible set changes (e.g. cycle switch),
+  // and sync to the store's activeItem when it resolves to one of this cycle's
+  // visible tab keys (preserves explicit user tab clicks otherwise).
   useEffect(() => {
     if (!visibleTabs.length) return;
-    if (!visibleTabs.some(t => t.key === activeTab)) {
+    if (tabKeys.includes(activeItem)) {
+      if (activeItem !== activeTab) setActiveTab(activeItem);
+    } else if (!visibleTabs.some(t => t.key === activeTab)) {
       setActiveTab(visibleTabs[0].key);
     }
-  }, [visibleTabs, activeTab]);
+  }, [visibleTabs, tabKeys, activeItem, activeTab]);
 
   if (!cycle) return null;
 

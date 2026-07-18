@@ -9,8 +9,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { useBranches } from '@/hooks/useBranches';
-import { useClients } from '@/hooks/useParties';
 import { t, formatDate, formatCurrency, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -38,9 +36,8 @@ export default function ClientPayments() {
   const { settings } = useCompanySettings();
   const [preview, setPreview] = useState(null);
   const [items, setItems] = useState([]);
-  // الزبائن والفروع من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
-  const { clients } = useClients();
-  const { branches: projects } = useBranches();
+  const [clients, setClients] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [cashAccounts, setCashAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -53,12 +50,13 @@ export default function ClientPayments() {
   const load = async () => {
     setLoading(true);
     try {
-      // الزبائن والفروع من cache مشترك — لا يُجلبان هنا.
-      const [p, accts] = await Promise.all([
+      const [p, cl, pr, accts] = await Promise.all([
         base44.entities.ClientPayment.list('-date', 300),
+        base44.entities.Client.list(),
+        base44.entities.Project.list(),
         loadAccounts(true),
       ]);
-      setItems(p);
+      setItems(p); setClients(cl); setProjects(pr);
       setCashAccounts(selectCashAccounts(accts));
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);

@@ -9,9 +9,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { useBranches } from '@/hooks/useBranches';
-import { useSuppliers } from '@/hooks/useParties';
-import { useAccounts } from '@/hooks/useAccounts';
 import { t, formatCurrency, genCode } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -48,15 +45,10 @@ export default function StockMovements() {
   const [movements, setMovements] = useState([]);
   const [items, setItems] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  // الفروع والموردون والدليل المحاسبي من cache مشترك بدلاً من جلبها مستقلة عند كل mount.
-  const { branches: projects } = useBranches();
-  const { suppliers } = useSuppliers();
-  const { accounts } = useAccounts();
+  const [projects, setProjects] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const cashAccounts = useMemo(
-    () => (accounts || []).filter(a => ['CASH', 'BANK', 'CUSTODY'].includes(a.semanticRole)),
-    [accounts]
-  );
+  const [cashAccounts, setCashAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
@@ -67,19 +59,24 @@ export default function StockMovements() {
   const load = async () => {
     setLoading(true);
     try {
-      // الفروع والموردون والدليل من cache مشترك — لا تُجلب هنا.
-      const [mv, it, wh, emp] = await Promise.all([
+      const [mv, it, wh, pr, sup, emp, acc] = await Promise.all([
         base44.entities.StockMovement.list('-date', 500),
         base44.entities.InventoryItem.list('code', 1000),
         base44.entities.Warehouse.filter({ isActive: true }, 'code', 500),
+        base44.entities.Project.list('-created_date', 500),
+        base44.entities.Supplier.list('name', 500),
         base44.entities.Employee.list('name', 500),
+        base44.entities.ChartAccount.filter({ isActive: true }, 'code', 1000),
       ]);
       setMovements(mv || []);
       // أصناف فريدة بالكود لاختيارها (الرصيد موزّع على المخازن).
       const seen = new Set();
       setItems((it || []).filter(i => { if (seen.has(i.code)) return false; seen.add(i.code); return true; }));
       setWarehouses(wh || []);
+      setProjects(pr || []);
+      setSuppliers(sup || []);
       setEmployees(emp || []);
+      setCashAccounts((acc || []).filter(a => ['CASH', 'BANK', 'CUSTODY'].includes(a.semanticRole)));
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };

@@ -163,7 +163,7 @@ export default function MenuManagement() {
     try {
       const [cats, its] = await Promise.all([
         base44.entities.MenuCategory.list('sortOrder', 500),
-        base44.entities.InventoryItem.list('code', 1000),
+        base44.entities.InventoryItem.filter({ itemType: 'MENU' }, 'code', 1000),
       ]);
       setCategories((cats || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)));
       setItems(its || []);
@@ -350,6 +350,7 @@ export default function MenuManagement() {
       const cat = catById.get(itemForm.categoryId);
       const cost = parseFloat(itemForm.costPrice) || 0;
       const data = {
+        itemType: 'MENU',
         code: itemForm.code,
         name: itemForm.name.trim(),
         nameEn: (itemForm.nameEn || '').trim(),
@@ -551,17 +552,36 @@ export default function MenuManagement() {
           toast.error(t('الملف فارغ أو غير صالح', 'File is empty or invalid', lang));
           return;
         }
-        // تطبيع الحقول: تحويل categoryId النصي إلى id مطابق (إن أمكن)
+        // تطبيع الحقول: تحويل categoryId/اسم القسم النصي إلى id مطابق.
+        // المطابقة متسامحة (تتجاهل حالة الأحرف والمسافات الزائدة) وتقبل الاسم
+        // العربي/الإنجليزي/الرمز. إن لم يُذكر قسم، يُسند القسم الأول افتراضياً
+        // حتى لا تُتخطّى الصفوف بلا داعٍ.
+        const norm = (s) => String(s || '').trim().toLowerCase();
+        const firstCatId = categories[0]?.id || '';
         const normalized = rows.map((r) => {
-          const rawCat = r.categoryId || r.category || r.categoryName || '';
-          // اقبل الـ id مباشرة أو اسم القسم بالعربي/الإنجليزي
+          const rawCat = r.categoryId || r.category || r.categoryName || r.القسم || r['اسم القسم'] || '';
+          const rawNorm = norm(rawCat);
           const matchedCat = catById.get(rawCat) ||
-            categories.find((c) => c.name === rawCat || c.nameEn === rawCat || c.code === rawCat);
+            categories.find((c) =>
+              norm(c.name) === rawNorm ||
+              norm(c.nameEn) === rawNorm ||
+              norm(c.code) === rawNorm ||
+              c.id === rawCat
+            );
+          // اقبل أسماء أعمدة عربية شائعة للاسم والأسعار
+          const name = r.name || r.الاسم || r['اسم الوجبة'] || r.الصنف || '';
+          const nameEn = r.nameEn || r.english || r['الاسم الإنجليزي'] || '';
+          const cost = parseFloat(r.costPrice || r.cost || r['سعر الشراء'] || r.التكلفة) || 0;
+          const sale = parseFloat(r.salePrice || r.price || r['سعر البيع'] || r.السعر) || cost;
           return {
             ...r,
-            categoryId: matchedCat?.id || rawCat,
-            costPrice: parseFloat(r.costPrice) || 0,
-            salePrice: parseFloat(r.salePrice) || parseFloat(r.costPrice) || 0,
+            name,
+            nameEn,
+            unit: r.unit || r.الوحدة || 'قطعة',
+            code: r.code || r.الرمز || '',
+            categoryId: matchedCat?.id || (rawCat ? rawCat : firstCatId),
+            costPrice: cost,
+            salePrice: sale,
           };
         });
         setImportPreview(normalized);
@@ -591,6 +611,7 @@ export default function MenuManagement() {
         const sale = parseFloat(r.salePrice) || 0;
         const cost = parseFloat(r.costPrice) || 0;
         return {
+          itemType: 'MENU',
           code: r.code || `IMP-${String(idx + 1).padStart(4, '0')}`,
           name: r.name || '',
           nameEn: r.nameEn || '',

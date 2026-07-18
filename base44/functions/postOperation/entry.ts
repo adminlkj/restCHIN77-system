@@ -8,7 +8,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
  * مالية بلا قيد مقابل. الشاشات تنادي هذه الدالة عبر SDK باستدعاء واحد.
  *
  * الحمولة: { operation, mode, data, id, prevStatus }
- *   operation: SALES_INVOICE | PURCHASE_ORDER | EXPENSE | RENTAL_CONTRACT | PAYROLL
+ *   operation: SALES_INVOICE | PURCHASE_ORDER | EXPENSE | PAYROLL | STOCK_MOVEMENT | ...
  *   mode:      create | update
  */
 
@@ -54,6 +54,7 @@ const ACCOUNTS = {
   EXPENSE_SALARIES:     { code: '5210', name: 'الرواتب والأجور' },
   EXPENSE_PURCHASE:     { code: '5110', name: 'تكلفة المواد الغذائية' },
   EXPENSE_PROJECT:      { code: '5150', name: 'مصروفات تجهيز الطلبات' },
+  EXPENSE_SUBCONTRACTOR: { code: '5140', name: 'تكلفة موردي الخدمات' },
   EXPENSE_EQUIPMENT:    { code: '5224', name: 'صيانة المعدات' },
   EXPENSE_EMPLOYEE:     { code: '5215', name: 'بدلات ومكافآت الموظفين' },
   EXPENSE_GOVERNMENT:   { code: '5250', name: 'رسوم ومصروفات حكومية' },
@@ -64,8 +65,6 @@ const ACCOUNTS = {
   INVENTORY_LOSS:       { code: '5170', name: 'خسائر تلف وهدر المخزون' },
   INVENTORY_GAIN:       { code: '4430', name: 'فروقات جرد المخزون (زيادة)' },
   STAFF_RECEIVABLE:     { code: '1125', name: 'تحميلات على الموظفين' },
-  SUB_PAYABLES:         { code: '2120', name: 'مستحقات موردي الخدمات' },
-  RETENTION_PAYABLE:    { code: '2130', name: 'محتجزات لصالح موردي الخدمات' },
 };
 
 const EXPENSE_TYPE_ACCOUNTS = {
@@ -94,7 +93,7 @@ const RULES = {
     { m: 'تاريخ الفاتورة مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.subtotal) > 0 },
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
-    { m: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', t: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + resolveVatRate(d.vatRate)) + 0.01 },
+    { m: 'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة', t: (d) => num(d.paidAmount) <= num(d.subtotal) * (1 + (num(d.vatRate) || 0.15)) + 0.01 },
   ],
   PLATFORM_SETTLEMENT: [
     { m: 'معرّف المنصة مطلوب', t: (d) => !isBlank(d.platformId) },
@@ -114,12 +113,6 @@ const RULES = {
     { m: 'تاريخ المصروف مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ يجب أن يكون أكبر من صفر', t: (d) => num(d.amount) > 0 },
     { m: 'اختيار حساب السداد (نقدي/بنك) مطلوب — لا يمكن ترحيل مصروف بلا حساب', t: (d) => !isBlank(d.paymentAccountCode) },
-  ],
-  RENTAL_CONTRACT: [
-    { m: 'رقم العقد مطلوب', t: (d) => !isBlank(d.contractNo) },
-    { m: 'اختيار المعدة مطلوب', t: (d) => !isBlank(d.equipmentId) },
-    { m: 'قيمة الإيجار يجب أن تكون أكبر من صفر', t: (d) => num(d.rate) > 0 },
-    { m: 'تاريخ نهاية العقد لا يمكن أن يسبق تاريخ البداية', t: (d) => isBlank(d.endDate) || isBlank(d.startDate) || d.endDate >= d.startDate },
   ],
   PAYROLL: [
     { m: 'كود المسير مطلوب', t: (d) => !isBlank(d.code) },
@@ -148,22 +141,6 @@ const RULES = {
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
     // فرض السلسلة: لا فاتورة مورد بدون سند استلام معتمد
     { m: 'يجب ربط الفاتورة بسند استلام معتمد — لا يمكن إنشاء فاتورة مورد بدون سند استلام', t: (d) => !isBlank(d.goodsReceiptId) },
-  ],
-  SUBCONTRACTOR_INVOICE: [
-    { m: 'رقم المستخلص مطلوب', t: (d) => !isBlank(d.invoiceNo) },
-    { m: 'اختيار مقاول الباطن مطلوب', t: (d) => !isBlank(d.subcontractorId) },
-    { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.baseAmount) > 0 },
-  ],
-  SUBCONTRACTOR_PAYMENT: [
-    { m: 'اختيار مقاول الباطن مطلوب', t: (d) => !isBlank(d.subcontractorId) },
-    { m: 'تاريخ السند مطلوب', t: (d) => !isBlank(d.date) },
-    { m: 'مبلغ السداد يجب أن يكون أكبر من صفر', t: (d) => num(d.amount) > 0 },
-    { m: 'اختيار حساب السداد مطلوب — لا يمكن ترحيل سند صرف بلا حساب نقدي/بنكي', t: (d) => !isBlank(d.cashAccountCode) },
-  ],
-  RENTAL_INVOICE: [
-    { m: 'رقم الفاتورة مطلوب', t: (d) => !isBlank(d.invoiceNo) },
-    { m: 'تاريخ الفاتورة مطلوب', t: (d) => !isBlank(d.date) },
-    { m: 'قيمة الفاتورة يجب أن تكون أكبر من صفر', t: (d) => num(d.baseAmount) + num(d.extraCharges) + num(d.deliveryAmount) > 0 },
   ],
   STOCK_MOVEMENT: [
     { m: 'تاريخ الحركة مطلوب', t: (d) => !isBlank(d.date) },
@@ -198,9 +175,6 @@ const TRANSITIONS = {
     DRAFT: ['APPROVED', 'CANCELLED'], APPROVED: ['ORDERED', 'CANCELLED'],
     ORDERED: ['RECEIVED', 'CANCELLED'], RECEIVED: [], CANCELLED: [],
   },
-  RENTAL_CONTRACT: {
-    DRAFT: ['ACTIVE', 'CANCELLED'], ACTIVE: ['COMPLETED', 'CANCELLED'], COMPLETED: [], CANCELLED: [],
-  },
   PAYROLL: { DRAFT: ['APPROVED'], APPROVED: ['PAID'], PAID: [] },
 };
 
@@ -225,7 +199,7 @@ function resolveAccount(role, accounts) {
 }
 
 // أدوار الذمم التي تُوسم بالطرف (عميل/مورد) لبناء الكشوفات من القيود المرحّلة.
-const PARTY_ROLE_TYPE = { RECEIVABLES: 'CLIENT', PAYABLES: 'SUPPLIER', SUB_PAYABLES: 'SUBCONTRACTOR' };
+const PARTY_ROLE_TYPE = { RECEIVABLES: 'CLIENT', PAYABLES: 'SUPPLIER' };
 
 function buildLinesFromTemplate(template, amounts, accounts, description, party) {
   const lines = [];
@@ -483,18 +457,6 @@ function buildPayrollPaymentJE({ code, month, year, netAmount, paymentDate, paym
   };
 }
 
-function buildRentalJE({ contractNo, date, clientId, clientName, base, vatAmount, totalAmount }) {
-  return {
-    entryNo: `JE-RC-${contractNo}`, date: date || new Date().toISOString().slice(0, 10), description: `عقد تأجير ${contractNo} — ${clientName}`, sourceType: 'RentalContract', isPosted: true,
-    totalDebit: totalAmount, totalCredit: totalAmount,
-    lines: [
-      { accountCode: ACCOUNTS.RECEIVABLES.code, accountName: ACCOUNTS.RECEIVABLES.name, debit: totalAmount, credit: 0, description: `عقد ${contractNo}`, partyType: 'CLIENT', partyId: clientId, partyName: clientName },
-      { accountCode: ACCOUNTS.REVENUE_RENTAL.code, accountName: ACCOUNTS.REVENUE_RENTAL.name, debit: 0, credit: base, description: 'إيراد التأجير' },
-      ...(vatAmount > 0 ? [{ accountCode: ACCOUNTS.VAT_PAYABLE.code, accountName: ACCOUNTS.VAT_PAYABLE.name, debit: 0, credit: vatAmount, description: 'ضريبة القيمة المضافة 15%' }] : []),
-    ],
-  };
-}
-
 // تحصيل من عميل: من ح/ النقدية المختارة (مدين) إلى ح/ ذمم العملاء (دائن)
 function buildClientPaymentJE({ paymentNo, date, clientId, clientName, amount, cashAccountCode, cashAccountName, projectName }, accounts) {
   const receivables = resolveAccount('RECEIVABLES', accounts);
@@ -541,57 +503,6 @@ function buildSupplierInvoiceJE({ invoiceNo, date, supplierId, supplierName, bas
       { accountCode: purchase.code, accountName: purchase.name, debit: baseAmount, credit: 0, description: `مشتريات ومواد${projectName ? ` — ${projectName}` : ''}`, costCenter },
       ...(vatAmount > 0 ? [{ accountCode: vatRec.code, accountName: vatRec.name, debit: vatAmount, credit: 0, description: 'ضريبة مدفوعة' }] : []),
       { accountCode: payables.code, accountName: payables.name, debit: 0, credit: totalAmount, description: `مستحقات ${supplierName || ''}`, partyType: 'SUPPLIER', partyId: supplierId, partyName: supplierName },
-    ],
-  };
-}
-
-// مستخلص مقاول باطن (التزام): من ح/ مصروفات المشاريع + ضريبة مدفوعة (مدين)
-//   إلى ح/ ذمم مقاولي الباطن (بالصافي بعد المحتجز) + ح/ محتجزات مقاولي الباطن (دائن).
-function buildSubcontractorInvoiceJE({ invoiceNo, subcontractorId, subcontractorName, date, baseAmount, retentionAmount, vatAmount, totalAmount }, accounts) {
-  const expense = resolveAccount('EXPENSE_PROJECT', accounts);
-  const vatRec = resolveAccount('VAT_RECEIVABLE', accounts);
-  const subPay = resolveAccount('SUB_PAYABLES', accounts);
-  const retention = resolveAccount('RETENTION_PAYABLE', accounts);
-  const net = +(num(baseAmount) - num(retentionAmount)).toFixed(2);
-  const payable = +(net + num(vatAmount)).toFixed(2);
-  return {
-    entryNo: `JE-SUBINV-${invoiceNo}`, date: date || new Date().toISOString().slice(0, 10), description: `مستخلص مقاول باطن ${invoiceNo} — ${subcontractorName || ''}`, sourceType: 'SubcontractorInvoice', isPosted: true,
-    totalDebit: +(num(baseAmount) + num(vatAmount)).toFixed(2), totalCredit: +(num(baseAmount) + num(vatAmount)).toFixed(2),
-    lines: [
-      { accountCode: expense.code, accountName: expense.name, debit: num(baseAmount), credit: 0, description: 'أعمال مقاول باطن' },
-      ...(num(vatAmount) > 0 ? [{ accountCode: vatRec.code, accountName: vatRec.name, debit: num(vatAmount), credit: 0, description: 'ضريبة مدفوعة' }] : []),
-      { accountCode: subPay.code, accountName: subPay.name, debit: 0, credit: payable, description: `مستحقات ${subcontractorName || ''}`, partyType: 'SUBCONTRACTOR', partyId: subcontractorId, partyName: subcontractorName },
-      ...(num(retentionAmount) > 0 ? [{ accountCode: retention.code, accountName: retention.name, debit: 0, credit: num(retentionAmount), description: `محتجز ${subcontractorName || ''}`, partyType: 'SUBCONTRACTOR', partyId: subcontractorId, partyName: subcontractorName }] : []),
-    ],
-  };
-}
-
-// فاتورة تأجير (إيراد): من ح/ ذمم العملاء (مدين) إلى ح/ إيراد التأجير + ضريبة محصلة (دائن)
-function buildSubcontractorPaymentJE({ paymentNo, date, subcontractorId, subcontractorName, amount, cashAccountCode, cashAccountName }, accounts) {
-  const subPay = resolveAccount('SUB_PAYABLES', accounts);
-  const cash = { code: cashAccountCode, name: cashAccountName || 'النقدية' };
-  const ref = paymentNo || `${date}-${subcontractorName || ''}`;
-  return {
-    entryNo: `JE-SUBPAY-${ref}`, date, description: `سداد مقاول باطن ${subcontractorName || ''}`, sourceType: 'SubcontractorPayment', isPosted: true,
-    totalDebit: amount, totalCredit: amount,
-    lines: [
-      { accountCode: subPay.code, accountName: subPay.name, debit: amount, credit: 0, description: `سداد ذمة ${subcontractorName || ''}`, partyType: 'SUBCONTRACTOR', partyId: subcontractorId, partyName: subcontractorName },
-      { accountCode: cash.code, accountName: cash.name, debit: 0, credit: amount, description: `دفع من ${cash.name}` },
-    ],
-  };
-}
-
-function buildRentalInvoiceJE({ invoiceNo, date, clientId, clientName, baseAmount, vatAmount, totalAmount }, accounts) {
-  const receivables = resolveAccount('RECEIVABLES', accounts);
-  const revenue = resolveAccount('REVENUE_RENTAL', accounts);
-  const vatPay = resolveAccount('VAT_PAYABLE', accounts);
-  return {
-    entryNo: `JE-RINV-${invoiceNo}`, date, description: `فاتورة تأجير ${invoiceNo} — ${clientName || ''}`, sourceType: 'RentalInvoice', isPosted: true,
-    totalDebit: totalAmount, totalCredit: totalAmount,
-    lines: [
-      { accountCode: receivables.code, accountName: receivables.name, debit: totalAmount, credit: 0, description: `فاتورة ${invoiceNo}`, partyType: 'CLIENT', partyId: clientId, partyName: clientName },
-      { accountCode: revenue.code, accountName: revenue.name, debit: 0, credit: baseAmount, description: 'إيراد التأجير' },
-      ...(vatAmount > 0 ? [{ accountCode: vatPay.code, accountName: vatPay.name, debit: 0, credit: vatAmount, description: 'ضريبة القيمة المضافة 15%' }] : []),
     ],
   };
 }
@@ -999,6 +910,23 @@ async function autoPostJE(base44, jeData) {
 
 // ─── منفّذو العمليات (كل واحد يُنشئ السجل ثم يرحّل القيد ذرّياً مع rollback) ───
 
+// يحسب الوعاء الخاضع للضريبة والضريبة والإجمالي احتراماً للخصومات ورسوم التوصيل.
+// الوعاء الخاضع = المجموع قبل الخصم − إجمالي الخصومات + رسوم التوصيل (ZATCA).
+// هذا يمنع تجاهل خصم العميل/المنصة الذي كان يقع عند إعادة حساب الضريبة من subtotal الخام.
+function salesInvoiceAmounts(data) {
+  const rate = resolveVatRate(data.vatRate);
+  const subtotal = num(data.subtotal);
+  // إجمالي الخصومات: نفضّل discountAmount المُرسل، وإلا نجمع خصم العميل + الخصم اليدوي.
+  const discountAmount = data.discountAmount !== undefined
+    ? num(data.discountAmount)
+    : +(num(data.customerDiscountAmount) + num(data.manualDiscountAmount)).toFixed(2);
+  const deliveryFee = num(data.deliveryFee);
+  const vatBase = Math.max(0, +(subtotal - discountAmount + deliveryFee).toFixed(2));
+  const vatAmount = +(vatBase * rate).toFixed(2);
+  const totalAmount = +(vatBase + vatAmount).toFixed(2);
+  return { rate, subtotal, discountAmount, deliveryFee, vatAmount, totalAmount };
+}
+
 // الإنشاء يحفظ الفاتورة كمسودة فقط بلا قيد — القيد يُرحّل عند الاعتماد.
 async function createSalesInvoice(base44, data) {
   assertValid('SALES_INVOICE', data);
@@ -1009,9 +937,8 @@ async function createSalesInvoice(base44, data) {
       throw new Error(`رقم الفاتورة "${data.invoiceNo}" مستخدم بالفعل — استخدم رقماً آخر`);
     }
   }
-  const _rate0 = resolveVatRate(data.vatRate);
-  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, _rate0);
-  const payload = { ...data, subtotal, vatRate: _rate0, vatAmount, totalAmount, paidAmount: num(data.paidAmount), status: 'DRAFT' };
+  const { rate, subtotal, vatAmount, totalAmount } = salesInvoiceAmounts(data);
+  const payload = { ...data, subtotal, vatRate: rate, vatAmount, totalAmount, paidAmount: num(data.paidAmount), status: 'DRAFT' };
   return await base44.asServiceRole.entities.SalesInvoice.create(payload);
 }
 
@@ -1027,9 +954,8 @@ async function updateSalesInvoice(base44, id, data, prevStatus) {
   if (data.status && data.status !== 'DRAFT') {
     throw new Error('لا يمكن تغيير حالة الفاتورة من التعديل — استخدم زر الاعتماد لترحيل القيد أولاً');
   }
-  const _rate1 = resolveVatRate(data.vatRate);
-  const { base: subtotal, vat: vatAmount, total: totalAmount } = calcVAT(data.subtotal, _rate1);
-  const payload = { ...data, status: 'DRAFT', subtotal, vatRate: _rate1, vatAmount, totalAmount, paidAmount: num(data.paidAmount) };
+  const { rate, subtotal, vatAmount, totalAmount } = salesInvoiceAmounts(data);
+  const payload = { ...data, status: 'DRAFT', subtotal, vatRate: rate, vatAmount, totalAmount, paidAmount: num(data.paidAmount) };
   return await base44.asServiceRole.entities.SalesInvoice.update(id, payload);
 }
 
@@ -1073,7 +999,9 @@ async function approveSalesInvoice(base44, id) {
     () => buildSalesInvoiceJE({
       invoiceNo: inv.invoiceNo, date: inv.date,
       clientId: inv.clientId, clientName: inv.clientName,
-      subtotal: inv.subtotal, vatAmount: inv.vatAmount, totalAmount: inv.totalAmount,
+      // الوعاء المُقيَّد للإيراد هو المبلغ الخاضع للضريبة بعد الخصم (= الإجمالي − الضريبة)،
+      // لا subtotal الخام قبل الخصم — وإلا اختل توازن القيد بمقدار الخصم.
+      subtotal: +(num(inv.totalAmount) - num(inv.vatAmount)).toFixed(2), vatAmount: inv.vatAmount, totalAmount: inv.totalAmount,
       invoiceType: inv.invoiceType, projectName: inv.projectName,
       payments, isPlatformSale, platformId, platformName,
       platformCommission, platformCommissionVat, settlementMethod,
@@ -1297,40 +1225,6 @@ async function updateExpense(base44, id, data) {
   return await base44.asServiceRole.entities.Expense.update(id, payload);
 }
 
-async function createRentalContract(base44, data) {
-  assertValid('RENTAL_CONTRACT', data);
-  const rate = num(data.rate);
-  const delivery = num(data.deliveryFees);
-  const base = rate + delivery;
-  const { vat: vatAmount, total: totalAmount } = calcVAT(base);
-  const payload = { ...data, rate, deliveryFees: delivery, totalAmount, vatAmount };
-  // العقد مرجعي فقط ولا ينشئ أي قيد محاسبي — الإيراد والذمة ينشآن من فاتورة التأجير.
-  const contract = await base44.asServiceRole.entities.RentalContract.create(payload);
-  // حجز المعدة عند تفعيل العقد.
-  if (data.equipmentId && payload.status === 'ACTIVE') {
-    try { await base44.asServiceRole.entities.Equipment.update(data.equipmentId, { status: 'RENTED' }); } catch { /* المعدة قد لا تكون موجودة */ }
-  }
-  return contract;
-}
-
-async function updateRentalContract(base44, id, data, prevStatus, prevEquipmentStatus) {
-  assertValid('RENTAL_CONTRACT', data);
-  assertTransition('RENTAL_CONTRACT', prevStatus, data.status);
-  const rate = num(data.rate);
-  const delivery = num(data.deliveryFees);
-  const base = rate + delivery;
-  const { vat: vatAmount, total: totalAmount } = calcVAT(base);
-  const payload = { ...data, rate, deliveryFees: delivery, totalAmount, vatAmount };
-  const contract = await base44.asServiceRole.entities.RentalContract.update(id, payload);
-  if (data.equipmentId) {
-    const newStatus = payload.status === 'ACTIVE' ? 'RENTED' : (payload.status === 'COMPLETED' || payload.status === 'CANCELLED') ? 'AVAILABLE' : prevEquipmentStatus;
-    if (newStatus && newStatus !== prevEquipmentStatus) {
-      try { await base44.asServiceRole.entities.Equipment.update(data.equipmentId, { status: newStatus }); } catch { /* المعدة قد لا تكون موجودة */ }
-    }
-  }
-  return contract;
-}
-
 // يرحّل قيدي المسير: الاستحقاق دائماً، والسداد عند الدفع فقط. يُعيد قائمة القيود المُنشأة.
 async function postPayrollEntries(base44, data) {
   const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
@@ -1489,112 +1383,6 @@ async function approveSupplierInvoice(base44, id) {
     await autoPostJE(base44, buildSupplierInvoiceJE(inv, accounts));
   }
   return await base44.asServiceRole.entities.SupplierInvoice.update(id, { status: 'APPROVED' });
-}
-
-// ─── مستخلصات مقاولي الباطن ──────────────────────────────────────────────────
-async function createSubcontractorInvoice(base44, data) {
-  assertValid('SUBCONTRACTOR_INVOICE', data);
-  const payload = { ...data, status: 'DRAFT' };
-  return await base44.asServiceRole.entities.SubcontractorInvoice.create(payload);
-}
-
-async function updateSubcontractorInvoice(base44, id, data) {
-  const existing = await base44.asServiceRole.entities.SubcontractorInvoice.get(id);
-  if (!existing) throw new Error('المستخلص غير موجود');
-  if (existing.status !== 'DRAFT') throw new Error('لا يمكن تعديل مستخلص معتمد — استخدم العكس/الإلغاء المحاسبي بدلاً من تعديل الماضي');
-  const payload = { ...data, status: 'DRAFT' };
-  assertValid('SUBCONTRACTOR_INVOICE', payload);
-  return await base44.asServiceRole.entities.SubcontractorInvoice.update(id, payload);
-}
-
-// اعتماد مستخلص مقاول باطن: يرحّل قيد الالتزام (بالصافي + محتجز) ويحوّل الحالة إلى معتمد.
-async function approveSubcontractorInvoice(base44, id) {
-  const inv = await base44.asServiceRole.entities.SubcontractorInvoice.get(id);
-  if (!inv) throw new Error('المستخلص غير موجود');
-  if (inv.status !== 'DRAFT') throw new Error('لا يمكن اعتماد إلا المستخلصات التي في حالة مسودة');
-  let subName = inv.subcontractorName;
-  if (!subName && inv.subcontractorId) {
-    try { subName = (await base44.asServiceRole.entities.Subcontractor.get(inv.subcontractorId))?.name; } catch { /* قد لا يوجد */ }
-  }
-  const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-  await autoPostJE(base44, buildSubcontractorInvoiceJE({ ...inv, subcontractorName: subName }, accounts));
-  return await base44.asServiceRole.entities.SubcontractorInvoice.update(id, { status: 'APPROVED' });
-}
-
-async function createSubcontractorPayment(base44, data) {
-  assertValid('SUBCONTRACTOR_PAYMENT', data);
-  const payload = { ...data, amount: num(data.amount) };
-  let subName = payload.subcontractorName;
-  if (!subName && payload.subcontractorId) {
-    try { subName = (await base44.asServiceRole.entities.Subcontractor.get(payload.subcontractorId))?.name; } catch { /* قد لا يوجد */ }
-  }
-  payload.subcontractorName = subName || '';
-  let linkedInvoice = null;
-  if (payload.subcontractorInvoiceId) {
-    linkedInvoice = await base44.asServiceRole.entities.SubcontractorInvoice.get(payload.subcontractorInvoiceId);
-    if (!linkedInvoice) throw new Error('المستخلص المرتبط غير موجود');
-    if (!['APPROVED', 'PARTIALLY_PAID'].includes(linkedInvoice.status)) throw new Error('لا يمكن السداد إلا على مستخلص معتمد وغير مدفوع بالكامل');
-    const outstanding = +(num(linkedInvoice.totalAmount) - num(linkedInvoice.paidAmount)).toFixed(2);
-    if (payload.amount > outstanding + 0.01) throw new Error(`مبلغ السداد يتجاوز المتبقي على المستخلص (${outstanding})`);
-  }
-  const rec = await base44.asServiceRole.entities.SubcontractorPayment.create(payload);
-  try {
-    const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-    await autoPostJE(base44, buildSubcontractorPaymentJE({ ...payload, subcontractorName: subName }, accounts));
-    if (linkedInvoice) {
-      const paidAmount = +(num(linkedInvoice.paidAmount) + payload.amount).toFixed(2);
-      const status = paidAmount >= num(linkedInvoice.totalAmount) - 0.01 ? 'PAID' : 'PARTIALLY_PAID';
-      await base44.asServiceRole.entities.SubcontractorInvoice.update(linkedInvoice.id, { paidAmount, status });
-    }
-  } catch (e) {
-    await rollback(base44, 'SubcontractorPayment', rec.id);
-    throw e;
-  }
-  return rec;
-}
-
-// ─── فواتير التأجير ───────────────────────────────────────────────────────────
-function buildRentalInvoicePayload(data) {
-  const baseAmount = num(data.baseAmount);
-  const extraCharges = num(data.extraCharges);
-  const deliveryAmount = num(data.deliveryAmount);
-  const deliveryVatable = data.deliveryVatable !== false;
-  const net = +(baseAmount + extraCharges + deliveryAmount).toFixed(2);
-  // الوعاء الخاضع للضريبة يستثني الشحن غير الخاضع.
-  const vatableBase = baseAmount + extraCharges + (deliveryVatable ? deliveryAmount : 0);
-  const vatAmount = +(vatableBase * VAT_RATE).toFixed(2);
-  const totalAmount = +(net + vatAmount).toFixed(2);
-  return { ...data, baseAmount, extraCharges, deliveryAmount, deliveryVatable, net, vatAmount, totalAmount, paidAmount: num(data.paidAmount) };
-}
-
-// الإنشاء يحفظ فاتورة التأجير كمسودة فقط بلا قيد — القيد يُرحّل عند الاعتماد.
-async function createRentalInvoice(base44, data) {
-  assertValid('RENTAL_INVOICE', data);
-  const p = buildRentalInvoicePayload(data);
-  const payload = { ...p, status: 'DRAFT' }; delete payload.net;
-  return await base44.asServiceRole.entities.RentalInvoice.create(payload);
-}
-
-async function updateRentalInvoice(base44, id, data) {
-  const existing = await base44.asServiceRole.entities.RentalInvoice.get(id);
-  if (!existing) throw new Error('الفاتورة غير موجودة');
-  if (existing.status !== 'DRAFT') throw new Error('لا يمكن تعديل فاتورة معتمدة — استخدم العكس/الإلغاء المحاسبي بدلاً من تعديل الماضي');
-  const p = buildRentalInvoicePayload(data);
-  const payload = { ...p, status: 'DRAFT' }; delete payload.net;
-  assertValid('RENTAL_INVOICE', payload);
-  return await base44.asServiceRole.entities.RentalInvoice.update(id, payload);
-}
-
-// اعتماد فاتورة تأجير: يرحّل قيد الإيراد ويحوّل الحالة إلى معتمدة.
-async function approveRentalInvoice(base44, id) {
-  const inv = await base44.asServiceRole.entities.RentalInvoice.get(id);
-  if (!inv) throw new Error('الفاتورة غير موجودة');
-  if (inv.status !== 'DRAFT') throw new Error('لا يمكن اعتماد إلا الفواتير التي في حالة مسودة');
-  // الوعاء الأساسي للإيراد = الأساسي + الرسوم الإضافية + الشحن (net).
-  const net = +(num(inv.baseAmount) + num(inv.extraCharges) + num(inv.deliveryAmount)).toFixed(2);
-  const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-  await autoPostJE(base44, buildRentalInvoiceJE({ ...inv, baseAmount: net }, accounts));
-  return await base44.asServiceRole.entities.RentalInvoice.update(id, { status: 'APPROVED' });
 }
 
 // ─── الإقفال السنوي ───────────────────────────────────────────────────────────
@@ -1772,7 +1560,6 @@ function operationDate(data = {}) {
   if (data.date) return data.date;
   if (data.paymentDate) return data.paymentDate;
   if (data.acquisitionDate) return data.acquisitionDate;
-  if (data.startDate) return data.startDate;
   if (data.year && data.month) return `${data.year}-${String(data.month).padStart(2, '0')}-01`;
   return null;
 }
@@ -1794,14 +1581,10 @@ const HANDLERS = {
   SALES_INVOICE:   { create: (b, p) => createSalesInvoice(b, p.data), update: (b, p) => updateSalesInvoice(b, p.id, p.data, p.prevStatus), approve: (b, p) => approveSalesInvoice(b, p.id) },
   PURCHASE_ORDER:  { create: (b, p) => createPurchaseOrder(b, p.data), update: (b, p) => updatePurchaseOrder(b, p.id, p.data, p.prevStatus) },
   EXPENSE:         { create: (b, p) => createExpense(b, p.data), update: (b, p) => updateExpense(b, p.id, p.data) },
-  RENTAL_CONTRACT: { create: (b, p) => createRentalContract(b, p.data), update: (b, p) => updateRentalContract(b, p.id, p.data, p.prevStatus, p.prevEquipmentStatus) },
   PAYROLL:         { create: (b, p) => createPayrollRun(b, p.data), update: (b, p) => updatePayrollRun(b, p.id, p.data), approve: (b, p) => approvePayrollRun(b, p.id), pay: (b, p) => payPayrollRun(b, p.id, p.data || {}) },
   CLIENT_PAYMENT:  { create: (b, p) => createClientPayment(b, p.data), update: (b, p) => updateClientPayment(b, p.id, p.data) },
   SUPPLIER_PAYMENT:{ create: (b, p) => createSupplierPayment(b, p.data), update: (b, p) => updateSupplierPayment(b, p.id, p.data) },
   SUPPLIER_INVOICE:{ create: (b, p) => createSupplierInvoice(b, p.data), update: (b, p) => updateSupplierInvoice(b, p.id, p.data), approve: (b, p) => approveSupplierInvoice(b, p.id) },
-  SUBCONTRACTOR_INVOICE: { create: (b, p) => createSubcontractorInvoice(b, p.data), update: (b, p) => updateSubcontractorInvoice(b, p.id, p.data), approve: (b, p) => approveSubcontractorInvoice(b, p.id) },
-  SUBCONTRACTOR_PAYMENT: { create: (b, p) => createSubcontractorPayment(b, p.data) },
-  RENTAL_INVOICE:  { create: (b, p) => createRentalInvoice(b, p.data), update: (b, p) => updateRentalInvoice(b, p.id, p.data), approve: (b, p) => approveRentalInvoice(b, p.id) },
   STOCK_MOVEMENT:  { create: (b, p) => createStockMovement(b, p.data) },
   GOODS_RECEIPT:   { create: (b, p) => createGoodsReceipt(b, p.data) },
   FISCAL_YEAR:     { close: (b, p) => closeFiscalYear(b, p.id) },

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Minus, X, Search, Printer, Receipt as ReceiptIcon, Pause,
   CreditCard, Banknote, Clock, UtensilsCrossed, LogOut,
-  ShoppingCart, Trash2, Truck, ShieldCheck,
+  ShoppingCart, XCircle, Truck, ShieldCheck,
   CupSoda, Cake, Soup, FolderPlus, ArrowRight, ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
   saveDraftToTable, getTableDraft, clearTableDraft,
 } from '@/lib/tables';
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
 import { toast } from 'sonner';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -179,7 +180,7 @@ export default function POS() {
         // حمّل الأقسام والأصناف معاً — الأقسام مرتّبة حسب sortOrder
         const [cats, items] = await Promise.all([
           base44.entities.MenuCategory.filter({ isActive: true }),
-          base44.entities.InventoryItem.filter({ isActive: true }),
+          base44.entities.InventoryItem.filter({ isActive: true, itemType: 'MENU' }),
         ]);
         if (!active) return;
         const sortedCats = (cats || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -394,11 +395,7 @@ export default function POS() {
     [customer]
   );
 
-  // ─── تبعيات الفاتورة (يجب تعريفها قبل totals لتفادي TDZ) ─────────────────
-  // ملاحظة حرجة: const declarations لها temporal dead zone — لا يمكن الوصول
-  // إليها قبل تعريفها. totals (useMemo) يعتمد على effectiveDeliveryFee
-  // و isPlatformSale، لذا يجب تعريفهما أولاً. ترتيب سابق خاطئ كان يسبب
-  // "Cannot access 'X' before initialization" عند فتح POS.
+  // ── مشتقّات لازمة لحساب totals — يجب تعريفها قبله (تجنّب Temporal Dead Zone) ──
   const isDelivery = invoiceType === 'SERVICE';
   const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
 
@@ -408,8 +405,7 @@ export default function POS() {
     [platformId, platforms]
   );
 
-  // هل هذا طلب عبر منصة توصيل؟ (توصيل + منصة محددة وليست "توصيل مباشر")
-  // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
+  // هل هذا طلب عبر منصة توصيل؟ مبيعات المنصات دائماً آجلة.
   const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
 
   // حساب مركزي للفاتورة وفق القواعد الثمانية
@@ -433,22 +429,6 @@ export default function POS() {
   const discountAmount = totals.discountAmount;              // إجمالي الخصومات
   // itemDiscountsTotal = 0 دائماً (أُزيل خصم الصنف — القاعدة 4)
   const itemDiscountsTotal = 0;
-
-  // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
-  // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
-  //   Taxable → + Delivery Fee → VAT → Grand Total
-  const _vatBase = totals.vatBase;
-  const vat = totals.vat;
-  const total = totals.total;
-  // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
-
-  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
-  const platformCommission = useMemo(() => {
-    if (!isDelivery || !selectedPlatform) return 0;
-    const rate = parseFloat(selectedPlatform.commissionRate) || 0;
-    if (rate <= 0) return 0;
-    return +(total * (rate / 100)).toFixed(2);
-  }, [isDelivery, selectedPlatform, total]);
 
   // بحث ذكي عن الزبائن: بالاسم أو رقم الجوال أو نسبة الخصم.
   // يُفلتر محلياً من قائمة customers المحمّلة، دون طلب شبكة إضافي.
@@ -494,6 +474,21 @@ export default function POS() {
   };
 
 
+  // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
+  // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
+  //   Taxable → + Delivery Fee → VAT → Grand Total
+  const _vatBase = totals.vatBase;
+  const vat = totals.vat;
+  const total = totals.total;
+  // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
+
+  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
+  const platformCommission = useMemo(() => {
+    if (!isDelivery || !selectedPlatform) return 0;
+    const rate = parseFloat(selectedPlatform.commissionRate) || 0;
+    if (rate <= 0) return 0;
+    return +(total * (rate / 100)).toFixed(2);
+  }, [isDelivery, selectedPlatform, total]);
 
   const totalPaid = useMemo(
     () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
@@ -507,17 +502,33 @@ export default function POS() {
     : (totalPaid >= total && total > 0);
 
   // ─── المدفوعات ──────────────────────────────────────────────────────
+  // القاعدة: البطاقات لا تقبل زيادة (المبلغ = المتبقي بالضبط). النقد فقط يقبل
+  // مبلغاً أكبر من المتبقي (الفرق = الباقي للزبون). هذا يمنع تراكم المدفوعات
+  // فوق المستحق عند استخدام أكثر من طريقة دفع.
   const addPayment = (method, amount = null) => {
     const amt = amount !== null ? amount : parseFloat(cashReceived);
     if (!amt || amt <= 0) {
       toast.error(t('أدخل مبلغاً صحيحاً', 'Enter a valid amount', lang));
       return;
     }
-    const remaining = total - totalPaid;
-    if (amt > remaining + 0.01 && method !== 'CREDIT') {
-      toast.info(t('المبلغ أكبر من المتبقي — الباقي للزبون', 'Amount exceeds remaining — change due', lang));
+    const remaining = +(total - totalPaid).toFixed(2);
+    if (remaining <= 0) {
+      toast.error(t('تم استيفاء المبلغ بالكامل', 'Amount already fully paid', lang));
+      return;
     }
-    setPayments(prev => [...prev, { method, amount: +amt.toFixed(2) }]);
+    const isCash = method === 'CASH';
+    // البطاقات وغير النقد: لا تتجاوز المتبقي أبداً (لا باقي على البطاقة).
+    // النقد: يُسمح بالزيادة، لكن المُسجَّل كدفعة = المتبقي فقط، والفرق يظهر كباقٍ للعميل.
+    let recordedAmt = amt;
+    if (amt > remaining + 0.01) {
+      if (isCash) {
+        recordedAmt = remaining; // الباقي للعميل يُحسب من cashReceived في العرض
+      } else {
+        recordedAmt = remaining; // البطاقة تُقتطع للمتبقي بالضبط
+        toast.info(t('تم ضبط مبلغ البطاقة على المتبقي', 'Card amount adjusted to remaining', lang));
+      }
+    }
+    setPayments(prev => [...prev, { method, amount: +recordedAmt.toFixed(2) }]);
     setCashReceived('');
   };
 
@@ -531,49 +542,87 @@ export default function POS() {
     setActiveItem('tables');
   };
 
-  // طباعة طلب المطبخ (إيصال داخلي للمنتجات فقط — بلا أسعار)
-  const printOrder = () => {
+  // طباعة طلب المطبخ (إيصال داخلي للمنتجات فقط — بلا أسعار).
+  // يُنشأ سجل KitchenOrder برقم فريد قبل الطباعة ليُطابَق لاحقاً بالفاتورة (رقابة التلاعب).
+  const printOrder = async () => {
     if (!cart.length) {
       toast.error(t('السلة فارغة', 'Cart is empty', lang));
       return;
     }
+
+    // 1) سجّل الطلب برقم فريد قبل الطباعة
+    const orderNo = genKitchenOrderNo();
+    try {
+      await createKitchenOrder({
+        orderNo,
+        branchId: activeProjectId || '',
+        branchName: branchLabel,
+        tableId: activeTable?.tableId || '',
+        tableName: tableLabel,
+        cashier,
+        cart,
+      });
+    } catch (e) {
+      console.warn('KitchenOrder create failed:', e);
+      toast.error(t('تعذّر تسجيل الطلب — حاول مجدداً', 'Failed to log order — try again', lang));
+      return;
+    }
+
     const w = window.open('', '_blank', 'width=400,height=600');
     if (!w) {
       toast.error(t('الرجاء السماح بالنوافذ المنبثقة', 'Please allow pop-ups', lang));
       return;
     }
     const rtl = lang === 'ar';
-    const itemsHtml = cart.map((c, i) => `
+    const itemsHtml = cart.map((c, i) => {
+      // الاسم الأساسي = اللغة النشطة (أوضح بالأعلى)، والثانوي أصغر بالأسفل
+      const primaryName = rtl ? c.name : (c.nameEn || c.name);
+      const secondaryName = rtl ? c.nameEn : (c.nameEn ? c.name : '');
+      const nameCell = `
+        <div dir="${rtl ? 'rtl' : 'ltr'}" style="font-weight:700;">${primaryName}</div>
+        ${secondaryName ? `<div dir="${rtl ? 'ltr' : 'rtl'}" style="font-size:11px; color:#777; font-weight:400;">${secondaryName}</div>` : ''}
+      `;
+      return `
       <tr>
         <td style="padding:4px 6px; border-bottom:1px dashed #ccc;">${i + 1}</td>
-        <td style="padding:4px 6px; border-bottom:1px dashed #ccc; font-weight:700;">${c.name}</td>
+        <td style="padding:4px 6px; border-bottom:1px dashed #ccc;">${nameCell}</td>
         <td style="padding:4px 6px; border-bottom:1px dashed #ccc; text-align:center; font-weight:700;">${c.qty}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     w.document.write(`
       <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
         <head><meta charset="utf-8"><title>${t('طلب المطبخ', 'Kitchen Order', lang)}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
-          body { font-family:'Cairo','Tahoma',sans-serif; padding:8px; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          html, body { margin:0; padding:0; background:#fff; }
+          body { font-family:'Cairo','Tahoma',sans-serif; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
+          .receipt-wrap { width:80mm; margin:0 auto; padding:2mm; }
           .h { text-align:center; font-size:18px; font-weight:800; }
-          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:6px; }
+          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:2px; }
+          .orderno { text-align:center; font-size:13px; margin-bottom:6px; }
           table { width:100%; border-collapse:collapse; font-size:13px; }
           th { background:#000; color:#fff; padding:6px; font-size:12px; }
           .meta { font-size:11px; color:#555; margin:4px 0 8px; }
-          @page { size: 80mm auto; margin: 4mm; }
+          @page { size: 80mm auto; margin: 2mm; }
+          @media print { .no-print { display:none !important; } }
+          @media screen { body { background:#f1f5f9; padding:16px; } }
         </style></head>
         <body>
-          <div class="h">${t('طلب المطبخ', 'Kitchen Order', lang)}</div>
-          <div class="sub">${branchLabel} — ${tableLabel}</div>
-          <div class="meta">
-            ${t('التاريخ', 'Date', lang)}: ${formatDate(new Date().toISOString(), lang)} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-            ${t('الكاشير', 'Cashier', lang)}: ${cashier}
+          <div class="receipt-wrap">
+            <div class="h">${t('طلب المطبخ', 'Kitchen Order', lang)}</div>
+            <div class="sub">${branchLabel} — ${tableLabel}</div>
+            <div class="orderno">${t('رقم الطلب', 'Order No.', lang)}: <strong dir="ltr">${orderNo}</strong></div>
+            <div class="meta">
+              ${t('التاريخ', 'Date', lang)}: ${formatDate(new Date().toISOString(), lang)} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+              ${t('الكاشير', 'Cashier', lang)}: ${cashier}
+            </div>
+            <table>
+              <thead><tr><th>#</th><th>${t('الصنف', 'Item', lang)}</th><th>${t('الكمية', 'Qty', lang)}</th></tr></thead>
+              <tbody>${itemsHtml}</tbody>
+            </table>
           </div>
-          <table>
-            <thead><tr><th>#</th><th>${t('الصنف', 'Item', lang)}</th><th>${t('الكمية', 'Qty', lang)}</th></tr></thead>
-            <tbody>${itemsHtml}</tbody>
-          </table>
           <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
         </body>
       </html>
@@ -632,7 +681,7 @@ export default function POS() {
     }
     clearCart();
     setConfirmCancelOpen(false);
-    toast.info(t('تم إلغاء الطلب', 'Order cancelled', lang));
+    toast.info(t('تم إلغاء الفاتورة وحذف المسودة وتحرير الطاولة', 'Invoice cancelled, draft deleted, table freed', lang));
     clearActiveTable();
     setActiveTable(null);
     setActiveItem('tables');
@@ -724,7 +773,9 @@ export default function POS() {
       saleType = 'DIRECT_DELIVERY';
       platformName = t('توصيل مباشر', 'Direct Delivery', lang);
     } else if (invoiceType === 'CONSTRUCTION') {
-      saleType = customerId && customer && !customer.isCash ? 'CREDIT' : 'DINE_IN';
+      // القاعدة الثابتة: البيع الآجل حصري للمنصات فقط. كل مبيعات الصالة تُدفع فوراً
+      // بالكامل عند إنشاء الفاتورة — سواء كان الزبون نقدياً أو مسجّل حساب. لا CREDIT هنا.
+      saleType = 'DINE_IN';
     } else {
       saleType = 'TAKEAWAY';
     }
@@ -827,14 +878,33 @@ export default function POS() {
       return;
     }
 
+    // مطابقة طلبات المطبخ المطبوعة على هذه الطاولة بالفاتورة (رقابة التلاعب).
+    // تُقارن أصناف الطلبات المفتوحة بأصناف الفاتورة وتُحدَّد حالة المطابقة تلقائياً.
+    if (activeTable?.tableId && saved?.id) {
+      try {
+        await reconcileTableOrders({
+          tableId: activeTable.tableId,
+          invoiceId: saved.id,
+          invoiceNo: saved.invoiceNo || invoice.invoiceNo,
+          invoiceItems: lineItems,
+        });
+      } catch (e) { console.warn('reconcileTableOrders failed:', e); }
+    }
+
     // Feature 4: تحرير الطاولة + مسح المسودة عند إتمام البيع
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
     }
 
-    // فتح معاينة الإيصال الحراري
-    setPrintReceipt(saved || invoice);
+    // فتح معاينة الإيصال الحراري.
+    // سجل الخادم (saved) لا يحتوي على lineItems/الخصومات التفصيلية (تُخزّن ضمن notes)،
+    // لذا ندمج الحقول المحلية فوقه حتى يظهر كل الأصناف والخصم في الإيصال المطبوع.
+    setPrintReceipt({
+      ...(saved || {}),
+      ...invoice,
+      id: saved?.id || invoice.id,
+    });
 
     if (backendOk) {
       toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
@@ -849,50 +919,27 @@ export default function POS() {
   // ─── عرض ───────────────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* الرأس العلوي */}
-      <div className="shrink-0 border-b bg-white px-4 py-2.5 flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div
-            className="size-9 rounded-lg flex items-center justify-center text-white shrink-0"
-            style={{ background: branchSettings.primaryColor || '#d97706' }}
-          >
-            <UtensilsCrossed className="size-5" />
-          </div>
-          <div className="leading-tight">
-            <div className="font-bold text-foreground text-sm">{branchLabel}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {branchSettings.posTerminalId && (
-                <span dir="ltr" className="font-mono">{branchSettings.posTerminalId}</span>
-              )}
-            </div>
-          </div>
+      {/* الرأس العلوي — مدمج في سطر واحد رفيع */}
+      <div className="shrink-0 border-b bg-white px-3 py-1.5 flex items-center gap-2 text-xs">
+        <div
+          className="size-6 rounded-md flex items-center justify-center text-white shrink-0"
+          style={{ background: branchSettings.primaryColor || '#d97706' }}
+        >
+          <UtensilsCrossed className="size-3.5" />
         </div>
-
-        <div className="h-8 w-px bg-border mx-1" />
-
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">{t('الطاولة', 'Table', lang)}:</span>
-          <span className="font-bold text-foreground bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
-            {tableLabel}
-          </span>
-        </div>
-
-        <div className="h-8 w-px bg-border mx-1" />
-
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">{t('الكاشير', 'Cashier', lang)}:</span>
-          <span className="font-semibold text-foreground">{cashier}</span>
-        </div>
+        <span className="font-bold text-foreground">{branchLabel}</span>
+        {branchSettings.posTerminalId && (
+          <span dir="ltr" className="font-mono text-[10px] text-muted-foreground">{branchSettings.posTerminalId}</span>
+        )}
+        <span className="ms-1 font-bold text-foreground bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+          {tableLabel}
+        </span>
+        <span className="text-muted-foreground">{cashier}</span>
 
         <div className="flex-1" />
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={exitToTables}
-          className="gap-1.5"
-        >
-          <LogOut className="size-4" />
+        <Button variant="outline" size="sm" onClick={exitToTables} className="h-7 gap-1 text-xs">
+          <LogOut className="size-3.5" />
           {t('خروج', 'Exit', lang)}
         </Button>
       </div>
@@ -962,12 +1009,19 @@ export default function POS() {
                         <div className={`size-10 rounded-lg ${tone.icon} flex items-center justify-center`}>
                           <Icon className="size-6" />
                         </div>
-                        <div className="leading-tight">
-                          <div className="font-bold text-base line-clamp-1">{cat.name}</div>
-                          {cat.nameEn && (
-                            <div dir="ltr" className="text-[11px] text-white/80 line-clamp-1 text-start">{cat.nameEn}</div>
-                          )}
-                        </div>
+                        {(() => {
+                          const isAr = lang === 'ar';
+                          const primaryName = isAr ? cat.name : (cat.nameEn || cat.name);
+                          const secondaryName = isAr ? cat.nameEn : (cat.nameEn ? cat.name : '');
+                          return (
+                            <div className="leading-tight">
+                              <div dir={isAr ? 'rtl' : 'ltr'} className="font-bold text-base line-clamp-1 text-start">{primaryName}</div>
+                              {secondaryName && (
+                                <div dir={isAr ? 'ltr' : 'rtl'} className="text-[11px] text-white/80 line-clamp-1 text-start">{secondaryName}</div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <span className="absolute end-2 top-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
                           {count}
                         </span>
@@ -1003,16 +1057,26 @@ export default function POS() {
                         onClick={() => addToCart(item)}
                         className="p-3 cursor-pointer hover:shadow-md hover:border-emerald-400 transition-all active:scale-[0.98] flex flex-col gap-1"
                       >
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="font-bold text-sm text-foreground leading-tight line-clamp-2">
-                            {item.name}
-                          </div>
-                        </div>
-                        {item.nameEn && (
-                          <div dir="ltr" className="text-[10px] text-muted-foreground line-clamp-1 text-start">
-                            {item.nameEn}
-                          </div>
-                        )}
+                        {(() => {
+                          // الاسم الأساسي = اللغة النشطة (أوضح بالأعلى)، والثانوي أصغر بالأسفل
+                          const isAr = lang === 'ar';
+                          const primaryName = isAr ? item.name : (item.nameEn || item.name);
+                          const secondaryName = isAr ? item.nameEn : (item.nameEn ? item.name : '');
+                          return (
+                            <>
+                              <div className="flex items-start justify-between gap-1">
+                                <div dir={isAr ? 'rtl' : 'ltr'} className="font-bold text-sm text-foreground leading-tight line-clamp-2 text-start">
+                                  {primaryName}
+                                </div>
+                              </div>
+                              {secondaryName && (
+                                <div dir={isAr ? 'ltr' : 'rtl'} className="text-[10px] text-muted-foreground line-clamp-1 text-start">
+                                  {secondaryName}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="mt-auto pt-1 flex items-center justify-between">
                           <span className="text-[10px] text-muted-foreground font-mono">{item.code}</span>
                           <span className="font-bold text-emerald-700 text-sm">
@@ -1031,7 +1095,7 @@ export default function POS() {
         {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
         <div className="w-[400px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
           {/* رأس الإيصال: زبون + طاولة + نوع الطلب */}
-          <div className="shrink-0 p-3 border-b bg-slate-50 space-y-2">
+          <div className="shrink-0 px-3 py-2 border-b bg-slate-50 space-y-1.5">
             <div className="flex items-center gap-2">
               <Label className="text-xs text-muted-foreground whitespace-nowrap">
                 {t('الزبون', 'Customer', lang)}:
@@ -1197,11 +1261,6 @@ export default function POS() {
                 )}
               </>
             )}
-
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{t('الطاولة', 'Table', lang)}: <span className="font-bold text-foreground">{tableLabel}</span></span>
-              <span>{t('الكاشير', 'Cashier', lang)}: <span className="font-bold text-foreground">{cashier}</span></span>
-            </div>
           </div>
 
           {/* قائمة الأصناف */}
@@ -1216,53 +1275,43 @@ export default function POS() {
             ) : (
               <div className="divide-y">
                 {cart.map((item, idx) => (
-                  <div key={item.itemId} className="p-2.5 hover:bg-slate-50">
-                    <div className="flex items-start gap-2">
-                      <span className="text-[11px] text-muted-foreground font-mono mt-0.5 shrink-0">
-                        {idx + 1}.
+                  <div key={item.itemId} className="px-2.5 py-1.5 hover:bg-slate-50 flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground font-mono shrink-0 w-4">
+                      {idx + 1}
+                    </span>
+                    {/* اسم الصنف + سعر الوحدة */}
+                    <div className="flex-1 min-w-0">
+                      <div dir={lang === 'ar' ? 'rtl' : 'ltr'} className="font-semibold text-[13px] text-foreground truncate leading-tight text-start">
+                        {lang === 'ar' ? item.name : (item.nameEn || item.name)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{formatCurrency(item.price, lang)}</div>
+                    </div>
+                    {/* عدّاد الكمية */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <Button variant="outline" size="icon" className="size-5" onClick={() => changeQty(item.itemId, -1)}>
+                        <Minus className="size-2.5" />
+                      </Button>
+                      <Input
+                        value={item.qty}
+                        onChange={e => setQty(item.itemId, e.target.value)}
+                        className="h-5 w-8 text-center text-xs px-0"
+                      />
+                      <Button variant="outline" size="icon" className="size-5" onClick={() => changeQty(item.itemId, 1)}>
+                        <Plus className="size-2.5" />
+                      </Button>
+                    </div>
+                    {/* الإجمالي + حذف */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="font-bold text-[13px] text-foreground w-16 text-end">
+                        {formatCurrency(item.price * item.qty, lang)}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-foreground truncate">{item.name}</div>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline" size="icon"
-                              className="size-6"
-                              onClick={() => changeQty(item.itemId, -1)}
-                            >
-                              <Minus className="size-3" />
-                            </Button>
-                            <Input
-                              value={item.qty}
-                              onChange={e => setQty(item.itemId, e.target.value)}
-                              className="h-6 w-10 text-center text-xs px-1"
-                            />
-                            <Button
-                              variant="outline" size="icon"
-                              className="size-6"
-                              onClick={() => changeQty(item.itemId, 1)}
-                            >
-                              <Plus className="size-3" />
-                            </Button>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {formatCurrency(item.price, lang)} × {item.qty}
-                          </span>
-                          {/* (أُزيل خصم الصنف — القاعدة 4: الخصم على الفاتورة لا على الأصناف) */}
-                        </div>
-                      </div>
-                      <div className="text-end shrink-0">
-                        <div className="font-bold text-sm text-foreground">
-                          {formatCurrency(item.price * item.qty, lang)}
-                        </div>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="size-6 text-destructive hover:text-destructive mt-0.5"
-                          onClick={() => removeItem(item.itemId)}
-                        >
-                          <X className="size-3" />
-                        </Button>
-                      </div>
+                      <Button
+                        variant="ghost" size="icon"
+                        className="size-5 text-destructive hover:text-destructive"
+                        onClick={() => removeItem(item.itemId)}
+                      >
+                        <X className="size-3" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -1507,7 +1556,7 @@ export default function POS() {
                 variant="outline"
                 className="h-9 gap-1.5 text-xs text-destructive hover:text-destructive"
               >
-                <Trash2 className="size-3.5" />
+                <XCircle className="size-3.5" />
                 {t('إلغاء', 'Cancel', lang)}
               </Button>
             </div>
@@ -1594,7 +1643,7 @@ export default function POS() {
               {t('تراجع', 'Back', lang)}
             </Button>
             <Button variant="destructive" onClick={submitCancelPassword}>
-              <Trash2 className="size-4" />
+              <XCircle className="size-4" />
               {t('تأكيد الإلغاء', 'Confirm Cancel', lang)}
             </Button>
           </DialogFooter>

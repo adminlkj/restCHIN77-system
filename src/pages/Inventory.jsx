@@ -145,6 +145,7 @@ export default function Inventory() {
       const cost = Number(form.unitCost) || Number(form.costPrice) || 0;
       const sale = Number(form.salePrice) || cost || 0;
       const data = {
+        itemType: 'RAW',
         code: form.code, name: form.name, nameEn: form.nameEn, category: form.category, unit: form.unit,
         quantity: Number(form.quantity) || 0, reorderLevel: Number(form.reorderLevel) || 0,
         unitCost: cost, costPrice: cost, salePrice: sale,
@@ -242,6 +243,7 @@ export default function Inventory() {
         );
         const category = catEntry ? catEntry[0] : 'MATERIAL';
         return {
+          itemType: 'RAW',
           code: r.code || `INV-${String(idx + 1).padStart(4, '0')}`,
           name: r.name || '',
           nameEn: r.nameEn || '',

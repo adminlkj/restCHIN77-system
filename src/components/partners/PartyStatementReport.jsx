@@ -9,8 +9,6 @@ import { printHtml } from '@/lib/printDocument';
 
 const SOURCE_LABELS = (lang) => ({
   SalesInvoice: t('فاتورة مبيعات', 'Sales Invoice', lang),
-  RentalInvoice: t('فاتورة تأجير', 'Rental Invoice', lang),
-  RentalContract: t('عقد تأجير', 'Rental Contract', lang),
   ClientPayment: t('سند قبض', 'Receipt', lang),
   SupplierInvoice: t('فاتورة مورد', 'Supplier Invoice', lang),
   PurchaseOrder: t('أمر شراء', 'Purchase Order', lang),

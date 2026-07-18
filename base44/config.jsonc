@@ -1,5 +1,5 @@
 {
-  "name": "untitled",
+  "name": "RestCHIN System",
   "site": {
     "installCommand": "npm install",
     "buildCommand": "npm run build",

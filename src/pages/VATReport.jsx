@@ -68,15 +68,21 @@ export default function VATReport() {
     const taxableStatuses = ['APPROVED', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'];
     const salesRows = sales
       .filter(i => taxableStatuses.includes(i.status) && inPeriod(i.date, year, q.months))
-      .map(i => ({
-        date: i.date,
-        docNo: i.invoiceNo,
-        party: i.clientName,
-        source: t('فاتورة مبيعات', 'Sales Invoice', lang),
-        base: Number(i.subtotal) || 0,
-        vat: Number(i.vatAmount) || 0,
-        total: Number(i.totalAmount) || 0,
-      }));
+      .map(i => {
+        const vat = Number(i.vatAmount) || 0;
+        const total = Number(i.totalAmount) || 0;
+        // القاعدة الخاضعة = الإجمالي − الضريبة (الوعاء الفعلي بعد الخصم)، لا subtotal الخام
+        // قبل الخصم — وإلا لا تتطابق القاعدة مع الضريبة المحصّلة (base × 15% ≠ vat).
+        return {
+          date: i.date,
+          docNo: i.invoiceNo,
+          party: i.clientName,
+          source: t('فاتورة مبيعات', 'Sales Invoice', lang),
+          base: +(total - vat).toFixed(2),
+          vat,
+          total,
+        };
+      });
     return salesRows.sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [sales, year, q, lang]);
 
@@ -248,7 +254,7 @@ export default function VATReport() {
           {/* Output VAT details */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">{t('تفاصيل الضريبة المخرجة — المبيعات والتأجير', 'Output VAT Details — Sales & Rental', lang)}</CardTitle>
+              <CardTitle className="text-base">{t('تفاصيل الضريبة المخرجة — المبيعات', 'Output VAT Details — Sales', lang)}</CardTitle>
               <TableToolbar
                 columns={outputColumns}
                 rows={outputRows}
@@ -272,7 +278,7 @@ export default function VATReport() {
                   </TableHeader>
                   <TableBody>
                     {outputRows.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">{t('لا توجد فواتير مبيعات أو تأجير في هذه الفترة', 'No sales or rental invoices in this period', lang)}</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">{t('لا توجد فواتير مبيعات في هذه الفترة', 'No sales invoices in this period', lang)}</TableCell></TableRow>
                     ) : outputRows.map((r, i) => (
                       <TableRow key={i} className="hover:bg-muted/30">
                         <TableCell className="text-xs">{formatDate(r.date, lang)}</TableCell>

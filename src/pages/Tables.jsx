@@ -24,7 +24,7 @@ import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import {
   TABLE_STATUS, getBranchTables, getBranchTableStats,
   addTable, updateTable, deleteTable,
-  occupyTable, freeTable, reserveTable, setTableAvailable,
+  freeTable, reserveTable, setTableAvailable, clearTableDraft,
 } from '@/lib/tables';
 import { getBranchSettings, setBranchSettings } from '@/lib/branchSettings';
 import { toast } from 'sonner';
@@ -146,6 +146,12 @@ export default function Tables() {
 
   const askDelete = (id) => { setDeleteId(id); setConfirmOpen(true); };
 
+  // الطاولة المرشّحة للحذف (لعرض اسمها وحالتها في نافذة التأكيد).
+  const tableToDelete = useMemo(
+    () => tables.find(t => t.id === deleteId) || null,
+    [tables, deleteId]
+  );
+
   const save = () => {
     if (!form.name || !form.name.trim()) {
       toast.error(t('الرجاء إدخال اسم الطاولة', 'Please enter a table name', lang));
@@ -225,7 +231,9 @@ export default function Tables() {
   };
 
   // فتح POS للطاولة: AVAILABLE أو OCCUPIED أو DRAFT.
-  // للطاولات المتاحة فقط نُشغلها (occupyTable). أما DRAFT فتُفتح مباشرةً ليستأنف POS مسودتها.
+  // لا نشغل الطاولة عند مجرد الدخول — تبقى AVAILABLE حتى تُضاف أول صنف
+  // (حينها يحوّلها الحفظ التلقائي في POS إلى DRAFT). هذا يمنع "حجز" الطاولة
+  // بمجرد فتحها ويسمح بتعديلها/حذفها ما لم يوجد طلب فعلي.
   const openPOS = (table) => {
     try {
       localStorage.setItem('pos-active-table', JSON.stringify({
@@ -235,11 +243,7 @@ export default function Tables() {
         invoiceId: table.currentInvoiceId || null,
       }));
     } catch { /* ignore */ }
-    if (table.status === 'AVAILABLE') {
-      occupyTable(table.id, `draft-${Date.now()}`);
-      load();
-    }
-    // لا تفعل شيئاً لـ DRAFT/OCCUPIED — POS سيقرأ المسودة/الإيصال الحالي.
+    // لا occupyTable هنا — POS سيقرأ المسودة/الإيصال الحالي إن وُجد.
     setActiveItem('pos');
   };
 
@@ -248,8 +252,14 @@ export default function Tables() {
     try {
       switch (action) {
         case 'free':
-          freeTable(table.id, true);
-          toast.success(t('تم تحرير الطاولة (قيد التنظيف)', 'Table freed (cleaning)', lang));
+          // مسودة → امسح المسودة وأعد الطاولة متاحة مباشرة. غير ذلك → تنظيف.
+          if (table.status === 'DRAFT') {
+            clearTableDraft(table.id);
+            toast.success(t('تم تحرير الطاولة ومسح المسودة', 'Table freed and draft cleared', lang));
+          } else {
+            freeTable(table.id, true);
+            toast.success(t('تم تحرير الطاولة (قيد التنظيف)', 'Table freed (cleaning)', lang));
+          }
           break;
         case 'cleaning-done':
           setTableAvailable(table.id);
@@ -480,9 +490,9 @@ export default function Tables() {
                       <DropdownMenuItem onClick={() => openEdit(table)} className="gap-2 text-xs">
                         <Pencil className="size-3.5" /> {t('تعديل', 'Edit', lang)}
                       </DropdownMenuItem>
-                      {isReserved && (
+                      {(isReserved || isOccupied || isDraft) && (
                         <DropdownMenuItem onClick={() => handleAction(table, 'free')} className="gap-2 text-xs">
-                          <Play className="size-3.5" /> {t('تحرير', 'Free', lang)}
+                          <Play className="size-3.5" /> {t('تحرير الطاولة', 'Free Table', lang)}
                         </DropdownMenuItem>
                       )}
                       {isCleaning && (
@@ -601,11 +611,25 @@ export default function Tables() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={t('حذف الطاولة', 'Delete Table', lang)}
-        description={t(
-          'سيتم حذف الطاولة نهائياً. هل أنت متأكد؟',
-          'This table will be permanently deleted. Are you sure?',
-          lang
-        )}
+        description={
+          tableToDelete
+            ? (tableToDelete.status === 'OCCUPIED' || tableToDelete.status === 'DRAFT')
+              ? t(
+                  `الطاولة "${tableToDelete.name}" عليها طلب مفتوح — سيُحذف الطلب مع الطاولة نهائياً. هل أنت متأكد؟`,
+                  `Table "${tableToDelete.name}" has an open order — the order will be deleted along with the table. Are you sure?`,
+                  lang
+                )
+              : t(
+                  `سيتم حذف الطاولة "${tableToDelete.name}" نهائياً. هل أنت متأكد؟`,
+                  `Table "${tableToDelete.name}" will be permanently deleted. Are you sure?`,
+                  lang
+                )
+            : t(
+                'سيتم حذف الطاولة نهائياً. هل أنت متأكد؟',
+                'This table will be permanently deleted. Are you sure?',
+                lang
+              )
+        }
         onConfirm={remove}
         confirmLabel={t('حذف', 'Delete', lang)}
       />

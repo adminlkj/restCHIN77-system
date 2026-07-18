@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { resolveReceiptSettings } from '@/lib/branchSettings';
 import ThermalReceiptDocument from '@/components/shared/ThermalReceiptDocument';
+import ReceiptErrorBoundary from '@/components/shared/ReceiptErrorBoundary';
 
 // ═══════════════════════════════════════════════════════════════════════
 // معاينة وطباعة إيصال حراري بعرض 80mm لطابعات الإيصالات الحرارية.
@@ -44,8 +45,8 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
       }
     })();
     return () => { active = false; };
-  // نعتمد على معرّف الفرع فقط — لا على كائن companySettings (مرجعه يتغيّر كل تصيير
-  // مما يسبّب حلقة إعادة تصيير لا نهائية وتجمّد النظام عند إعادة فتح الإيصال).
+    // نعتمد على معرّف الفرع فقط — لا على كائن companySettings (مرجعه يتغيّر كل تصيير
+    // مما يسبّب حلقة إعادة تصيير لا نهائية وتجمّد النظام عند إعادة فتح الإيصال).
      
   }, [invoice?.projectId, invoice?.branchId]);
 
@@ -130,7 +131,9 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
 
         <div className="overflow-auto max-h-[80vh] bg-slate-100 p-4 flex justify-center">
           <div className="bg-white shadow-md" style={{ width: '300px', padding: '8px' }}>
-            <ThermalReceiptDocument invoice={invoice} settings={settings} client={client} lang={lang} innerRef={printRef} />
+            <ReceiptErrorBoundary fallbackText={t('تعذّر عرض الإيصال', 'Could not render receipt', lang)}>
+              <ThermalReceiptDocument invoice={invoice} settings={settings} client={client} lang={lang} innerRef={printRef} />
+            </ReceiptErrorBoundary>
           </div>
         </div>
       </DialogContent>

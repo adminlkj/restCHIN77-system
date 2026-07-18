@@ -56,6 +56,15 @@ export default function FiscalYears() {
       return toast.error(t('جميع الحقول الأساسية مطلوبة', 'All main fields required', lang));
     if (form.endDate < form.startDate)
       return toast.error(t('تاريخ النهاية يجب أن يكون بعد البداية', 'End date must be after start', lang));
+    // منع تعديل حدود سنة مغلقة/مقفلة — تحريكها يزحزح القيود المرحّلة داخل/خارج الفترة.
+    if (editing && editing.status !== 'OPEN' && (form.startDate !== editing.startDate || form.endDate !== editing.endDate)) {
+      return toast.error(t('لا يمكن تعديل تواريخ سنة مغلقة أو مقفلة', 'Cannot change dates of a closed or locked year', lang));
+    }
+    // منع تكرار نفس السنة أو تداخل الفترات مع سنة أخرى.
+    const dup = items.find(i => i.id !== editing?.id && Number(i.year) === Number(form.year));
+    if (dup) return toast.error(t('توجد سنة مالية بنفس الرقم بالفعل', 'A fiscal year with this number already exists', lang));
+    const overlap = items.find(i => i.id !== editing?.id && form.startDate <= i.endDate && form.endDate >= i.startDate);
+    if (overlap) return toast.error(t(`الفترة متداخلة مع سنة "${overlap.name}"`, `Period overlaps fiscal year "${overlap.name}"`, lang));
     setSaving(true);
     try {
       const data = { name: form.name, year: Number(form.year), startDate: form.startDate, endDate: form.endDate, status: form.status, isCurrent: form.isCurrent, notes: form.notes };
@@ -100,8 +109,9 @@ export default function FiscalYears() {
       } catch (e) { toast.error(e?.message || t('فشل الإقفال', 'Close failed', lang)); }
       setClosingId(null);
     } else {
-      try { await base44.entities.FiscalYear.update(item.id, { status: 'OPEN' }); toast.success(t('تم إعادة فتح السنة', 'Year re-opened', lang)); load(); }
-      catch { toast.error(t('فشل العملية', 'Operation failed', lang)); }
+      // إعادة الفتح ممنوعة: الإقفال ولّد قيد إقفال الأرباح وقيداً افتتاحياً للسنة التالية،
+      // وإعادة الفتح لا تعكسهما فيقع ازدواج في احتساب الإيراد/المصروف.
+      toast.error(t('لا يمكن إعادة فتح سنة مقفلة — قيود الإقفال مُرحّلة ولا تُعكس تلقائياً', 'Cannot re-open a closed year — closing entries are posted and not auto-reversed', lang));
     }
   };
 
@@ -158,7 +168,7 @@ export default function FiscalYears() {
                       <TableCell><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${st.color}`}><st.Icon className="size-3" />{lang === 'ar' ? st.ar : st.en}</span></TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {item.status !== 'LOCKED' && <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={closingId === item.id} onClick={() => toggleStatus(item)}>{closingId === item.id ? t('جارٍ...', '...', lang) : item.status === 'OPEN' ? t('إقفال', 'Close', lang) : t('فتح', 'Open', lang)}</Button>}
+                          {item.status === 'OPEN' && <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={closingId === item.id} onClick={() => toggleStatus(item)}>{closingId === item.id ? t('جارٍ...', '...', lang) : t('إقفال', 'Close', lang)}</Button>}
                           <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(item)}><Pencil className="size-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => askDelete(item.id)}><Trash2 className="size-3.5" /></Button>
                         </div>

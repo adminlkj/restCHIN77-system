@@ -5,7 +5,7 @@
 // ملاحظة تحويل النظام: المفاتيح (key) ثابتة لا تُغيَّر لأن المحركات والمسارات
 // تعتمد عليها، لكن التسميات (ar/en) والأيقونات حُدّثت لتتناسب مع المطاعم.
 import {
-  Building2, Truck, ShoppingCart, Users, Calculator, Settings,
+  Building2, ShoppingCart, Users, Calculator, Settings,
   FileText, CreditCard, ReceiptText, ClipboardList,
   Wrench, CalendarDays, DollarSign, Wallet, HandCoins,
   UsersRound, Package, Warehouse, Boxes, ShieldCheck, Network, BookOpen, Shield, BarChart3, CalendarRange, Scale,
@@ -37,7 +37,7 @@ export const CYCLES = [
     // دورة المبيعات الرئيسية تعرض فقط: الطلبات، الإيصالات، التحصيلات.
     // باقي الأقسام تبقى حصراً داخل مركز عمل كل طلب لتفادي التكرار.
     tabs: [
-      { key: 'projects',        ar: 'الطلبات',            en: 'Orders',          Icon: UtensilsCrossed },
+      { key: 'projects',        ar: 'الطلبات',            en: 'Orders',          Icon: ClipboardList },
       { key: 'sales',           ar: 'الإيصالات',          en: 'Receipts',        Icon: ReceiptText },
       { key: 'client-payments', ar: 'التحصيلات',          en: 'Collections',     Icon: CreditCard },
     ],
@@ -45,10 +45,10 @@ export const CYCLES = [
   {
     key: 'rental-cycle',
     label: { ar: 'معدات المطعم', en: 'Restaurant Equipment' },
-    Icon: Truck,
+    Icon: ChefHat,
     color: { text: 'text-cyan-600', border: 'border-cyan-500', light: 'bg-cyan-50', bg: 'bg-cyan-600' },
     tabs: [
-      { key: 'equipment',             ar: 'سجل المعدات',   en: 'Equipment Registry', Icon: Truck },
+      { key: 'equipment',             ar: 'سجل المعدات',   en: 'Equipment Registry', Icon: ChefHat },
       { key: 'equipment-maintenance', ar: 'الصيانة',      en: 'Maintenance',        Icon: Wrench },
     ],
   },

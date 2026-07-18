@@ -72,6 +72,11 @@ export const VIEW_ONLY_MODULES = new Set([
 // البريد الإلكتروني لمالك النظام — له صلاحية مطلقة بصرف النظر عن الدور.
 export const OWNER_EMAIL = 'fysl71443@gmail.com';
 
+// حساب المطوّر الأساسي: ثابت لا يُحذف ولا يُعطّل ولا يُغيَّر دوره.
+export function isProtectedOwner(user) {
+  return Boolean(user?.email && user.email.toLowerCase() === OWNER_EMAIL);
+}
+
 // Business roles with default module access + labels
 export const APP_ROLES = {
   OWNER: {

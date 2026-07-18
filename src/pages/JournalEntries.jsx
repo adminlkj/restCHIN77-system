@@ -82,16 +82,25 @@ export default function JournalEntries() {
   const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, { ...emptyLine }] }));
   const removeLine = (idx) => { if (form.lines.length <= 2) return; setForm(f => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) })); };
 
-  const totalDebit = form.lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
-  const totalCredit = form.lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+  // نُقرّب لخانتين لتجنب تراكم أخطاء الكسور العشرية التي تُظهر قيداً متوازناً كغير متوازن.
+  const totalDebit = +form.lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2);
+  const totalCredit = +form.lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
 
   const save = async () => {
     if (!form.entryNo || !form.date) return toast.error(t('رقم القيد والتاريخ مطلوبان', 'Entry No. and date required', lang));
     if (!isBalanced) return toast.error(t('القيد غير متوازن — المدين يجب أن يساوي الدائن', 'Entry not balanced — Debit must equal Credit', lang));
+    // كل بند فعّال (له مبلغ) يجب أن يرتبط بحساب — لا يُقبل بند بمبلغ بلا حساب.
+    const activeLines = form.lines.filter(l => (parseFloat(l.debit) || 0) !== 0 || (parseFloat(l.credit) || 0) !== 0);
+    if (activeLines.some(l => !l.accountCode)) return toast.error(t('كل بند بمبلغ يجب أن يُحدَّد له حساب', 'Every line with an amount must have an account', lang));
+    // لا يُسمح ببند فيه مدين ودائن معاً — كل بند إما مدين أو دائن.
+    if (activeLines.some(l => (parseFloat(l.debit) || 0) !== 0 && (parseFloat(l.credit) || 0) !== 0)) {
+      return toast.error(t('البند لا يكون مديناً ودائناً معاً', 'A line cannot be both debit and credit', lang));
+    }
     setSaving(true);
     try {
-      const lines = form.lines.map(l => ({ ...l, debit: parseFloat(l.debit) || 0, credit: parseFloat(l.credit) || 0 }));
+      // نحفظ البنود الفعّالة فقط (بمبلغ وحساب) ونُقرّب مبالغها لخانتين.
+      const lines = activeLines.map(l => ({ ...l, debit: +(parseFloat(l.debit) || 0).toFixed(2), credit: +(parseFloat(l.credit) || 0).toFixed(2) }));
       const data = { ...form, lines, totalDebit, totalCredit };
       if (editing) { await base44.entities.JournalEntry.update(editing.id, data); toast.success(t('تم التحديث', 'Updated', lang)); }
       else { await base44.entities.JournalEntry.create(data); toast.success(t('تمت الإضافة', 'Added', lang)); }
@@ -119,14 +128,12 @@ export default function JournalEntries() {
     if (!item) return;
     setReversing(true);
     try {
-      // البحث عن رقم قيد عكسي فريد لمنع التكرار
+      // البحث عن رقم قيد عكسي فريد لمنع التكرار — نزيد العدّاد حتى نجد رقماً غير مستخدم فعلياً.
       const baseRevNo = `${item.entryNo}-REV`;
+      const used = new Set(items.map(je => je.entryNo));
       let revNo = baseRevNo;
-      let revCounter = 2;
-      const existingRevs = items.filter(je => je.entryNo?.startsWith(baseRevNo));
-      if (existingRevs.length > 0) {
-        revNo = `${baseRevNo}-${revCounter + existingRevs.length - 1}`;
-      }
+      let n = 2;
+      while (used.has(revNo)) { revNo = `${baseRevNo}-${n}`; n += 1; }
 
       const lines = (item.lines || []).map(l => ({
         accountCode: l.accountCode, accountName: l.accountName,
@@ -149,6 +156,9 @@ export default function JournalEntries() {
   };
 
   const remove = async () => {
+    // حماية: لا يُحذف قيد مرحّل — التصحيح يكون بالعكس لا بالحذف.
+    const target = items.find(i => i.id === deleteId);
+    if (target?.isPosted) { toast.error(t('لا يمكن حذف قيد مرحّل — استخدم العكس', 'Cannot delete a posted entry — use reversal', lang)); return; }
     try { await base44.entities.JournalEntry.delete(deleteId); toast.success(t('تم الحذف', 'Deleted', lang)); load(); }
     catch { toast.error(t('فشل الحذف', 'Delete failed', lang)); }
   };

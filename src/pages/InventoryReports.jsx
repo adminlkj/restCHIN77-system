@@ -39,9 +39,17 @@ export default function InventoryReports() {
   useEffect(() => { load(); }, []);
 
   const rows = useMemo(() => items.map(item => {
-    const itemMoves = movements.filter(m => m.itemId === item.id || (item.code && m.itemCode === item.code));
-    const incoming = itemMoves.filter(m => ['RECEIVE', 'ADJUST_INCREASE'].includes(m.type)).reduce((s, m) => s + (Number(m.quantity) || 0), 0);
-    const outgoing = itemMoves.filter(m => ['ISSUE', 'DAMAGE_NORMAL', 'DAMAGE_ABNORMAL', 'ADJUST_DECREASE'].includes(m.type)).reduce((s, m) => s + (Number(m.quantity) || 0), 0);
+    // كل سجل صنف يخصّ مخزناً واحداً (نفس الكود موزّع على عدة مخازن = عدة سجلات).
+    // لذا يجب تقييد الحركات بمخزن هذا السجل تحديداً: الوارد لمخزن الوجهة،
+    // والصادر من مخزن المصدر — وإلا تُحتسب حركات كل المخازن لكل سجل (ازدواج).
+    const codeMatch = (m) => m.itemId === item.id || (item.code && m.itemCode === item.code);
+    const incoming = movements
+      .filter(m => codeMatch(m) && ['RECEIVE', 'ADJUST_INCREASE'].includes(m.type) && (!item.warehouseId || m.toWarehouseId === item.warehouseId))
+      .reduce((s, m) => s + (Number(m.quantity) || 0), 0);
+    const outgoing = movements
+      .filter(m => codeMatch(m) && ['ISSUE', 'DAMAGE_NORMAL', 'DAMAGE_ABNORMAL', 'ADJUST_DECREASE'].includes(m.type) && (!item.warehouseId || m.fromWarehouseId === item.warehouseId))
+      .reduce((s, m) => s + (Number(m.quantity) || 0), 0);
+    const itemMoves = movements.filter(m => codeMatch(m) && (!item.warehouseId || m.toWarehouseId === item.warehouseId || m.fromWarehouseId === item.warehouseId));
     const lastMove = itemMoves.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
     const qty = Number(item.quantity) || 0;
     return { ...item, incoming, outgoing, value: qty * (Number(item.unitCost) || 0), lastMoveDate: lastMove?.date };

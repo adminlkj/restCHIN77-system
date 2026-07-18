@@ -1,10 +1,18 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { prefetchBranches } from '@/hooks/useBranches';
-import { prefetchAccounts } from '@/hooks/useAccounts';
-import { prefetchClients, prefetchSuppliers } from '@/hooks/useParties';
 
 const AuthContext = createContext();
+
+// وضع التطوير: يتخطى شاشة الدخول ويدخل مباشرة إلى النظام للاختبار قبل النشر.
+// يتم تفعيله فقط عبر متغير البيئة VITE_DEV_BYPASS_AUTH=true.
+// افتراضياً = false (آمن للإنتاج) بحيث يُستخدم نظام مصادقة Base44 الحقيقي.
+const DEV_BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+const DEV_USER = {
+  id: 'dev-owner',
+  email: 'dev@restchin.local',
+  full_name: 'System Developer',
+  role: 'admin',
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -26,6 +34,14 @@ export const AuthProvider = ({ children }) => {
   };
 
   const checkUserAuth = async () => {
+    if (DEV_BYPASS_AUTH) {
+      setUser(DEV_USER);
+      setIsAuthenticated(true);
+      setAuthError(null);
+      setIsLoadingAuth(false);
+      setAuthChecked(true);
+      return;
+    }
     try {
       setIsLoadingAuth(true);
       const currentUser = await base44.auth.me();
@@ -33,17 +49,6 @@ export const AuthProvider = ({ children }) => {
         setUser(currentUser);
         setIsAuthenticated(true);
         setAuthError(null);
-        // ─── Pre-warm المرجعية بعد الدخول ─────────────────────────────────
-        // نُحمّل الفروع + الدليل المحاسبي + العملاء + الموردين مرة واحدة بعد
-        // الدخول، بدلاً من أن تُجلب كل شاشة هذه البيانات عند mount.
-        // كل الـ hooks تستخدم cache مشترك، فالطلبات المتزامنة dedup تلقائياً.
-        // نُطلقها بالتوازي ولا ننتظرها (fire-and-forget) حتى لا تُؤخّر الواجهة.
-        Promise.all([
-          prefetchBranches(),
-          prefetchAccounts(),
-          prefetchClients(),
-          prefetchSuppliers(),
-        ]).catch(() => { /* silent — كل hook يتعامل مع الفشل */ });
       } else {
         throw new Error('No user session');
       }

@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { t } from '@/lib/utils-binaa';
-import { APP_ROLES, APP_ROLE_KEYS, ACTION_KEYS, resolveUserModules, resolveModuleActions } from '@/lib/permissions';
+import { APP_ROLES, APP_ROLE_KEYS, ACTION_KEYS, resolveUserModules, resolveModuleActions, isProtectedOwner } from '@/lib/permissions';
 import PermissionMatrix from '@/components/users/PermissionMatrix';
 import { ShieldCheck } from 'lucide-react';
 
@@ -52,6 +52,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
   if (!user) return null;
 
   const isOwner = form.appRole === 'OWNER';
+  const isProtected = isProtectedOwner(user);
   const roleDefaultModules = resolveUserModules({ ...user, allowedModules: [], role: form.role, appRole: form.appRole });
   const effectiveModules = useCustom ? customModules : roleDefaultModules;
   const matrixDisabled = !useCustom || isOwner;
@@ -83,12 +84,12 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
         customModules.forEach(k => { cleanedActions[k] = moduleActions[k] || [...ACTION_KEYS]; });
       }
       const payload = {
-        appRole: form.appRole,
-        role: isOwner ? 'admin' : form.role,
+        appRole: isProtected ? 'OWNER' : form.appRole,
+        role: (isOwner || isProtected) ? 'admin' : form.role,
         jobTitle: form.jobTitle,
         department: form.department,
         phone: form.phone,
-        isActive: form.isActive,
+        isActive: isProtected ? true : form.isActive,
         ...(form.password ? { password: form.password } : {}),
         allowedModules: useCustom ? customModules : [],
         modulePermissions: useCustom && !isOwner ? cleanedActions : {},
@@ -115,6 +116,11 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
         </DialogHeader>
 
         <div className="space-y-5 py-2">
+          {isProtected && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-700">
+              {t('هذا حساب المطوّر الأساسي — محمي ولا يمكن تعطيله أو تغيير دوره أو حذفه.', 'This is the primary developer account — protected and cannot be disabled, downgraded, or deleted.', lang)}
+            </div>
+          )}
           {/* Profile fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -135,7 +141,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
             </div>
             <div className="space-y-1.5">
               <Label>{t('الدور الوظيفي', 'Business Role', lang)}</Label>
-              <Select value={form.appRole} onValueChange={v => setForm({ ...form, appRole: v })}>
+              <Select value={form.appRole} onValueChange={v => setForm({ ...form, appRole: v })} disabled={isProtected}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {APP_ROLE_KEYS.map(k => (
@@ -152,7 +158,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
               <p className="text-sm font-medium">{t('حساب نشط', 'Active Account', lang)}</p>
               <p className="text-xs text-muted-foreground">{t('المستخدمون غير النشطين لا يمكنهم استخدام النظام', 'Inactive users cannot access the system', lang)}</p>
             </div>
-            <Switch checked={form.isActive} onCheckedChange={v => setForm({ ...form, isActive: v })} />
+            <Switch checked={form.isActive} onCheckedChange={v => setForm({ ...form, isActive: v })} disabled={isProtected} />
           </div>
 
           {/* Custom permissions */}

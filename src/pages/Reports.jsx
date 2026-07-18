@@ -259,7 +259,7 @@ export default function Reports({ initialReport = 'income', hideSelector = false
                         <TableCell className="text-end text-emerald-700">{formatCurrency(totalRevenue, lang)}</TableCell>
                       </TableRow>
                       <TableRow>
-                        <TableCell className="ps-8 text-muted-foreground">{t('← فواتير المبيعات والتأجير المعتمدة', '← Approved sales and rental invoices', lang)}</TableCell>
+                        <TableCell className="ps-8 text-muted-foreground">{t('← فواتير المبيعات المعتمدة', '← Approved sales invoices', lang)}</TableCell>
                         <TableCell className="text-end">{formatCurrency(totalRevenue, lang)}</TableCell>
                       </TableRow>
                       <TableRow className="font-semibold bg-rose-50">
@@ -451,7 +451,7 @@ export default function Reports({ initialReport = 'income', hideSelector = false
                   <CardContent className="p-5">
                     <p className="text-sm text-muted-foreground">{t('التدفقات الداخلة', 'Cash Inflows', lang)}</p>
                     <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(cashflowInflow, lang)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{t('تحصيلات المبيعات والتأجير', 'Sales and rental collections', lang)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('تحصيلات المبيعات', 'Sales collections', lang)}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-t-4 border-t-rose-500">

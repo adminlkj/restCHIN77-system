@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { useStore } from '@/lib/store';
 import { t } from '@/lib/utils-binaa';
-import { APP_ROLES, resolveUserModules } from '@/lib/permissions';
+import { APP_ROLES, resolveUserModules, isProtectedOwner } from '@/lib/permissions';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import SmartEntityCard from '@/components/shared/SmartEntityCard';
 import InviteUserDialog from '@/components/users/InviteUserDialog';
@@ -76,6 +76,10 @@ export default function Users() {
   });
 
   const toggleActive = async (u) => {
+    if (isProtectedOwner(u)) {
+      toast({ title: t('حساب محمي', 'Protected account', lang), description: t('حساب المطوّر الأساسي لا يمكن تعطيله.', 'The primary developer account cannot be disabled.', lang), variant: 'destructive' });
+      return;
+    }
     try {
       await base44.entities.User.update(u.id, { isActive: u.isActive === false });
       toast({ title: t('تم التحديث', 'Updated', lang) });
@@ -275,7 +279,7 @@ export default function Users() {
                       { label: t('الصلاحيات', 'Access', lang), value: isOwner ? t('كامل', 'Full', lang) : `${moduleCount} ${t('وحدة', 'modules', lang)}` },
                       { label: t('الدور', 'Role', lang), value: u.role || u.appRole },
                     ]}
-                    actions={<><Button size="sm" variant="ghost" onClick={() => setEditUser(u)} className="size-8 p-0"><Pencil className="size-3.5" /></Button>{u.id !== me?.id && <Button size="sm" variant="ghost" onClick={() => toggleActive(u)} className={`size-8 p-0 ${active ? 'text-rose-600' : 'text-emerald-600'}`}>{active ? <Ban className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}</Button>}</>}
+                    actions={<><Button size="sm" variant="ghost" onClick={() => setEditUser(u)} className="size-8 p-0"><Pencil className="size-3.5" /></Button>{u.id !== me?.id && !isProtectedOwner(u) && <Button size="sm" variant="ghost" onClick={() => toggleActive(u)} className={`size-8 p-0 ${active ? 'text-rose-600' : 'text-emerald-600'}`}>{active ? <Ban className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}</Button>}</>}
                   />
                 );
               })}

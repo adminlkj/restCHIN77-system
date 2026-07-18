@@ -12,8 +12,6 @@ import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, genInvoiceNo, INVOICE_STATUS } from '@/lib/utils-binaa';
 import { calcVAT, resolveVatRate, OperationEngine } from '@/lib/businessEngine';
-import { useBranches } from '@/hooks/useBranches';
-import { useClients } from '@/hooks/useParties';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -23,7 +21,6 @@ import { toast } from 'sonner';
 // Escape a literal string for safe use as a RegExp source (prevents regex injection
 // from user-entered invoice numbers when filtering JournalEntry.entryNo via $regex).
 const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 
 const TYPES = {
   CONSTRUCTION: { ar: 'صالة',     en: 'Dine-in' },
@@ -40,10 +37,8 @@ const empty = {
 export default function SalesInvoices() {
   const { lang, activeProjectId, activeProjectName, activeClientId, activeClientName } = useStore();
   const [items, setItems]       = useState([]);
-  // الفروع والعملاء تأتي من cache مشترك (useBranches/useClients) بدلاً من
-  // جلبها مستقلة عند كل mount — كانت تُجلب 11 مرة عبر الشاشات.
-  const { branches: projects } = useBranches();
-  const { clients } = useClients();
+  const [projects, setProjects] = useState([]);
+  const [clients, setClients]   = useState([]);
   const [printInvoice, setPrintInvoice] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -58,9 +53,12 @@ export default function SalesInvoices() {
   const load = async () => {
     setLoading(true);
     try {
-      // الفروع والعملاء من cache مشترك — لا نجلبهما هنا.
-      const inv = await base44.entities.SalesInvoice.list('-created_date', 200);
-      setItems(inv);
+      const [inv, p, c] = await Promise.all([
+        base44.entities.SalesInvoice.list('-created_date', 200),
+        base44.entities.Project.list(),
+        base44.entities.Client.list(),
+      ]);
+      setItems(inv); setProjects(p); setClients(c);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
@@ -143,10 +141,9 @@ export default function SalesInvoices() {
     setReversingId(null);
   };
 
-  // الحسابات تأتي من Business Engine — SSOT
   // الحسابات تأتي من Business Engine — SSOT.
   // resolveVatRate تحترم نسبة 0% (صفرية الضريبة) بدلاً من إسقاطها إلى 0.15.
-  const { base: _sub, vat: vatAmount, total: totalAmount } = calcVAT(form.subtotal, resolveVatRate(form.vatRate));
+  const { vat: vatAmount, total: totalAmount } = calcVAT(form.subtotal, resolveVatRate(form.vatRate));
 
   const save = async () => {
     if (!form.invoiceNo || !form.clientId)
@@ -255,12 +252,15 @@ export default function SalesInvoices() {
                       saleType = notes.saleType || '';
                       platformName = notes.platform?.platformName || item.platformName || '';
                     } catch { /* ignore */ }
+                    // القاعدة الثابتة: البيع الآجل حصري للمنصات فقط. لا يوجد نوع بيع "CREDIT"
+                    // للصالة — الفواتير القديمة الموسومة CREDIT هي مبيعات صالة مدفوعة فوراً،
+                    // فتُعرض كـ"صالة" (لا "آجل").
                     const SALE_TYPE_BADGE = {
                       DINE_IN:          { ar: 'صالة',          en: 'Dine-in',          cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+                      CREDIT:           { ar: 'صالة',          en: 'Dine-in',          cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
                       TAKEAWAY:         { ar: 'استلام',        en: 'Takeaway',          cls: 'bg-blue-100 text-blue-700 border-blue-200' },
                       DIRECT_DELIVERY:  { ar: 'توصيل مباشر',   en: 'Direct Delivery',   cls: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
                       PLATFORM:         { ar: platformName || 'منصة', en: platformName || 'Platform', cls: 'bg-rose-100 text-rose-700 border-rose-200' },
-                      CREDIT:           { ar: 'آجل',           en: 'Credit',            cls: 'bg-amber-100 text-amber-700 border-amber-200' },
                     };
                     const badge = saleType ? (SALE_TYPE_BADGE[saleType] || null) : null;
                     return (
@@ -375,7 +375,14 @@ export default function SalesInvoices() {
         description={t('سيتم حذف الإيصال نهائياً.', 'This receipt will be permanently deleted.', lang)}
         onConfirm={remove} confirmLabel={t('حذف', 'Delete', lang)} />
 
-      <ReceiptPrintDialog open={!!printInvoice} onOpenChange={o => !o && setPrintInvoice(null)} invoice={printInvoice} />
+      {printInvoice && (
+        <ReceiptPrintDialog
+          key={printInvoice.id}
+          open={true}
+          onOpenChange={o => !o && setPrintInvoice(null)}
+          invoice={printInvoice}
+        />
+      )}
     </ModuleLayout>
   );
 }
