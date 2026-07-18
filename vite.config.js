@@ -10,6 +10,11 @@ export default defineConfig({
       '@': path.resolve(process.cwd(), 'src'),
     },
   },
+  // sourcemaps لتسهيل تشخيص أخطاء الإنتاج (TDZ, etc.) — خرائط المصدر
+  // تُظهر اسم الملف والسطر الأصلي بدلاً من الاسم المُختصَر (مثل te → invoiceTotals).
+  build: {
+    sourcemap: true,
+  },
   server: {
     port: 3000,
     host: true,

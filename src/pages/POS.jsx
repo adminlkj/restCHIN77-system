@@ -394,6 +394,24 @@ export default function POS() {
     [customer]
   );
 
+  // ─── تبعيات الفاتورة (يجب تعريفها قبل totals لتفادي TDZ) ─────────────────
+  // ملاحظة حرجة: const declarations لها temporal dead zone — لا يمكن الوصول
+  // إليها قبل تعريفها. totals (useMemo) يعتمد على effectiveDeliveryFee
+  // و isPlatformSale، لذا يجب تعريفهما أولاً. ترتيب سابق خاطئ كان يسبب
+  // "Cannot access 'X' before initialization" عند فتح POS.
+  const isDelivery = invoiceType === 'SERVICE';
+  const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
+
+  // المنصة المختارة (إن وُجدت)
+  const selectedPlatform = useMemo(
+    () => platforms.find(p => p.id === platformId) || null,
+    [platformId, platforms]
+  );
+
+  // هل هذا طلب عبر منصة توصيل؟ (توصيل + منصة محددة وليست "توصيل مباشر")
+  // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
+  const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
+
   // حساب مركزي للفاتورة وفق القواعد الثمانية
   const totals = useMemo(
     () => computeInvoiceTotals({
@@ -415,6 +433,22 @@ export default function POS() {
   const discountAmount = totals.discountAmount;              // إجمالي الخصومات
   // itemDiscountsTotal = 0 دائماً (أُزيل خصم الصنف — القاعدة 4)
   const itemDiscountsTotal = 0;
+
+  // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
+  // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
+  //   Taxable → + Delivery Fee → VAT → Grand Total
+  const _vatBase = totals.vatBase;
+  const vat = totals.vat;
+  const total = totals.total;
+  // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
+
+  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
+  const platformCommission = useMemo(() => {
+    if (!isDelivery || !selectedPlatform) return 0;
+    const rate = parseFloat(selectedPlatform.commissionRate) || 0;
+    if (rate <= 0) return 0;
+    return +(total * (rate / 100)).toFixed(2);
+  }, [isDelivery, selectedPlatform, total]);
 
   // بحث ذكي عن الزبائن: بالاسم أو رقم الجوال أو نسبة الخصم.
   // يُفلتر محلياً من قائمة customers المحمّلة، دون طلب شبكة إضافي.
@@ -460,34 +494,6 @@ export default function POS() {
   };
 
 
-  const isDelivery = invoiceType === 'SERVICE';
-  const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
-
-  // المنصة المختارة (إن وُجدت)
-  const selectedPlatform = useMemo(
-    () => platforms.find(p => p.id === platformId) || null,
-    [platformId, platforms]
-  );
-
-  // هل هذا طلب عبر منصة توصيل؟ (توصيل + منصة محددة وليست "توصيل مباشر")
-  // مبيعات المنصات دائماً آجلة — تُحصّل لاحقاً عبر كشف المنصة.
-  const isPlatformSale = isDelivery && !!platformId && !!selectedPlatform;
-
-  // القاعدة الخاضعة للضريبة + الضريبة + الإجمالي — كلها من محرّك الخصومات المركزي.
-  // الترتيب (القاعدة 5): Subtotal → Customer Discount → Manual (Platform) →
-  //   Taxable → + Delivery Fee → VAT → Grand Total
-  const _vatBase = totals.vatBase;
-  const vat = totals.vat;
-  const total = totals.total;
-  // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
-
-  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
-  const platformCommission = useMemo(() => {
-    if (!isDelivery || !selectedPlatform) return 0;
-    const rate = parseFloat(selectedPlatform.commissionRate) || 0;
-    if (rate <= 0) return 0;
-    return +(total * (rate / 100)).toFixed(2);
-  }, [isDelivery, selectedPlatform, total]);
 
   const totalPaid = useMemo(
     () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
