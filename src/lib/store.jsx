@@ -22,18 +22,11 @@ export function StoreProvider({ children }) {
   const [activeEquipmentName, setActiveEquipmentName] = useState(null);
   const [activeEmployeeId, setActiveEmployeeId] = useState(null);
   const [activeEmployeeName, setActiveEmployeeName] = useState(null);
-  const [activeSubcontractorId, setActiveSubcontractorId] = useState(null);
-  const [activeSubcontractorName, setActiveSubcontractorName] = useState(null);
 
   // ─── Stable callbacks (useCallback لتفادي إعادة إنشائها) ──────────────────
   const setActiveItemPersist = useCallback((item) => {
     setActiveItem(item);
     try { localStorage.setItem('restaurant-active-item', item); } catch { /* ignore */ }
-  }, []);
-
-  const setSubcontractorContext = useCallback((id, name) => {
-    setActiveSubcontractorId(id);
-    setActiveSubcontractorName(name);
   }, []);
 
   const setEquipmentContext = useCallback((id, name) => {
@@ -85,7 +78,6 @@ export function StoreProvider({ children }) {
     activeClientId, activeClientName,
     activeEquipmentId, activeEquipmentName, setEquipmentContext,
     activeEmployeeId, activeEmployeeName, setEmployeeContext,
-    activeSubcontractorId, activeSubcontractorName, setSubcontractorContext,
     setProjectContext, setClientContext, clearContext,
     // convenience aliases used by some pages
     setActiveProjectId, setActiveProjectName,
@@ -96,7 +88,6 @@ export function StoreProvider({ children }) {
     activeClientId, activeClientName,
     activeEquipmentId, activeEquipmentName, setEquipmentContext,
     activeEmployeeId, activeEmployeeName, setEmployeeContext,
-    activeSubcontractorId, activeSubcontractorName, setSubcontractorContext,
     setProjectContext, setClientContext, clearContext,
   ]);
 

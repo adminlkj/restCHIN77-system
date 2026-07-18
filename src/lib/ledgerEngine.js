@@ -162,8 +162,6 @@ export function buildCostCenterAnalysis({ projects = [], journalEntries = [], ch
         cost: 0,
         revenue: 0,
         expenseCost: 0,
-        subCost: 0,
-        supplierCost: 0,
         _project: project,
       };
     }
@@ -196,42 +194,19 @@ export function buildCostCenterAnalysis({ projects = [], journalEntries = [], ch
       c.name = c.name || 'غير مخصّص';
     }
 
+    // القياس من حسابات النتيجة فقط (إيراد/مصروف). سطور الذمم (عملاء/موردين/باطن)
+    // حسابات ميزانية لا تمثّل إيراداً أو تكلفة — إدراجها يُحدث ازدواجاً مع سطر الإيراد/المصروف
+    // في نفس القيد. لذا الإيراد = صافي حسابات REVENUE، والتكلفة = صافي حسابات EXPENSE.
     const acc = accountMap[l.accountCode] || {};
     const type = acc.accountType || '';
-    const semRole = acc.semanticRole || '';
-    let lineRevenue = 0;
-    let lineCost = 0;
-    let lineExpenseCost = 0;
-    let lineSubCost = 0;
-    let lineSupplierCost = 0;
 
     if (type === 'REVENUE') {
-      lineRevenue = (l.credit - l.debit);
+      c.revenue += (l.credit - l.debit);
     } else if (type === 'EXPENSE') {
-      lineCost = (l.debit - l.credit);
-      lineExpenseCost = lineCost;
-    } else if (semRole === 'RECEIVABLES') {
-      // ذمم عملاء: مدين = فاتورة مبيعات (إيراد مستحق)
-      if (l.debit > 0) lineRevenue += l.debit;
-    } else if (semRole === 'PAYABLES') {
-      // ذمم مورد: دائن = فاتورة (تكلفة)
-      if (l.credit > 0) {
-        lineCost += l.credit;
-        lineSupplierCost += l.credit;
-      }
-    } else if (semRole === 'SUB_PAYABLES') {
-      // ذمم مقاول باطن: دائن = فاتورة (تكلفة)
-      if (l.credit > 0) {
-        lineCost += l.credit;
-        lineSubCost += l.credit;
-      }
+      const lineCost = (l.debit - l.credit);
+      c.cost += lineCost;
+      c.expenseCost += lineCost;
     }
-
-    c.revenue += lineRevenue;
-    c.cost += lineCost;
-    c.expenseCost += lineExpenseCost;
-    c.subCost += lineSubCost;
-    c.supplierCost += lineSupplierCost;
   }
 
   const rows = Object.values(centers)

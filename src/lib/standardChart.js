@@ -68,7 +68,7 @@ export const STANDARD_CHART = [
   // 2100 — الخصوم المتداولة
   { code: '2100', name: 'الخصوم المتداولة', nameEn: 'Current Liabilities', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2000', group: true },
   { code: '2110', name: 'ذمم الموردين', nameEn: 'Accounts Payable', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'PAYABLES' },
-  { code: '2120', name: 'مستحقات موردي الخدمات', nameEn: 'Service Providers Payable', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'SUBCONTRACTOR_PAYABLE' },
+  { code: '2120', name: 'مستحقات موردي الخدمات', nameEn: 'Service Providers Payable', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'SUB_PAYABLES' },
   { code: '2130', name: 'محتجزات لصالح موردي الخدمات', nameEn: 'Retention Payable', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'RETENTION_PAYABLE' },
   { code: '2140', name: 'رواتب مستحقة الدفع', nameEn: 'Accrued Salaries', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'ACCRUED_SALARIES' },
   { code: '2150', name: 'دفعات مقدمة من الزبائن', nameEn: 'Customer Advances', accountType: 'LIABILITY', nature: 'CREDIT', parentCode: '2100', semanticRole: 'CUSTOMER_ADVANCES' },

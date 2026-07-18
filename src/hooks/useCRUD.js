@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 const errorMessage = (err, fallback) => err?.data?.error || err?.message || fallback;
 
-export function useCRUD(entity, { defaultSort = '-created_date', relatedLoaders = [] } = {}) {
+export function useCRUD(entity, { defaultSort = '-created_date', defaultLimit = 500, relatedLoaders = [] } = {}) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -12,8 +12,9 @@ export function useCRUD(entity, { defaultSort = '-created_date', relatedLoaders 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // defaultLimit يمنع جلب كل السجلات دفعة واحدة (كان يجلب بلا حد).
       const results = await Promise.all([
-        entity.list(defaultSort),
+        entity.list(defaultSort, defaultLimit),
         ...relatedLoaders.map(fn => fn()),
       ]);
       setItems(results[0]);
