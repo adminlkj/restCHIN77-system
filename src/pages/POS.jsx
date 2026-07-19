@@ -494,12 +494,21 @@ export default function POS() {
     () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
     [payments]
   );
-  const change = totalPaid > total ? totalPaid - total : 0;
+  // المبلغ النقدي الفعلي المستلم (للحفاظ على قيمة الباقي للزبون حتى بعد اقتطاع
+  // المُسجَّل على المتبقي). sum(received) لمدفوعات النقد فقط؛ البطاقات بلا received.
+  const totalCashReceived = useMemo(
+    () => payments.reduce((s, p) => s + (parseFloat(p.received) || parseFloat(p.amount) || 0), 0),
+    [payments]
+  );
+  // الباقي للزبون = ما استُلم نقداً − الإجمالي. يُحسب من received الفعلي لا من
+  // المُسجَّل (الذي قد يكون أقل عند الدفع الزائد).
+  const change = totalCashReceived > total ? +(totalCashReceived - total).toFixed(2) : 0;
   // مبيعات المنصات آجلة دائماً — تُعتبر "مكتملة الدفع" تلقائياً لتمكين طباعة الإيصال
   // لكن paidAmount الفعلي = 0 (تُحصّل لاحقاً عبر كشف المنصة).
+  // ملاحظة: طلب مجاني (total=0) مع سلة غير فارغة يُعتبر مدفوعاً بالكامل.
   const isFullyPaid = isPlatformSale
     ? (total > 0)
-    : (totalPaid >= total && total > 0);
+    : (total <= 0 ? cart.length > 0 : totalPaid >= total);
 
   // ─── المدفوعات ──────────────────────────────────────────────────────
   // القاعدة: البطاقات لا تقبل زيادة (المبلغ = المتبقي بالضبط). النقد فقط يقبل
@@ -518,17 +527,20 @@ export default function POS() {
     }
     const isCash = method === 'CASH';
     // البطاقات وغير النقد: لا تتجاوز المتبقي أبداً (لا باقي على البطاقة).
-    // النقد: يُسمح بالزيادة، لكن المُسجَّل كدفعة = المتبقي فقط، والفرق يظهر كباقٍ للعميل.
+    // النقد: يُسمح بالزيادة، والمُسجَّل كدفعة = المتبقي، لكن نخزّن received = المبلغ
+    // الفعلي المستلم لنحسب منه الباقي للزبون بدقّة (تفادي فقدان الباقي عند الدفع الزائد).
     let recordedAmt = amt;
     if (amt > remaining + 0.01) {
       if (isCash) {
-        recordedAmt = remaining; // الباقي للعميل يُحسب من cashReceived في العرض
+        recordedAmt = remaining; // الباقي للزبون يُحسب من received المخزَّن
       } else {
         recordedAmt = remaining; // البطاقة تُقتطع للمتبقي بالضبط
         toast.info(t('تم ضبط مبلغ البطاقة على المتبقي', 'Card amount adjusted to remaining', lang));
       }
     }
-    setPayments(prev => [...prev, { method, amount: +recordedAmt.toFixed(2) }]);
+    // للنقد: نخزّن received = المبلغ الفعلي (قد يزيد عن المُسجَّل). لغير النقد: received = amount.
+    const received = isCash ? +amt.toFixed(2) : +recordedAmt.toFixed(2);
+    setPayments(prev => [...prev, { method, amount: +recordedAmt.toFixed(2), received }]);
     setCashReceived('');
   };
 
@@ -814,9 +826,11 @@ export default function POS() {
       saleType = 'TAKEAWAY';
     }
 
-    // النقد المستلم والباقي (للبيع النقدي)
-    const cashReceivedAmount = parseFloat(cashReceived) || totalPaid;
-    const changeAmount = Math.max(0, cashReceivedAmount - total);
+    // النقد المستلم والباقي (للبيع النقدي).
+    // نستخدم totalCashReceived (مجموع received الفعلي) لا cashReceived (التي تُفرغ
+    // بعد كل دفعة) لتفادي فقدان الباقي عند الدفع الزائد.
+    const cashReceivedAmount = totalCashReceived || totalPaid;
+    const changeAmount = Math.max(0, +(cashReceivedAmount - total).toFixed(2));
 
     const invoice = {
       invoiceNo,
@@ -890,22 +904,27 @@ export default function POS() {
     // محاولة الحفظ على الخادم عبر OperationEngine (يُرحّل القيد المحاسبي)
     let saved = null;
     let backendOk = false;
+    let approvedOk = false; // الاعتماد منفصل: إنشاء DRAFT قد ينجح بينما يفشل الاعتماد
+    let approveErrorMsg = '';
     try {
       // 1) إنشاء الإيصال كـ DRAFT
       const draftInvoice = { ...invoice, status: 'DRAFT' };
       saved = await OperationEngine.createSalesInvoice(draftInvoice, [], customers);
+      backendOk = true; // الإنشاء نجح
 
       // 2) اعتماد الإيصال ← ترحيل القيد + تحديد الحالة (PAID للنقدي، APPROVED للآجل/المنصة)
       //    الخادم يقرر الحالة بناءً على payments و isPlatformSale — لا نحدّثها يدوياً.
+      //    مهم: إن فشل الاعتماد، تبقى الفاتورة DRAFT بلا قيد — لا نعتبرها مكتملة.
       if (saved?.id) {
         try {
           const approved = await OperationEngine.approveSalesInvoice(saved.id);
           saved = { ...saved, ...(approved?.data || approved || {}) };
+          approvedOk = true;
         } catch (approveErr) {
           console.warn('Auto-approve failed:', approveErr);
+          approveErrorMsg = approveErr?.message || '';
         }
       }
-      backendOk = true;
     } catch (e) {
       toast.error(e?.message || t('فشل حفظ الإيصال', 'Failed to save receipt', lang));
       console.error('handlePrintReceipt error:', e);
@@ -940,10 +959,16 @@ export default function POS() {
       id: saved?.id || invoice.id,
     });
 
-    if (backendOk) {
-      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
-    } else {
+    if (!backendOk) {
       toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
+    } else if (!approvedOk) {
+      // الفاتورة أُنشئت DRAFT لكن الاعتماد (ترحيل القيد + PAID/APPROVED) فشل.
+      // تنبيه واضح: المستخدم يحتاج لاعتمادها يدوياً من شاشة الإيصالات لاحقاً.
+      toast.warning(
+        t('حُفظ الإيصال كمسودة لكن فشل الاعتماد — اعتمده يدوياً من شاشة الإيصالات', 'Receipt saved as draft but approval failed — approve it manually from Receipts', lang)
+      );
+    } else {
+      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
     }
 
     // تنظيف

@@ -143,7 +143,9 @@ export function computeInvoiceTotals({
     const v = parseFloat(manualDiscount?.value) || 0;
     if (v > 0) {
       if (manualDiscount?.type === 'PERCENT') {
-        manualDiscountAmount = +(afterCustomerDiscount * (v / 100)).toFixed(2);
+        // نُقيّد النسبة بين 0 و100 لتفادي قيم مخرَجة أعلى من الإجمالي (مثال: 150%).
+        const pct = Math.min(Math.max(v, 0), 100);
+        manualDiscountAmount = +(afterCustomerDiscount * (pct / 100)).toFixed(2);
       } else {
         // AMOUNT — لا يتجاوز المتبقي بعد خصم العميل
         manualDiscountAmount = Math.min(v, afterCustomerDiscount);

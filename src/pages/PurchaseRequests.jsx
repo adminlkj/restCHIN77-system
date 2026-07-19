@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
+import { OperationEngine } from '@/lib/businessEngine';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
@@ -64,8 +65,10 @@ export default function PurchaseRequests() {
   useEffect(() => { load(); }, []);
 
   // تحويل طلب شراء معتمد إلى أمر شراء DRAFT مرتبط به.
-  // ينسخ الحقول الأساسية (المشروع، الوصف، القيمة التقديرية) ويربط المعرّف/الرقم،
-  // ثم يحدّث حالة الطلب إلى CONVERTED. يُكمل المستخدم تفاصيل الأمر من شاشة أوامر الشراء.
+  // يستخدم OperationEngine.createPurchaseOrder ليمرّ عبر التحقق الخادمي (assertValid)،
+  // ويولّد رقم أمر الشراء من قائمة أوامر الشراء الموجودة (لتفادي تصادم PO-0001 الدائم)،
+  // ويربط المعرّف/الرقم ثم يحدّث حالة الطلب إلى CONVERTED. يُكمل المستخدم التفاصيل
+  // من شاشة أوامر الشراء. لو فشل تحديث حالة الطلب، نتراجع بحذف الأمر المنشأ حديثاً.
   const convertToOrder = async () => {
     if (!convertTarget) return;
     if (!convertSupplierId) {
@@ -73,26 +76,41 @@ export default function PurchaseRequests() {
       return;
     }
     setConverting(true);
+    let createdPo = null;
     try {
       const supplier = suppliers.find(s => s.id === convertSupplierId);
-      const orderNo = nextCodeFromList([], 'PO', 'orderNo'); // رقم مبدئي — الخادم قد يُعيد توليده
-      await base44.entities.PurchaseOrder.create({
+      // حمّل أوامر الشراء الموجودة لتوليد رقم فريد صحيح (لا قائمة فارغة).
+      const existingPos = await base44.entities.PurchaseOrder.list('-created_date', 200).catch(() => []);
+      const orderNo = nextCodeFromList(existingPos || [], 'PO', 'orderNo');
+      // نرسل items (لا lines) ليقبلها الخادم، مع totalAmount كي يُستخدم مباشرةً
+      // عند غياب البنود (buildOrderLines يستخدم data.totalAmount حين لا بنود).
+      createdPo = await OperationEngine.createPurchaseOrder({
         orderNo,
         purchaseRequestId: convertTarget.id,
         requestNo: convertTarget.requestNo || '',
         supplierId: convertSupplierId,
-        supplierName: supplier?.name || '',
         projectId: convertTarget.projectId || '',
-        projectName: convertTarget.projectName || '',
+        warehouseId: '',
         date: new Date().toISOString().slice(0, 10),
         status: 'DRAFT',
         description: convertTarget.description || '',
         totalAmount: Number(convertTarget.estimatedAmount) || 0,
         notes: convertTarget.notes || '',
-        lines: [],
-      });
+        items: [],
+      }, suppliers, projects, []);
+      // صحّح supplierName/warehouseName من النتيجة (OperationEngine يحلّ الأسماء).
+      const supplierName = supplier?.name || createdPo?.supplierName || '';
       // حدّث حالة الطلب الأصلي إلى CONVERTED لإغلاق دورته.
-      await base44.entities.PurchaseRequest.update(convertTarget.id, { status: 'CONVERTED' });
+      try {
+        await base44.entities.PurchaseRequest.update(convertTarget.id, { status: 'CONVERTED' });
+      } catch (statusErr) {
+        // فشل تحديث الحالة: تراجع بحذف الأمر المنشأ لتفادي أمر يتيم بلا طلب CONVERTED.
+        console.warn('PR status update failed — rolling back PO', statusErr);
+        if (createdPo?.id) {
+          await base44.entities.PurchaseOrder.delete(createdPo.id).catch(() => {});
+        }
+        throw new Error(t('فشل تحديث حالة الطلب — تم التراجع عن إنشاء الأمر', 'Failed to update request status — rolled back order creation', lang));
+      }
       toast.success(t('تم إنشاء أمر شراء مرتبط بالطلب', 'Purchase order created and linked to the request', lang));
       setConvertTarget(null);
       setConvertSupplierId('');

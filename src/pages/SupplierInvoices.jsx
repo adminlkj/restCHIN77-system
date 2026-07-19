@@ -178,14 +178,18 @@ export default function SupplierInvoices() {
       return toast.error(t('لا يمكن عكس فاتورة عليها مدفوعات — اعكس المدفوعات أولاً', 'Cannot reverse an invoice with payments — reverse payments first', lang));
     setReversingId(item.id);
     try {
-      // Server-side filter by sourceType + entryNo $regex replaces the prior unbounded
-      // `filter({ isPosted: true })` (N+1 fix: cuts payload from "all posted JEs" to
-      // just the SupplierInvoice JEs whose entryNo contains this invoiceNo).
-      const jes = await base44.entities.JournalEntry.filter({
+      // فلترة الخادم بدقّة: نطابق entryNo يساوي بالضبط JE-SUPINV-{invoiceNo} أو
+      // JE-SUPINV-VAT-{invoiceNo} (لاتباعد regex الذي يطابق SUP-1 و SUP-10 معاً).
+      // نستثني قيود العكس (-REV-) لئلا نعكس قيداً عكسياً.
+      const candidates = await base44.entities.JournalEntry.filter({
         isPosted: true,
         sourceType: 'SupplierInvoice',
         entryNo: { $regex: escapeRegex(item.invoiceNo) },
-      }, '-date', 50);
+      }, 'date', 50);
+      const exactNo = new Set([`JE-SUPINV-${item.invoiceNo}`, `JE-SUPINV-VAT-${item.invoiceNo}`]);
+      const jes = candidates
+        .filter(je => exactNo.has(je.entryNo) && !String(je.entryNo).includes('-REV-'))
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       if (jes.length === 0) {
         // فاتورة مرتبطة بسند استلام و0% VAT: لا يوجد قيد SupplierInvoice مستقل
         // (الذمة والمخزون مُثبتان من قيد سند الاستلام). اعتبرها قابلة للعكس مباشرةً

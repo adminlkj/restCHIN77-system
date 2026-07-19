@@ -180,7 +180,11 @@ export default function ExpenseDialog({
               <p className="text-[10px] text-muted-foreground">{t('يُفهم استخدام الحساب تلقائياً من نوعه وموقعه في شجرة الحسابات', 'Usage inferred from the account type & position in the tree', lang)}</p>
             </div>
 
-            <div className="space-y-1.5"><Label>{t('المرجع', 'Reference', lang)}</Label><Input value={form.reference} onChange={e => set('reference', e.target.value)} /></div>
+            {/* المرجع (reference) يُولّده الخادم تلقائياً عند الإنشاء لربط المصروف بقيده.
+                لا يُحرَّر يدوياً — يُعرض للقراءة فقط عند التعديل (إن وُجد). */}
+            {form.reference && (
+              <div className="space-y-1.5"><Label>{t('مرجع القيد', 'JE Reference', lang)}</Label><Input value={form.reference} readOnly className="bg-muted font-mono text-xs" /></div>
+            )}
             <div className="space-y-1.5"><Label>{t('المبلغ', 'Amount', lang)} *</Label><Input type="number" value={form.amount} onChange={e => set('amount', e.target.value)} /></div>
 
             <div className="col-span-2 flex items-center gap-4">

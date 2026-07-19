@@ -1202,7 +1202,8 @@ async function createExpense(base44, data) {
     : null;
   // نُولّد المرجع قبل الإنشاء ونُخزّنه على المصروف، حتى يبقى رابط دقيق بين المصروف
   // وقيده (JE-EXP-{ref}) عند العكس — بدل المطابقة الهشّة بالوصف النصي.
-  const ref = `EXP-${Date.now()}`;
+  // ref = timestamp فقط (لا EXP-) لتجنب تضاعف البادئة مع JE-EXP في entryNo.
+  const ref = `${Date.now()}`;
   payload.reference = `JE-EXP-${ref}`;
   const expense = await base44.asServiceRole.entities.Expense.create(payload);
   try {
@@ -1304,11 +1305,36 @@ async function updateClientPayment(base44, id, data) {
 // ─── سداد الموردين ────────────────────────────────────────────────────────────
 async function createSupplierPayment(base44, data) {
   assertValid('SUPPLIER_PAYMENT', data);
-  const payload = { ...data, amount: num(data.amount) };
+  const amount = num(data.amount);
+  // إن رُبطت الدفعة بفاتورة مورد محددة: تحقّق من ألّا تتجاوز المتبقي على الفاتورة،
+  // ثم حدّث paidAmount + status (PARTIALLY_PAID / PAID) عليها. هذا يمنع الدفع المتكرر
+  // فوق نفس الفاتورة ويُبقي totalPayable دقيقاً.
+  let linkedInvoice = null;
+  if (data.supplierInvoiceId) {
+    linkedInvoice = await base44.asServiceRole.entities.SupplierInvoice.get(data.supplierInvoiceId);
+    if (linkedInvoice) {
+      const invTotal = num(linkedInvoice.totalAmount);
+      const alreadyPaid = num(linkedInvoice.paidAmount);
+      if (amount > invTotal - alreadyPaid + 0.01) {
+        throw new Error(`مبلغ الدفع (${amount}) يتجاوز المتبقي على الفاتورة (${(invTotal - alreadyPaid).toFixed(2)})`);
+      }
+    }
+  }
+  const payload = { ...data, amount, status: 'POSTED' };
   const rec = await base44.asServiceRole.entities.SupplierPayment.create(payload);
   try {
     const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
     await autoPostJE(base44, buildSupplierPaymentJE({ ...payload, id: rec.id }, accounts));
+    // بعد نجاح القيد: حدّث الفاتورة المرتبطة (paidAmount + status) إن وُجدت.
+    if (linkedInvoice) {
+      const newPaid = num(linkedInvoice.paidAmount) + amount;
+      const invTotal = num(linkedInvoice.totalAmount);
+      const newStatus = newPaid >= invTotal - 0.01 ? 'PAID' : 'PARTIALLY_PAID';
+      await base44.asServiceRole.entities.SupplierInvoice.update(linkedInvoice.id, {
+        paidAmount: +newPaid.toFixed(2),
+        status: newStatus,
+      });
+    }
   } catch (e) {
     await rollback(base44, 'SupplierPayment', rec.id);
     throw e;

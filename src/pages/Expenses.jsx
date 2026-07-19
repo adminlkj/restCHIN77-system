@@ -98,17 +98,19 @@ export default function Expenses() {
       // و(2) المطابقة الهشّة بـ description/item.code (item.code لم يكن موجوداً أصلاً).
       let jes = [];
       if (item.reference) {
-        jes = await base44.entities.JournalEntry.filter({
+        const found = await base44.entities.JournalEntry.filter({
           isPosted: true,
           sourceType: 'Expense',
           entryNo: item.reference,
-        }, '-date', 10);
+        }, 'date', 10);
+        // نستثني قيود العكس (-REV-) لئلا نعكس قيداً عكسياً بدل الأصلي.
+        jes = (found || []).filter(je => !String(je.entryNo || '').includes('-REV-'));
       }
       // Fallback للسجلات القديمة قبل إضافة حقل reference: فلترة بالخادم على sourceType
       // ثم مطابقة محلية بالوصف (أقل دقة لكن تُبقي السجلات القديمة قابلة للعكس).
       if (jes.length === 0) {
         const allExp = await base44.entities.JournalEntry.filter({ isPosted: true, sourceType: 'Expense' }, '-date', 200);
-        jes = allExp.filter(je => (je.description || '').includes(item.description || ''));
+        jes = allExp.filter(je => !String(je.entryNo || '').includes('-REV-') && (je.description || '').includes(item.description || ''));
       }
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
       const orig = jes[0];

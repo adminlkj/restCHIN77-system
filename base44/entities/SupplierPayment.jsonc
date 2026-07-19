@@ -51,6 +51,12 @@
     },
     "notes": {
       "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["POSTED", "CANCELLED"],
+      "default": "POSTED",
+      "description": "حالة سند الصرف — POSTED عند الإنشاء، CANCELLED عند العكس."
     }
   },
   "required": [
