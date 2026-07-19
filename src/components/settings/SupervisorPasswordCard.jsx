@@ -18,12 +18,11 @@ export default function SupervisorPasswordCard() {
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    // لا نفرض أي قيد على طول/نوع كلمة المرور — يقرر المستخدم ما يناسبه
+    // (4 أو 5 أو 8 أرقام، أحرف، أو خليط). المطلوب الوحيد: ألا تكون فارغة،
+    // وأن تتطابق مع التأكيد.
     if (!newPassword) {
       toast.error(t('أدخل كلمة المرور الجديدة', 'Enter the new password', lang));
-      return;
-    }
-    if (newPassword.length < 4) {
-      toast.error(t('كلمة المرور يجب أن تكون 4 أحرف على الأقل', 'Password must be at least 4 characters', lang));
       return;
     }
     if (newPassword !== confirmPassword) {
