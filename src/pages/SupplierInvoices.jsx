@@ -132,8 +132,9 @@ export default function SupplierInvoices() {
   const save = async () => {
     if (!form.invoiceNo || !form.supplierId)
       return toast.error(t('رقم الفاتورة والمورد مطلوبان', 'Invoice No. and supplier required', lang));
-    if (!form.goodsReceiptId)
-      return toast.error(t('يجب ربط الفاتورة بسند استلام معتمد — لا يمكن إنشاء فاتورة مورد بدون سند استلام', 'Invoice must be linked to an approved goods receipt', lang));
+    // المبلغ الأساسي مطلوب (سواء من سند استلام أو إدخال يدوي للفاتورة المباشرة).
+    if (!(parseFloat(form.baseAmount) > 0))
+      return toast.error(t('المبلغ الأساسي يجب أن يكون أكبر من صفر', 'Base amount must be greater than zero', lang));
     if (form.date && form.dueDate && form.dueDate < form.date)
       return toast.error(t('تاريخ الاستحقاق يجب أن يكون بعد تاريخ الفاتورة', 'Due date must be after invoice date', lang));
     setSaving(true);
@@ -148,8 +149,8 @@ export default function SupplierInvoices() {
       if (editing) { await OperationEngine.updateSupplierInvoice(editing.id, data); toast.success(t('تم التحديث', 'Updated', lang)); }
       else {
         await OperationEngine.createSupplierInvoice(data);
-        // الخادم يوسم سند الاستلام كمفوتَر تلقائياً داخل ترانسكشن العملية
-        toast.success(t('تمت الإضافة كمسودة', 'Added as draft', lang));
+        // الخادم يوسم سند الاستلام كمفوتَر تلقائياً داخل ترانسكشن العملية (إن وُجد).
+        toast.success(t('تمت الإضافة كمسودة — اعتمدها لترحيل القيد', 'Added as draft — approve it to post the entry', lang));
       }
       setDialogOpen(false); load();
     } catch (e) { toast.error(e?.message || t('فشل الحفظ', 'Save failed', lang)); }
@@ -328,19 +329,23 @@ export default function SupplierInvoices() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editing ? t('تعديل الفاتورة', 'Edit Invoice', lang) : t('فاتورة جديدة', 'New Invoice', lang)}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? t('تعديل الفاتورة', 'Edit Invoice', lang) : t('فاتورة مورد جديدة', 'New Supplier Invoice', lang)}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5"><Label>{t('رقم الفاتورة', 'Invoice No.', lang)} *</Label><Input value={form.invoiceNo} readOnly className="bg-muted font-mono" /></div>
+            {/* سند الاستلام — اختياري. لو لم يُختر، يُنشئ المستخدم فاتورة مباشرة
+                (شراء نقدي فوري) باختيار المورد وإدخال المبلغ يدوياً. الاعتماد ينشئ
+                القيد الكامل (ذمم + VAT) في الحالتين. */}
             <div className="space-y-1.5">
-              <Label>{t('سند الاستلام (إلزامي — السلسلة)', 'Goods Receipt (required — chain)')} *</Label>
+              <Label>{t('سند الاستلام (اختياري)', 'Goods Receipt (optional)', lang)}</Label>
               {pendingReceipts.length === 0 ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  {t('لا توجد سندات استلام معتمدة ومعلّقة للفوترة. يجب إنشاء طلب شراء ← أمر شراء ← سند استلام معتمد أولاً قبل إنشاء فاتورة المورد.', 'No approved goods receipts pending invoicing. Create a purchase request → purchase order → approved goods receipt first before creating a supplier invoice.', lang)}
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5 text-xs text-muted-foreground">
+                  {t('لا توجد سندات استلام معلّقة. يمكنك إنشاء فاتورة مباشرة باختيار المورد وإدخال المبلغ.', 'No pending goods receipts. You can create a direct invoice by selecting a supplier and entering the amount.', lang)}
                 </div>
               ) : (
-                <Select value={form.goodsReceiptId || ''} onValueChange={onReceipt} disabled={!!editing}>
-                  <SelectTrigger><SelectValue placeholder={t('اختر سند استلام معتمد', 'Select an approved goods receipt', lang)} /></SelectTrigger>
+                <Select value={form.goodsReceiptId || 'none'} onValueChange={onReceipt} disabled={!!editing}>
+                  <SelectTrigger><SelectValue placeholder={t('بدون سند (فاتورة مباشرة)', 'None (direct invoice)', lang)} /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">{t('— بدون سند (فاتورة مباشرة) —', '— None (direct invoice) —', lang)}</SelectItem>
                     {pendingReceipts.map(r => <SelectItem key={r.id} value={r.id}>{r.receiptNo} — {r.supplierName || ''} ({formatCurrency(r.receivedAmount, lang)})</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -350,16 +355,29 @@ export default function SupplierInvoices() {
               )}
             </div>
             <div className="space-y-1.5">
-              <Label>{t('المورد', 'Supplier', lang)}</Label>
-              <Input value={form.supplierName || ''} readOnly disabled className="bg-muted" placeholder={t('يُملأ تلقائياً من سند الاستلام', 'Auto-filled from goods receipt', lang)} />
+              <Label>{t('المورد', 'Supplier', lang)} {!form.goodsReceiptId && '*'}</Label>
+              {form.goodsReceiptId ? (
+                <Input value={form.supplierName || ''} readOnly disabled className="bg-muted" placeholder={t('من سند الاستلام', 'From goods receipt', lang)} />
+              ) : (
+                <Select value={form.supplierId || 'none'} onValueChange={(v) => {
+                  const s = _suppliers.find(x => x.id === v);
+                  setForm(f => ({ ...f, supplierId: v === 'none' ? '' : v, supplierName: s?.name || '' }));
+                }}>
+                  <SelectTrigger><SelectValue placeholder={t('اختر المورد', 'Select supplier', lang)} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t('— بدون —', '— None —', lang)}</SelectItem>
+                    {_suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-1.5">
-              <Label>{t('أمر الشراء', 'Purchase Order', lang)}</Label>
-              <Input value={form.orderNo || ''} readOnly disabled className="bg-muted" placeholder={t('يُملأ تلقائياً من سند الاستلام', 'Auto-filled from goods receipt', lang)} />
+              <Label>{t('أمر الشراء (اختياري)', 'Purchase Order (optional)', lang)}</Label>
+              <Input value={form.orderNo || ''} readOnly disabled className="bg-muted" placeholder={t('من سند الاستلام', 'From goods receipt', lang)} />
             </div>
             <div className="space-y-1.5">
-              <Label>{t('الطلب', 'Order', lang)}</Label>
-              <Input value={form.projectName || ''} readOnly disabled className="bg-muted" placeholder={t('يُملأ تلقائياً من سند الاستلام', 'Auto-filled from goods receipt', lang)} />
+              <Label>{t('الفرع (اختياري)', 'Branch (optional)', lang)}</Label>
+              <Input value={form.projectName || ''} readOnly disabled className="bg-muted" placeholder={t('من سند الاستلام', 'From goods receipt', lang)} />
             </div>
             <div className="space-y-1.5"><Label>{t('تاريخ الفاتورة', 'Invoice Date', lang)}</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>{t('تاريخ الاستحقاق', 'Due Date', lang)}</Label><Input type="date" value={form.dueDate} min={form.date || undefined} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>

@@ -139,8 +139,10 @@ const RULES = {
     { m: 'تاريخ الفاتورة مطلوب', t: (d) => !isBlank(d.date) },
     { m: 'المبلغ الأساسي يجب أن يكون أكبر من صفر', t: (d) => num(d.baseAmount) > 0 },
     { m: 'تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة', t: (d) => isBlank(d.dueDate) || isBlank(d.date) || d.dueDate >= d.date },
-    // فرض السلسلة: لا فاتورة مورد بدون سند استلام معتمد
-    { m: 'يجب ربط الفاتورة بسند استلام معتمد — لا يمكن إنشاء فاتورة مورد بدون سند استلام', t: (d) => !isBlank(d.goodsReceiptId) },
+    // ملاحظة: سند الاستلام (goodsReceiptId) اختياري — يمكن إنشاء فاتورة مورد مباشرة
+    // دون سند استلام (شراء نقدي فوري مثلاً). السلسلة الكاملة (PR→PO→GR→Invoice)
+    // اختيارية لنظام مطعم، والاعتماد ينشئ القيد الكامل (ذمة + مخزون/VAT) في حالة
+    // الفاتورة المباشرة عبر buildSupplierInvoiceJE.
   ],
   STOCK_MOVEMENT: [
     { m: 'تاريخ الحركة مطلوب', t: (d) => !isBlank(d.date) },
@@ -1359,16 +1361,22 @@ function buildSupplierInvoicePayload(data) {
 // إن أُنشئت الفاتورة من سند استلام، يُوسم السند "تمت الفوترة" تلقائياً.
 async function createSupplierInvoice(base44, data) {
   assertValid('SUPPLIER_INVOICE', data);
-  // التحقق من وجود سند الاستلام وحالته
-  if (isBlank(data.goodsReceiptId)) throw new Error('يجب ربط الفاتورة بسند استلام — لا يمكن إنشاء فاتورة مورد بدون سند استلام معتمد');
-  const receipt = await base44.asServiceRole.entities.GoodsReceipt.get(data.goodsReceiptId);
-  if (!receipt) throw new Error('سند الاستلام المحدد غير موجود');
-  if (receipt.status !== 'RECEIVED') throw new Error('سند الاستلام غير معتمد — يجب اعتماد سند الاستلام أولاً قبل إنشاء فاتورة المورد');
-  if (receipt.invoicedStatus === 'INVOICED') throw new Error('سند الاستلام هذا سبق أن فُوتر — لا يمكن إنشاء فاتورتين لنفس السند');
+  // سند الاستلام اختياري. لو وُجد، نتحقق من حالته ونوسمه كمفوتر. لو لم يوجد،
+  // ننشئ فاتورة مورد مباشرة (شراء نقدي فوري مثلاً) — الاعتماد ينشئ القيد الكامل
+  // عبر buildSupplierInvoiceJE (ذمم/نقد دائن + مخزون/مصروف مدين + VAT).
+  let receipt = null;
+  if (!isBlank(data.goodsReceiptId)) {
+    receipt = await base44.asServiceRole.entities.GoodsReceipt.get(data.goodsReceiptId);
+    if (!receipt) throw new Error('سند الاستلام المحدد غير موجود');
+    if (receipt.status !== 'RECEIVED') throw new Error('سند الاستلام غير معتمد — يجب اعتماد سند الاستلام أولاً قبل ربطه بفاتورة المورد');
+    if (receipt.invoicedStatus === 'INVOICED') throw new Error('سند الاستلام هذا سبق أن فوتر — لا يمكن إنشاء فاتورتين لنفس السند');
+  }
   const payload = { ...buildSupplierInvoicePayload(data), status: 'DRAFT' };
   const inv = await base44.asServiceRole.entities.SupplierInvoice.create(payload);
-  // وسم سند الاستلام بأنه تمت فوترته لإغلاق حلقة السلسلة
-  try { await base44.asServiceRole.entities.GoodsReceipt.update(payload.goodsReceiptId, { invoicedStatus: 'INVOICED' }); } catch { /* السند قد لا يكون موجوداً */ }
+  // وسم سند الاستلام بأنه تمت فوترته لإغلاق حلقة السلسلة (إن وُجد سند).
+  if (receipt) {
+    try { await base44.asServiceRole.entities.GoodsReceipt.update(payload.goodsReceiptId, { invoicedStatus: 'INVOICED' }); } catch { /* السند قد لا يكون موجوداً */ }
+  }
   return inv;
 }
 
