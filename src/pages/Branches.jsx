@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { resolveUserBranches, canAccessBranch, isAdmin } from '@/lib/permissions';
 import {
   t, PROJECT_STATUS, nextCodeFromList,
 } from '@/lib/utils-binaa';
@@ -48,6 +50,10 @@ const emptySettings = {
 
 export default function Branches() {
   const { lang, setProjectContext, setActiveItem } = useStore();
+  const { user: currentUser } = useAuth();
+  // الفروع المسموح بها للمستخدم الحالي (null = كل الفروع للأدمن/المالك).
+  const allowedBranchIds = resolveUserBranches(currentUser);
+  const isScoped = Array.isArray(allowedBranchIds);
   const OpenArrow = lang === 'ar' ? ArrowLeft : ArrowRight;
 
   const [items, setItems] = useState([]);
@@ -106,9 +112,11 @@ export default function Branches() {
     return () => { active = false; };
   }, [items]);
 
-  // فلترة بحسب البحث والحالة
+  // فلترة بحسب البحث والحالة + صلاحيات الفروع (الكاشير يرى فروعه المسموح بها فقط).
   const filtered = useMemo(() => {
     return items.filter(i => {
+      // صلاحية الفرع: إن كان المستخدم مقيّداً (scoped)، أعرض فروعه فقط.
+      if (isScoped && !allowedBranchIds.includes(i.id)) return false;
       const q = search.toLowerCase();
       const matchSearch = !q ||
         String(i.name || '').toLowerCase().includes(q) ||
@@ -116,7 +124,7 @@ export default function Branches() {
         String(i.location || '').toLowerCase().includes(q);
       return matchSearch && (filterStatus === 'ALL' || i.status === filterStatus);
     });
-  }, [items, search, filterStatus]);
+  }, [items, search, filterStatus, isScoped, allowedBranchIds]);
 
   // ─── إجراءات CRUD ──────────────────────────────────────────────────
   const openNew = () => {
@@ -216,6 +224,11 @@ export default function Branches() {
 
   // فحص الطاولات + فتح الطاولات للفرع
   const openTables = (item) => {
+    // حماية عميقة: لا تسمح بفتح فرع غير مصرّح به (حتى لو وصل له عبر URL أو state).
+    if (!canAccessBranch(currentUser, item.id)) {
+      toast.error(t('ليست لديك صلاحية الوصول لهذا الفرع', 'You do not have access to this branch', lang));
+      return;
+    }
     setProjectContext(item.id, item.name);
     setActiveItem('tables');
   };

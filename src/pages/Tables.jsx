@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, RefreshCw, Users, MoreVertical, Pencil, Trash2, Play,
   Sparkles, Clock, ArrowLeft, ArrowRight, LayoutGrid, Store,
-  Layers, FileEdit,
+  Layers, FileEdit, ShieldX,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
   lockTableDB, loadBranchTablesFromDB,
 } from '@/lib/tables';
 import { useAuth } from '@/lib/AuthContext';
+import { canAccessBranch } from '@/lib/permissions';
 import { getBranchSettings, setBranchSettings } from '@/lib/branchSettings';
 import { toast } from 'sonner';
 
@@ -349,6 +350,27 @@ export default function Tables() {
           <Button onClick={() => setActiveItem('branches')} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
             <Store className="size-4" />
             {t('اختيار فرع', 'Select Branch', lang)}
+          </Button>
+        </Card>
+      </ModuleLayout>
+    );
+  }
+
+  // ─── صلاحية الفرع: منع الوصول لفرع غير مصرّح به (حماية عميقة) ─────────
+  if (!canAccessBranch(currentUser, activeProjectId)) {
+    return (
+      <ModuleLayout
+        title={t('الطاولات', 'Tables', lang)}
+        subtitle={t('لا تملك صلاحية الوصول لهذا الفرع', 'You do not have access to this branch', lang)}
+      >
+        <Card className="p-12 text-center">
+          <ShieldX className="size-12 mx-auto text-rose-400/50 mb-3" />
+          <p className="text-rose-600 font-medium mb-4">
+            {t('ليست لديك صلاحية الوصول لهذا الفرع. تواصل مع المسؤول.', 'You do not have access to this branch. Contact the administrator.', lang)}
+          </p>
+          <Button onClick={() => setActiveItem('branches')} variant="outline" className="gap-2">
+            <Store className="size-4" />
+            {t('العودة للفروع', 'Back to branches', lang)}
           </Button>
         </Card>
       </ModuleLayout>

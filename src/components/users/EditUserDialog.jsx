@@ -19,6 +19,10 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
   const [moduleActions, setModuleActions] = useState({});       // { moduleKey: string[] }
   const [useCustom, setUseCustom] = useState(false);
   const [saving, setSaving] = useState(false);
+  // صلاحيات الفروع: قائمة الفروع (للاختيار) + المعرّفات المختارة.
+  const [branches, setBranches] = useState([]);
+  const [allowedBranchIds, setAllowedBranchIds] = useState([]);
+  const [homeBranchId, setHomeBranchId] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -46,8 +50,30 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
       setModuleActions(user.modulePermissions && typeof user.modulePermissions === 'object'
         ? { ...seeded, ...user.modulePermissions }
         : seeded);
+      // صلاحيات الفروع: اقرأ المعرّفات المسموح بها من بيانات المستخدم.
+      setAllowedBranchIds(Array.isArray(user.allowedBranches) ? [...user.allowedBranches] : []);
+      setHomeBranchId(user.homeBranchId || '');
     }
   }, [user]);
+
+  // حمّل قائمة الفروع المتاحة عند فتح الحوار (لاختيارها في واجهة الصلاحيات).
+  useEffect(() => {
+    if (open) {
+      base44.entities.Project.list('-created_date', 200)
+        .then(rows => setBranches(Array.isArray(rows) ? rows : []))
+        .catch(() => setBranches([]));
+    }
+  }, [open]);
+
+  const toggleBranch = (branchId) => {
+    setAllowedBranchIds(prev =>
+      prev.includes(branchId) ? prev.filter(id => id !== branchId) : [...prev, branchId]
+    );
+    // إن أُزيل الفرع الرئيسي المختار، امسحه.
+    if (homeBranchId === branchId && allowedBranchIds.includes(branchId)) {
+      setHomeBranchId('');
+    }
+  };
 
   if (!user) return null;
 
@@ -93,6 +119,9 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
         ...(form.password ? { password: form.password } : {}),
         allowedModules: useCustom ? customModules : [],
         modulePermissions: useCustom && !isOwner ? cleanedActions : {},
+        // صلاحيات الفروع: المالك/الأدمن لا يحتاج (يصل لكل الفروع). لغيرهم نطبّق التقييد.
+        allowedBranches: (isOwner || isProtected) ? [] : allowedBranchIds,
+        homeBranchId: (isOwner || isProtected) ? '' : homeBranchId,
       };
       const updatedUser = await base44.entities.User.update(user.id, payload);
       toast({ title: form.password ? t('تم حفظ التغييرات وتغيير كلمة المرور', 'Changes saved and password updated', lang) : t('تم حفظ التغييرات', 'Changes saved', lang), variant: 'success' });
@@ -189,6 +218,54 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
             />
           </div>
         </div>
+
+        {/* ─── صلاحيات الفروع ─── */}
+        {!(isOwner || isProtected) && (
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">{t('الفروع المسموح بها', 'Allowed Branches', lang)}</Label>
+              <span className="text-xs text-muted-foreground">
+                {allowedBranchIds.length === 0
+                  ? t('بدون قيد (يصل لكل الفروع) — يُنصح بالتقييد للكاشير', 'No restriction (all branches) — restricting is recommended for cashiers', lang)
+                  : t(`${allowedBranchIds.length} فرع`, `${allowedBranchIds.length} branches`, lang)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('اختر الفروع التي يمكن للمستخدم الوصول إليها. الكاشير يجب أن يُقيَّد بفرعه لمنع الوصول لفروع غير مصرّح بها.', 'Select branches this user can access. A cashier should be restricted to their branch to prevent unauthorized access.', lang)}
+            </p>
+            {branches.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">{t('لا توجد فروع.', 'No branches.', lang)}</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                {branches.map(b => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer rounded border p-2 hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={allowedBranchIds.includes(b.id)}
+                      onChange={() => toggleBranch(b.id)}
+                      className="size-4 rounded accent-emerald-600"
+                    />
+                    <span className="truncate">{b.name || b.code || b.id}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {allowedBranchIds.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('الفرع الرئيسي (يُفتح تلقائياً عند الدخول)', 'Home branch (auto-opened on login)', lang)}</Label>
+                <Select value={homeBranchId} onValueChange={setHomeBranchId}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder={t('بدون', 'None', lang)} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{t('بدون', 'None', lang)}</SelectItem>
+                    {branches.filter(b => allowedBranchIds.includes(b.id)).map(b => (
+                      <SelectItem key={b.id} value={b.id}>{b.name || b.code || b.id}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('إلغاء', 'Cancel', lang)}</Button>

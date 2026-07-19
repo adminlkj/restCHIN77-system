@@ -154,6 +154,42 @@ export function resolveUserModules(user) {
   return role.modules === '*' ? ALL_MODULE_KEYS : role.modules;
 }
 
+// ─────────────────────────────────────────────────────────────
+// صلاحيات الفروع (Branch Scoping)
+// ─────────────────────────────────────────────────────────────
+// المالك/الأدمن يصل لكل الفروع. المستخدمون الآخرون (كاشير، مدير فرع) يُقيَّدون
+// بـ allowedBranches — مصفوفة معرّفات الفروع المسموح بها. مصفوفة فارغة = لا قيد
+// (للسلوك الخلفي المتوافق) لكن يُنصح بضبطها لكل كاشير عند إنشائه.
+
+// يُرجع مصفوفة معرّفات الفروع المسموح بها للمستخدم. null = كل الفروع (لا قيد).
+export function resolveUserBranches(user) {
+  if (!user) return null;
+  // المالك بالبريد + الأدمن: صلاحية مطلقة على كل الفروع.
+  if (user.email && user.email.toLowerCase() === OWNER_EMAIL) return null;
+  if (user.role === 'admin') return null;
+  // المصفوفة الصريحة على المستخدم.
+  if (Array.isArray(user.allowedBranches) && user.allowedBranches.length > 0) {
+    return user.allowedBranches;
+  }
+  // مصفوفة فارغة أو غير معرَّفة = نرجع null مؤقتاً (سلوك خلفي متوافق) لكن ينطبق عليه
+  // التحذير: يجب على الأدمن ضبط allowedBranches لكل كاشير لتفادي الوصول غير المصرّح.
+  return null;
+}
+
+// هل يمكن للمستخدم الوصول لفرع معيّن؟
+export function canAccessBranch(user, branchId) {
+  if (!branchId) return true;
+  const allowed = resolveUserBranches(user);
+  if (allowed === null) return true; // لا قيد (مالك/أدمن/غير مضبوط)
+  return allowed.includes(branchId);
+}
+
+// هل يصلح المستخدم لفرع واحد فقط؟ (مفيد لإجبار الكاشير على فرعه تلقائياً)
+export function hasSingleBranch(user) {
+  const allowed = resolveUserBranches(user);
+  return Array.isArray(allowed) && allowed.length === 1;
+}
+
 export function canAccess(user, moduleKey) {
   // مالك النظام (بالبريد) له صلاحية مطلقة
   if (user?.email && user.email.toLowerCase() === OWNER_EMAIL) return user?.isActive !== false;

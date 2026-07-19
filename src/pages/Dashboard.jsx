@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency } from '@/lib/utils-binaa';
+import { toBusinessDayDate } from '@/lib/businessDay';
 import { getBranchTableStats } from '@/lib/tables';
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
@@ -64,11 +65,12 @@ export default function Dashboard() {
   useEffect(() => { load(); }, [activeProjectId]);
 
   // ─── مشتقات من البيانات ─────────────────────────────────────────────────
-  const today = new Date().toISOString().slice(0, 10);
+  // يوم العمل الحالي (محلي، لا UTC) — فاتورة بعد منتصف الليل تُحتسب في اليوم الصحيح.
+  const today = toBusinessDayDate(new Date().toISOString());
   const todayInvoices = useMemo(() => {
     return (data.invoices || []).filter(inv => {
-      const invDate = inv.date ? String(inv.date).slice(0, 10) : '';
-      return invDate === today && inv.status !== 'CANCELLED' && inv.status !== 'DRAFT';
+      if (inv.status === 'CANCELLED' || inv.status === 'DRAFT') return false;
+      return toBusinessDayDate(inv.date) === today;
     });
   }, [data.invoices, today]);
 

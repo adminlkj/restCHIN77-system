@@ -34,6 +34,7 @@ import {
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
 import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
 import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
+import { canAccessBranch } from '@/lib/permissions';
 import { lockTableDB, unlockTableDB, saveDraftToTableDB, clearTableDraftDB } from '@/lib/tables';
 import { getOpenBusinessDay, DEFAULT_BUSINESS_HOURS } from '@/lib/businessDay';
 import { toast } from 'sonner';
@@ -556,6 +557,28 @@ export default function POS() {
     setPayments(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // ─── حارس صلاحية الفرع: منع الوصول لفرع غير مصرّح به (حماية عميقة) ───
+  if (activeProjectId && !canAccessBranch(user, activeProjectId)) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="size-14 rounded-full bg-rose-100 flex items-center justify-center">
+          <XCircle className="size-7 text-rose-600" />
+        </div>
+        <div>
+          <p className="font-bold text-rose-700">
+            {t('لا تملك صلاحية البيع في هذا الفرع', 'You do not have permission to sell in this branch', lang)}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t('تواصل مع المسؤول أو اختر فرعاً آخر', 'Contact the administrator or choose another branch', lang)}
+          </p>
+        </div>
+        <Button onClick={() => setActiveItem('branches')} variant="outline" className="mt-2">
+          {t('العودة للفروع', 'Back to branches', lang)}
+        </Button>
+      </div>
+    );
+  }
+
   // ─── حارس مبكر: لا تُفتح POS دون طاولة نشطة ─────────────────────────
   // بدون طاولة، يُحفظ الإيصال بـ tableId فارغ وتُتخطّى مطابقة المطبخ،
   // فنتجنّب ذلك بإعادة المستخدم لاختيار فرع/طاولة أولاً.
@@ -731,6 +754,10 @@ export default function POS() {
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+      // حرّر الطاولة على الخادم أيضاً ليرى كل الأجهزة أنها متاحة فوراً.
+      if (activeProjectId) {
+        clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
+      }
     }
     clearCart();
     setConfirmCancelOpen(false);

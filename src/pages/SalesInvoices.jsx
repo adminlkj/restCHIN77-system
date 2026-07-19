@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
 import { t, formatCurrency, formatDate, genInvoiceNo, INVOICE_STATUS } from '@/lib/utils-binaa';
 import { calcVAT, resolveVatRate, OperationEngine } from '@/lib/businessEngine';
+import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import TableToolbar from '@/components/shared/TableToolbar';
@@ -36,6 +38,7 @@ const empty = {
 
 export default function SalesInvoices() {
   const { lang, activeProjectId, activeProjectName, activeClientId, activeClientName } = useStore();
+  const { user } = useAuth();
   const [items, setItems]       = useState([]);
   const [projects, setProjects] = useState([]);
   const [clients, setClients]   = useState([]);
@@ -135,6 +138,15 @@ export default function SalesInvoices() {
         sourceType: 'REVERSAL',
       });
       await base44.entities.SalesInvoice.update(item.id, { status: 'CANCELLED' });
+      // سجّل العكس في سجل التدقيق — هذا حدث مالي حسّاس يجب توثيقه بـ who/what/when.
+      await audit.sale(
+        user,
+        { id: item.id, invoiceNo: item.invoiceNo, totalAmount: item.totalAmount, projectId: item.projectId, projectName: item.projectName },
+        { id: item.projectId, name: item.projectName },
+        AUDIT_ACTIONS.SALE_REVERSE,
+        'WARNING',
+        { reversedEntry: revNo, originalEntry: orig.entryNo, amount: Number(item.totalAmount) || 0 }
+      ).catch(() => {});
       toast.success(t('تم عكس الإيصال وإنشاء قيد عكسي', 'Receipt reversed & reversal entry created', lang));
       load();
     } catch (e) { toast.error(e?.message || t('فشل العكس', 'Reversal failed', lang)); }

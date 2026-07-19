@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency } from '@/lib/utils-binaa';
+import { toBusinessDayDate, DEFAULT_BUSINESS_HOURS, getBranchHours } from '@/lib/businessDay';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import { toast } from 'sonner';
 
@@ -27,7 +28,7 @@ function paymentLabel(key, lang) {
 
 // تقرير المبيعات اليومي: ملخص يوم محدد + توزيع الساعات + تفصيل طرق الدفع.
 export default function DailySalesReport() {
-  const { lang } = useStore();
+  const { lang, activeProjectId } = useStore();
   // نستخدم التاريخ المحلي (وليس UTC) ليوم اليوم — يتفادى إدراج فاتورة بعد منتصف
   // الليل بالتاريخ الخاطئ. toLocaleDateString يعطي YYYY-MM-DD بمنطقة الرياض.
   const todayLocal = () => {
@@ -41,6 +42,7 @@ export default function DailySalesReport() {
   const [invoices, setInvoices] = useState([]);
   const [journal, setJournal] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [hours, setHours] = useState(DEFAULT_BUSINESS_HOURS);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -54,9 +56,13 @@ export default function DailySalesReport() {
         base44.entities.JournalEntry.filter({ isPosted: true }).catch(() => []),
         base44.entities.ChartAccount.list('code', 1000).catch(() => []),
       ]);
+      // اجلب حدود يوم العمل للفرع النشط (أو الافتراضية 6→2 إن لم تُضبط).
+      const branchHours = activeProjectId ? (await getBranchHours(activeProjectId).catch(() => DEFAULT_BUSINESS_HOURS)) : DEFAULT_BUSINESS_HOURS;
+      setHours(branchHours);
+      // صنّف الفواتير حسب يوم العمل (لا UTC) — فاتورة بعد منتصف الليل تُحتسب في اليوم الصحيح.
       const list = (all || []).filter(inv => {
-        const d = inv.date ? String(inv.date).slice(0, 10) : '';
-        return d === date && inv.status !== 'CANCELLED' && inv.status !== 'DRAFT';
+        if (inv.status === 'CANCELLED' || inv.status === 'DRAFT') return false;
+        return toBusinessDayDate(inv.date, branchHours) === date;
       });
       setInvoices(list);
       setJournal(jes || []);
@@ -110,9 +116,8 @@ export default function DailySalesReport() {
     const ensure = (k) => { if (!map[k]) map[k] = { key: k, count: 0, amount: 0 }; return map[k]; };
     for (const je of (journal || [])) {
       if (!je || !je.isPosted || !Array.isArray(je.lines)) continue;
-      // نأخذ تاريخ القيد محلياً (لا UTC).
-      const jd = je.date ? String(je.date).slice(0, 10) : '';
-      if (jd !== date) continue;
+      // صنّف القيد حسب يوم العمل (لا UTC slice) لضمان تطابقه مع باقي التقارير.
+      if (toBusinessDayDate(je.date, hours) !== date) continue;
       for (const l of je.lines) {
         const acc = accountMap[l.accountCode];
         if (!acc) continue;
@@ -134,7 +139,7 @@ export default function DailySalesReport() {
     return Object.values(map)
       .sort((a, b) => b.amount - a.amount)
       .map(m => ({ ...m, percent: total > 0 ? (m.amount / total) * 100 : 0 }));
-  }, [journal, accounts, date]);
+  }, [journal, accounts, date, hours]);
 
   const totalPayments = paymentBreakdown.reduce((s, m) => s + m.amount, 0);
 

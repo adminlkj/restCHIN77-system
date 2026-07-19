@@ -56,6 +56,15 @@
     "isActive": {
       "type": "boolean",
       "default": true
+    },
+    "allowedBranches": {
+      "type": "array",
+      "description": "معرّفات الفروع (Project.id) المسموح للمستخدم بالوصول إليها. مصفوفة فارغة = لا قيد (للأدمن/المالك). الكاشير يجب أن يُقيَّد بفرعه/فروعه فقط لمنع الوصول لفروع غير مصرّح بها.",
+      "items": { "type": "string" }
+    },
+    "homeBranchId": {
+      "type": "string",
+      "description": "الفرع الافتراضي للمستخدم (يُفتح تلقائياً عند الدخول). مفيد للكاشير الذي يعمل في فرع ثابت."
     }
   },
   "required": [
