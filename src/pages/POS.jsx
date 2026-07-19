@@ -148,6 +148,9 @@ export default function POS() {
   const [cancelPassword, setCancelPassword] = useState('');
   const [cancelAttempts, setCancelAttempts] = useState(0);
   const [cancelError, setCancelError] = useState('');
+  // حماية من النقر المزدوج على "طباعة الإيصال": أثناء الحفظ غير المتزامن يُعطَّل الزر
+  // لمنع إنشاء فواتير مكررة + قيود محاسبية مكررة من نقرة مزدوجة.
+  const [saving, setSaving] = useState(false);
 
   // مرجع يمنع تكرار تحميل المسودة عند العودة للطاولة نفسها
   const draftLoadedRef = useRef(false);
@@ -752,6 +755,8 @@ export default function POS() {
 
   // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
   const handlePrintReceipt = async () => {
+    // حماية من النقر المزدوج: إن كان الحفظ جارياً، تجاهل النقرة الإضافية.
+    if (saving) return;
     if (!cart.length) {
       toast.error(t('السلة فارغة', 'Cart is empty', lang));
       return;
@@ -772,6 +777,8 @@ export default function POS() {
     }
 
     // بناء الإيصال
+    setSaving(true); // تعطيل الزر ضد النقر المزدوج حتى ينتهي الحفظ
+    try {
     const year = new Date().getFullYear();
     const invoiceNo = genInvoiceNo('INV', year, Date.now() % 10000);
     // بنود الفاتورة — لا خصم على مستوى الصنف (القاعدة 4).
@@ -823,7 +830,9 @@ export default function POS() {
       // بالكامل عند إنشاء الفاتورة — سواء كان الزبون نقدياً أو مسجّل حساب. لا CREDIT هنا.
       saleType = 'DINE_IN';
     } else {
-      saleType = 'TAKEAWAY';
+      // ملاحظة: invoiceType لا يُضبط إلا لـ CONSTRUCTION أو SERVICE من أزرار الواجهة،
+      // فلا يمكن الوصول لهذا الفرع فعلياً. KEEP كـ safety net بدل افتراض افتراضي صامت.
+      saleType = 'DINE_IN';
     }
 
     // النقد المستلم والباقي (للبيع النقدي).
@@ -963,9 +972,10 @@ export default function POS() {
       toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
     } else if (!approvedOk) {
       // الفاتورة أُنشئت DRAFT لكن الاعتماد (ترحيل القيد + PAID/APPROVED) فشل.
-      // تنبيه واضح: المستخدم يحتاج لاعتمادها يدوياً من شاشة الإيصالات لاحقاً.
+      // تنبيه واضح مع ذكر السبب (إن وُجد) ليتمكّن المستخدم/الدعم من التشخيص.
+      const reason = approveErrorMsg ? ` — ${approveErrorMsg}` : '';
       toast.warning(
-        t('حُفظ الإيصال كمسودة لكن فشل الاعتماد — اعتمده يدوياً من شاشة الإيصالات', 'Receipt saved as draft but approval failed — approve it manually from Receipts', lang)
+        t('حُفظ الإيصال كمسودة لكن فشل الاعتماد — اعتمده يدوياً من شاشة الإيصالات', 'Receipt saved as draft but approval failed — approve it manually from Receipts', lang) + reason
       );
     } else {
       toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
@@ -973,6 +983,10 @@ export default function POS() {
 
     // تنظيف
     clearCart();
+    } finally {
+      // حرّر القفل دائماً (حتى عند الخطأ) لتفادي بقاء الزر معطّلاً للأبد.
+      setSaving(false);
+    }
   };
 
   // ─── عرض ───────────────────────────────────────────────────────────
@@ -1351,6 +1365,7 @@ export default function POS() {
                         <Minus className="size-2.5" />
                       </Button>
                       <Input
+                        type="number" min="1" step="1" inputMode="numeric"
                         value={item.qty}
                         onChange={e => setQty(item.itemId, e.target.value)}
                         className="h-5 w-8 text-center text-xs px-0"
@@ -1596,10 +1611,10 @@ export default function POS() {
               <Button
                 onClick={handlePrintReceipt}
                 className="h-10 gap-1.5 bg-amber-600 hover:bg-amber-700"
-                disabled={!cart.length || !isFullyPaid}
+                disabled={saving || !cart.length || !isFullyPaid}
               >
                 <ReceiptIcon className="size-4" />
-                {t('طباعة الإيصال', 'Print Receipt', lang)}
+                {saving ? t('جاري الحفظ...', 'Saving...', lang) : t('طباعة الإيصال', 'Print Receipt', lang)}
               </Button>
               <Button
                 onClick={holdInvoice}

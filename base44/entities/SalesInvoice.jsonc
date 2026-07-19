@@ -117,6 +117,15 @@
     },
     "tableNo": {
       "type": "string"
+    },
+    "saleType": {
+      "type": "string",
+      "description": "نوع البيع الدلالي: DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM | CREDIT."
+    },
+    "lineItems": {
+      "type": "array",
+      "description": "بنود الفاتورة ({itemId,name,description,qty,unitPrice,total}). تُخزَّن أيضاً نسخة داخل notes.items للتوافق الخلفي.",
+      "items": { "type": "object" }
     }
   },
   "required": [
