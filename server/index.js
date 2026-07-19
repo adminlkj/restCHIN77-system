@@ -529,6 +529,11 @@ async function handleApi(req, res) {
   try {
     if (route.startsWith('/api/auth/')) return await handleAuth(req, res, route);
     if (route.startsWith('/api/users/')) return await handleUsers(req, res, route);
+    // مسارات POS الأمنية: تُلتقط هنا (قبل /api/functions/* العام) لأنها دوال مخصّصة
+    // تتعامل مع كلمات مرور/هاشات على الخادم، وليست عمليات Base44 قياسية.
+    if ((route === '/api/functions/posVerifySupervisor' || route === '/api/functions/setSupervisorPassword') && req.method === 'POST') {
+      return await handleAuth(req, res, route);
+    }
     if (route === '/api/upload' && req.method === 'POST') return await handleUpload(req, res);
     if (route.startsWith('/api/files/') && req.method === 'GET') {
       const fileId = route.split('/')[3];
