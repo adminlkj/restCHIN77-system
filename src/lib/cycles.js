@@ -7,7 +7,7 @@
 import {
   Building2, ShoppingCart, Users, Calculator, Settings,
   FileText, CreditCard, ReceiptText, ClipboardList,
-  Wrench, CalendarDays, DollarSign, Wallet, HandCoins,
+  Wrench, CalendarDays, CalendarClock, DollarSign, Wallet, HandCoins,
   UsersRound, Package, Warehouse, Boxes, ShieldCheck, Network, BookOpen, Shield, BarChart3, CalendarRange, Scale,
   GitPullRequestArrow, TrendingUp, PieChart, Landmark, Waves, ShieldQuestion,
   UtensilsCrossed, ChefHat, Bike, Soup, Cookie, Apple,
@@ -24,6 +24,7 @@ export const READY_TABS = new Set([
   'chart-accounts', 'accounting', 'cost-centers', 'fiscal-years', 'fixed-assets', 'audit',
   'clients', 'suppliers', 'inventory', 'warehouses', 'stock-movements', 'users', 'settings',
   'platforms', 'menu',
+  'business-day',
   // Reports cycle
   'report-income', 'report-balance', 'report-cashflow', 'report-ledger', 'report-trial', 'report-vat', 'report-projects', 'report-inventory', 'report-partners', 'report-employees',
 ]);
@@ -158,6 +159,15 @@ export const CYCLES = [
     color: { text: 'text-slate-600', border: 'border-slate-500', light: 'bg-slate-50', bg: 'bg-slate-600' },
     tabs: [
       { key: 'settings',        ar: 'إعدادات النظام',   en: 'System Settings', Icon: Settings },
+    ],
+  },
+  {
+    key: 'business-day-cycle',
+    label: { ar: 'يوم العمل والورديات', en: 'Business Day & Shifts' },
+    Icon: CalendarClock,
+    color: { text: 'text-cyan-600', border: 'border-cyan-500', light: 'bg-cyan-50', bg: 'bg-cyan-600' },
+    tabs: [
+      { key: 'business-day', ar: 'يوم العمل', en: 'Business Day', Icon: CalendarClock },
     ],
   },
 ];

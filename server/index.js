@@ -230,6 +230,38 @@ async function handleAuth(req, res, route) {
     return sendJson(res, { ok: false, error: 'كلمة المرور غير صحيحة' }, 403);
   }
 
+  // ضبط/تغيير كلمة مرور المشرف (يُخزَّن الهاش على CompanySettings).
+  // يتطلب صلاحية admin. كلمة المرور الجديدة تُعامل (salted scrypt) قبل التخزين.
+  // المسار يطابق نمط base44.functions.invoke('setSupervisorPassword').
+  if ((route === '/api/pos/set-supervisor-password' || route === '/api/functions/setSupervisorPassword') && req.method === 'POST') {
+    const user = await requireUser(req).catch(() => null);
+    if (!user || user.role !== 'admin') return sendJson(res, { error: 'Forbidden — admin only' }, 403);
+    const { newPassword } = await readBody(req);
+    if (!newPassword || String(newPassword).length < 4) {
+      return sendJson(res, { error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' }, 400);
+    }
+    const hash = hashPassword(String(newPassword));
+    try {
+      // upsert على entity_records لـ CompanySettings.
+      const { rows } = await pool.query("SELECT id FROM entity_records WHERE entity_name='CompanySettings' LIMIT 1");
+      if (rows.length > 0) {
+        await pool.query(
+          "UPDATE entity_records SET data = jsonb_set(COALESCE(data,'{}'), '{supervisorPasswordHash}', to_jsonb($1::text)) WHERE id = $2",
+          [hash, rows[0].id]
+        );
+      } else {
+        await pool.query(
+          "INSERT INTO entity_records (id, entity_name, data) VALUES ($1, 'CompanySettings', jsonb_build_object('supervisorPasswordHash', $2::text))",
+          [crypto.randomUUID(), hash]
+        );
+      }
+      return sendJson(res, { ok: true });
+    } catch (e) {
+      console.error('set-supervisor-password failed:', e);
+      return sendJson(res, { error: 'فشل حفظ كلمة المرور' }, 500);
+    }
+  }
+
   return sendJson(res, { error: 'Not found' }, 404);
 }
 

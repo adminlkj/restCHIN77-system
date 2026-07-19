@@ -49,6 +49,7 @@ export const MODULES = [
   { key: 'stock-movements', ar: 'الحركات المخزنية', en: 'Stock Movements', group: 'settings' },
   { key: 'users', ar: 'المستخدمون والصلاحيات', en: 'Users & Permissions', group: 'settings' },
   { key: 'settings', ar: 'إعدادات النظام', en: 'System Settings', group: 'settings' },
+  { key: 'business-day', ar: 'يوم العمل', en: 'Business Day', group: 'settings' },
 ];
 
 export const ALL_MODULE_KEYS = MODULES.map(m => m.key);
@@ -90,12 +91,12 @@ export const APP_ROLES = {
     modules: ['pos', 'tables', 'projects', 'sales', 'client-payments',
       'purchase-orders', 'purchase-requests', 'goods-receipts', 'expenses',
       'reports', 'clients', 'suppliers', 'platforms', 'menu', 'inventory', 'warehouses', 'stock-movements',
-      'employees', 'attendance', 'equipment', 'equipment-maintenance'],
+      'employees', 'attendance', 'equipment', 'equipment-maintenance', 'business-day'],
   },
   CASHIER: {
     ar: 'كاشير', en: 'Cashier',
     color: 'bg-amber-100 text-amber-700 border border-amber-200',
-    modules: ['pos', 'tables', 'sales', 'client-payments', 'clients'],
+    modules: ['pos', 'tables', 'sales', 'client-payments', 'clients', 'business-day'],
   },
   ACCOUNTANT: {
     ar: 'محاسب', en: 'Accountant',
@@ -110,7 +111,7 @@ export const APP_ROLES = {
     color: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
     modules: ['pos', 'tables', 'projects', 'sales', 'client-payments', 'purchase-orders',
       'purchase-requests', 'goods-receipts', 'expenses',
-      'reports', 'clients', 'menu'],
+      'reports', 'clients', 'menu', 'business-day'],
   },
   PROCUREMENT: {
     ar: 'مسؤول مشتريات', en: 'Procurement',

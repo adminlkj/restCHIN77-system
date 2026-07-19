@@ -80,15 +80,27 @@ export default function Tables() {
   // فيكون branchSettings عبارة عن Promise و branchName دائماً undefined.
   const [branchSettings, setBranchSettingsState] = useState({});
 
-  // ─── تحميل الطاولات ─────────────────────────────────────────────────
-  const load = useCallback(() => {
+  // ─── تحميل الطاولات (من الخادم + دمج المحلي) ─────────────────────────
+  // نحمّل من DB أولاً (المصدر الموحّد عبر الأجهزة)، ثم ندمج أي طاولات محلية لم
+  // تُزامَل بعد. هذا يحقق رؤية الطاولات ومسوداتها على كل الأجهزة.
+  const load = useCallback(async () => {
     if (!activeProjectId) { setTables([]); setLoading(false); return; }
     setLoading(true);
     try {
-      setTables(getBranchTables(activeProjectId));
+      const dbTables = await loadBranchTablesFromDB(activeProjectId);
+      const localTables = getBranchTables(activeProjectId);
+      // ادمج: طاولات DB (المصدر) + طاولات محلية بمعرّف غير موجودة في DB.
+      const seenIds = new Set(dbTables.map(t => t.id));
+      const merged = [...dbTables];
+      for (const lt of localTables) {
+        if (!seenIds.has(lt.id)) merged.push(lt);
+      }
+      // ترتيب موحّد.
+      merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
+      setTables(merged);
     } catch (e) {
-      console.warn('Tables load failed:', e);
-      setTables([]);
+      console.warn('Tables load failed — falling back to local only:', e);
+      setTables(getBranchTables(activeProjectId));
     } finally {
       setLoading(false);
     }

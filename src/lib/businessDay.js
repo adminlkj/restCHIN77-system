@@ -9,10 +9,32 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { base44 } from '@/api/base44Client';
+import { getBranchSettings } from '@/lib/branchSettings';
 
 // الحدود الافتراضية: يوم العمل يبدأ 6:00 صباحاً وينتهي 2:00 بعد منتصف الليل
 // (أي اليوم التالي الساعة 02:00). هذا نموذج شائع للمطاعم.
 export const DEFAULT_BUSINESS_HOURS = { startHour: 6, endHour: 2 };
+
+// يجلب حدود يوم العمل لفرع من BranchSettings (إن ضُبطت)، أو يرجع للافتراضية.
+// cache قصير (within-call) لتقليل الطلبات المتكررة.
+const _hoursCache = new Map();
+export async function getBranchHours(branchId) {
+  if (!branchId) return DEFAULT_BUSINESS_HOURS;
+  if (_hoursCache.has(branchId)) return _hoursCache.get(branchId);
+  let hours = DEFAULT_BUSINESS_HOURS;
+  try {
+    const s = await getBranchSettings(branchId);
+    const sh = Number(s?.dayStartHour);
+    const eh = Number(s?.dayEndHour);
+    if (!isNaN(sh) && sh >= 0 && sh <= 23 && !isNaN(eh) && eh >= 0 && eh <= 23) {
+      hours = { startHour: sh, endHour: eh };
+    }
+  } catch { /* افتراضي */ }
+  _hoursCache.set(branchId, hours);
+  // أفرغ الكاش بعد دقيقة ليُعاد قراءة الإعداد عند تغييره.
+  setTimeout(() => _hoursCache.delete(branchId), 60000);
+  return hours;
+}
 
 /**
  * يحوّل أي تاريخ (ISO أو محلي) إلى YYYY-MM-DD ليوم العمل الذي يقع فيه،
@@ -77,7 +99,9 @@ export function currentBusinessDay(hours = DEFAULT_BUSINESS_HOURS) {
  */
 export async function openBusinessDay({ branchId, branchName, user, openingCash = 0, hours }) {
   if (!branchId) return null;
-  const dayDate = currentBusinessDay(hours);
+  // اجلب حدود الفرع إن لم تُمرَّر صراحةً (احترام إعداد dayStartHour/dayEndHour).
+  const branchHours = hours || await getBranchHours(branchId);
+  const dayDate = currentBusinessDay(branchHours);
   try {
     // هل يوجد يوم مفتوح لهذا الفرع في هذا التاريخ؟
     const existing = await base44.entities.BusinessDay.filter({
@@ -106,7 +130,9 @@ export async function openBusinessDay({ branchId, branchName, user, openingCash 
  */
 export async function getOpenBusinessDay(branchId, hours) {
   if (!branchId) return null;
-  const dayDate = currentBusinessDay(hours);
+  // اجلب حدود الفرع إن لم تُمرَّر صراحةً.
+  const branchHours = hours || await getBranchHours(branchId);
+  const dayDate = currentBusinessDay(branchHours);
   try {
     const rows = await base44.entities.BusinessDay.filter({
       branchId, dayDate, status: 'OPEN',

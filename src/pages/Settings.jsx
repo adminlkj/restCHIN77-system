@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, FileText, Globe, Info, Store, Palette, Receipt, CalendarClock } from 'lucide-react';
+import { Building2, FileText, Globe, Info, Store, Palette, Receipt, CalendarClock, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useStore } from '@/lib/store';
@@ -9,6 +9,7 @@ import CompanySettingsCard from '@/components/settings/CompanySettingsCard';
 import BranchSettingsCard from '@/components/settings/BranchSettingsCard';
 import PrintSettingsCard from '@/components/settings/PrintSettingsCard';
 import FiscalControlCard from '@/components/settings/FiscalControlCard';
+import SupervisorPasswordCard from '@/components/settings/SupervisorPasswordCard';
 
 export default function Settings() {
   const { lang, toggleLang } = useStore();
@@ -20,6 +21,7 @@ export default function Settings() {
     { key: 'branches', ar: 'إعدادات الفروع',  en: 'Branch Settings',  Icon: Store },
     { key: 'print',    ar: 'الطباعة والإيصال', en: 'Print & Receipt',  Icon: FileText },
     { key: 'fiscal',   ar: 'التحكم المالي',   en: 'Fiscal Control',   Icon: CalendarClock },
+    { key: 'security', ar: 'الأمان',          en: 'Security',          Icon: ShieldCheck },
     { key: 'about',    ar: 'حول النظام',      en: 'About',            Icon: Info },
   ];
 
@@ -89,6 +91,8 @@ export default function Settings() {
         {tab === 'print' && <PrintSettingsCard />}
 
         {tab === 'fiscal' && <FiscalControlCard />}
+
+        {tab === 'security' && <SupervisorPasswordCard />}
 
         {tab === 'about' && (
           <Card>

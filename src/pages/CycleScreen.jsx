@@ -44,6 +44,7 @@ import DeliveryPlatforms from '@/pages/DeliveryPlatforms';
 import MenuManagement from '@/pages/MenuManagement';
 import Users from '@/pages/Users';
 import Settings from '@/pages/Settings';
+import BusinessDayScreen from '@/pages/BusinessDayScreen';
 
 const TAB_CONTENT = {
   projects: <Orders />,
@@ -92,6 +93,7 @@ const TAB_CONTENT = {
   menu: <MenuManagement />,
   users: <Users />,
   settings: <Settings />,
+  'business-day': <BusinessDayScreen />,
 };
 
 export default function CycleScreen({ cycleKey }) {
