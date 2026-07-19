@@ -45,9 +45,15 @@ export default function EmployeeWorkspace() {
     (async () => {
       setLoading(true);
       try {
-        const emp = await base44.entities.Employee.filter({ id: activeEmployeeId });
+        // نستخدم get(id) مباشرة بدل filter({id}) — أدقّ وأسرع، ويتعامل مع
+        // حالة "الموظف محذوف لكن activeEmployeeId لا يزال في المتجر" بشكل صحيح
+        // (get يرمي 404)، فلا نبقى عالقين في skeleton للأبد.
+        const emp = await base44.entities.Employee.get(activeEmployeeId);
         if (!active) return;
-        setEmployee(emp[0] || null);
+        setEmployee(emp || null);
+      } catch {
+        // موظف غير موجود (محذوف) → اعرض شاشة "غير موجود" بدل skeleton دائم.
+        if (active) setEmployee(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -79,12 +85,31 @@ export default function EmployeeWorkspace() {
     );
   }
 
-  if (loading || !employee) {
+  if (loading) {
     return (
       <div className="p-4 md:p-6">
         <div className="h-8 w-64 bg-muted animate-pulse rounded mb-6" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />)}
+        </div>
+      </div>
+    );
+  }
+
+  // انتهى التحميل بلا موظف → إمّا لم يُختر (حُوّل أعلاه) أو الموظف محذوف.
+  // اعرض شاشة "غير موجود" مع زر عودة بدل skeleton دائم.
+  if (!employee) {
+    return (
+      <div className="p-4 md:p-6">
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <User className="size-14 text-muted-foreground/40 mb-4" />
+          <h2 className="text-lg font-bold">{t('الموظف غير موجود', 'Employee not found', lang)}</h2>
+          <p className="text-sm text-muted-foreground mt-1 max-w-md">
+            {t('قد يكون هذا الموظف قد حُذف. اختر موظفاً آخر من سجل الموظفين.', 'This employee may have been deleted. Pick another from the Employees registry.', lang)}
+          </p>
+          <button onClick={() => setActiveItem('employees')} className="mt-4 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
+            {t('الذهاب للموظفين', 'Go to Employees', lang)}
+          </button>
         </div>
       </div>
     );

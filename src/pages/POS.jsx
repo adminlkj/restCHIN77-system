@@ -536,6 +536,35 @@ export default function POS() {
     setPayments(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // ─── حارس مبكر: لا تُفتح POS دون طاولة نشطة ─────────────────────────
+  // بدون طاولة، يُحفظ الإيصال بـ tableId فارغ وتُتخطّى مطابقة المطبخ،
+  // فنتجنّب ذلك بإعادة المستخدم لاختيار فرع/طاولة أولاً.
+  if (!activeTable?.tableId) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="size-14 rounded-full bg-amber-100 flex items-center justify-center">
+          <UtensilsCrossed className="size-7 text-amber-600" />
+        </div>
+        <div>
+          <p className="font-bold text-foreground">
+            {t('لم يتم اختيار طاولة', 'No table selected', lang)}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t('اختر فرعاً ثم طاولة لبدء البيع', 'Pick a branch then a table to start selling', lang)}
+          </p>
+        </div>
+        <div className="flex gap-2 mt-2">
+          <Button variant="outline" onClick={() => setActiveItem('branches')}>
+            {t('اختيار فرع', 'Choose branch', lang)}
+          </Button>
+          <Button onClick={() => setActiveItem('tables')} className="bg-amber-600 hover:bg-amber-700">
+            {t('اختيار طاولة', 'Choose table', lang)}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ─── إجراءات ────────────────────────────────────────────────────────
   const exitToTables = () => {
     clearActiveTable();
@@ -739,6 +768,11 @@ export default function POS() {
       const unitPrice = c.price;
       const lineTotal = +(unitPrice * c.qty).toFixed(2);
       return {
+        // مهم: itemId + name ضرورية لمطابقة طلبات المطبخ (compareOrderToInvoice في kitchenOrders.js).
+        // تعتمد المطابقة على itemId/name — بدونهما يفشل التطابق دائماً ويعطي MISMATCH خاطئ.
+        itemId: c.itemId || '',
+        name: c.name || '',
+        nameEn: c.nameEn || '',
         description: c.name,
         descriptionEn: c.nameEn || '',
         qty: c.qty,

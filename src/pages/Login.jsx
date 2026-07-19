@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,16 +17,25 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
-      window.location.href = "/";
+      // نستخدم login() من AuthContext لتحديث حالة المصادقة داخل الـ SPA،
+      // ثم نتنقّل لجذر التطبيق دون إعادة تحميل الصفحة كاملةً (يحافظ على حالة المتجر).
+      await login(email, password);
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "بيانات الدخول غير صحيحة");
+      // ميّز رسالة الخطأ: الحساب معطّل (بانتظار الموافقة) ← رسالة أوضح للمستخدم.
+      if (err?.status === 403 || /inactive|not registered|not approved/i.test(err?.message || "")) {
+        setError("حسابك غير مُفعّل بعد — بانتظار موافقة مسؤول النظام");
+      } else {
+        setError(err.message || "بيانات الدخول غير صحيحة");
+      }
     } finally {
       setLoading(false);
     }

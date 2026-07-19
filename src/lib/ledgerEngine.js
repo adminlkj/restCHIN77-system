@@ -162,6 +162,10 @@ export function buildCostCenterAnalysis({ projects = [], journalEntries = [], ch
         cost: 0,
         revenue: 0,
         expenseCost: 0,
+        // ملاحظة: أُضيفت القيم الافتراضية هنا لأن الـ .map لاحقاً (الأسطر 220-221)
+        // يستدعي .toFixed(2) على هذه الحقول — بدون تهيئتها يرمي undefined.toFixed().
+        subCost: 0,
+        supplierCost: 0,
         _project: project,
       };
     }

@@ -72,6 +72,10 @@ export default function Tables() {
   const [saving, setSaving] = useState(false);
   // عدد الطاولات في كل صف — يُقرأ من branchSettings ويعاد للواجهة فوراً عند التغيير.
   const [tablesPerRow, setTablesPerRow] = useState(6);
+  // نخزّن كائن إعدادات الفرع الكامل لعرض branchName (اسم الفرع المخصّص) بشكل صحيح.
+  // ملاحظة سابقة: كان يُستدعى getBranchSettings (async) بشكل تزامني في الـ render،
+  // فيكون branchSettings عبارة عن Promise و branchName دائماً undefined.
+  const [branchSettings, setBranchSettingsState] = useState({});
 
   // ─── تحميل الطاولات ─────────────────────────────────────────────────
   const load = useCallback(() => {
@@ -91,17 +95,19 @@ export default function Tables() {
 
   // قراءة إعداد عدد الطاولات في كل صف من إعدادات الفرع.
   // ملاحظة: getBranchSettings دالة async — يجب await داخل useEffect.
+  // نُخزّن كائن الإعدادات كاملاً لاستخدام branchName في عرض الترويسة.
   useEffect(() => {
-    if (!activeProjectId) { setTablesPerRow(6); return; }
+    if (!activeProjectId) { setTablesPerRow(6); setBranchSettingsState({}); return; }
     let active = true;
     (async () => {
       try {
         const s = await getBranchSettings(activeProjectId);
         if (!active) return;
+        setBranchSettingsState(s || {});
         const v = Number(s?.tablesPerRow);
         setTablesPerRow(PER_ROW_OPTIONS.includes(v) ? v : 6);
       } catch {
-        if (active) setTablesPerRow(6);
+        if (active) { setTablesPerRow(6); setBranchSettingsState({}); }
       }
     })();
     return () => { active = false; };
@@ -314,7 +320,7 @@ export default function Tables() {
     );
   }
 
-  const branchSettings = getBranchSettings(activeProjectId);
+  // branchSettings يُحمَّل الآن بشكل async عبر useEffect أعلاه (وليس استدعاءً تزامنياً).
   const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
 
   // ─── عرض ───────────────────────────────────────────────────────────

@@ -17,11 +17,18 @@ export const MATCH_STATUS = {
   MISMATCH: { ar: 'متعارض',         en: 'Mismatch',         color: 'bg-rose-100 text-rose-700 border-rose-300' },
 };
 
-// توليد رقم طلب مطبخ فريد — KO-YYYY-XXXXXX
+// توليد رقم طلب مطبخ فريد — KO-YYYYMMDD-XXXXXX
+// نستخدم التاريخ الكامل (يومياً) + قيمة عشوائية (4 خانات) لتقليل احتمال التصادم
+// بين طلبات تُطبع في نفس الثانية. الإصدار السابق كان يأخذ آخر 6 أرقام من Date.now()
+// فقط، فكان يتصادم عند أي طلبين خلال نفس الثانية.
 export function genKitchenOrderNo() {
-  const y = new Date().getFullYear();
-  const seq = Date.now().toString().slice(-6);
-  return `KO-${y}-${seq}`;
+  const now = new Date();
+  const y = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const rand = Math.floor(1000 + Math.random() * 9000); // 1000–9999
+  const seq = String(now.getSeconds()).padStart(2, '0') + rand;
+  return `KO-${y}${mm}${dd}-${seq}`;
 }
 
 // إنشاء سجل طلب مطبخ عند الطباعة.

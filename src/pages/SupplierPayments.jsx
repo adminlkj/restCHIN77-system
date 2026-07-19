@@ -129,7 +129,10 @@ export default function SupplierPayments() {
     setSaving(false);
   };
 
-  const totalPaid = filtered.reduce((s, i) => s + (i.amount || 0), 0);
+  // إجمالي المدفوع — نستثني السندات الملغاة (status === 'CANCELLED') لتفادي
+  // تضخيم الإجمالي بالمدفوعات المعكوسة. (الميدان status غير معرّف رسمياً في الـ schema
+  // لكنه يُكتب عند العكس ويُقرأ في الجدول، فنتعامل معه بدفاعية.)
+  const totalPaid = filtered.reduce((s, i) => s + (i.status === 'CANCELLED' ? 0 : (i.amount || 0)), 0);
 
   const exportColumns = [
     { header: { ar: 'رقم السند', en: 'Voucher No' }, value: (r) => r.paymentNo },

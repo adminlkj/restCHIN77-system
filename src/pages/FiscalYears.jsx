@@ -65,6 +65,13 @@ export default function FiscalYears() {
     if (dup) return toast.error(t('توجد سنة مالية بنفس الرقم بالفعل', 'A fiscal year with this number already exists', lang));
     const overlap = items.find(i => i.id !== editing?.id && form.startDate <= i.endDate && form.endDate >= i.startDate);
     if (overlap) return toast.error(t(`الفترة متداخلة مع سنة "${overlap.name}"`, `Period overlaps fiscal year "${overlap.name}"`, lang));
+    // منع ضبط CLOSED/LOCKED يدوياً من الحوار: الإقفال يجب أن يمرّ حصراً عبر
+    // زر "إقفال" الذي يستدعي OperationEngine.closeFiscalYear لإنشاء قيد إقفال
+    // الأرباح المحتجزة + قيد افتتاحي للسنة التالية. التحايل على الحالة مباشرةً
+    // يُنتج سنة "مغلقة" بلا قيود إقفال = دفاتر مختلة.
+    if (form.status === 'CLOSED' || form.status === 'LOCKED') {
+      return toast.error(t('لا يمكن ضبط الحالة "مغلقة/مقفلة" يدوياً — استخدم زر "إقفال" لتوليد قيود الإقفال', 'Cannot set Closed/Locked status manually — use the "Close" button to generate closing entries', lang));
+    }
     setSaving(true);
     try {
       const data = { name: form.name, year: Number(form.year), startDate: form.startDate, endDate: form.endDate, status: form.status, isCurrent: form.isCurrent, notes: form.notes };
@@ -83,8 +90,8 @@ export default function FiscalYears() {
   const remove = async () => {
     try {
       const fy = items.find(i => i.id === deleteId);
-      if (fy && fy.status === 'CLOSED') {
-        toast.error(t('لا يمكن حذف سنة مالية مغلقة', 'Cannot delete a closed fiscal year', lang));
+      if (fy && (fy.status === 'CLOSED' || fy.status === 'LOCKED')) {
+        toast.error(t('لا يمكن حذف سنة مالية مغلقة أو مقفلة', 'Cannot delete a closed or locked fiscal year', lang));
         return;
       }
       const jes = await base44.entities.JournalEntry.list('-date', 5000);

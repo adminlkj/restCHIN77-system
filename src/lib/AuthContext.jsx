@@ -18,7 +18,8 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
+  // تُضبط true أثناء جلب الإعدادات العامة عند بدء التحميل، ثم false عند الانتهاء.
+  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [appPublicSettings] = useState({ public_settings: { requiresAuth: true } });
@@ -29,8 +30,10 @@ export const AuthProvider = ({ children }) => {
 
   const checkAppState = async () => {
     setAuthError(null);
-    setIsLoadingPublicSettings(false);
+    setIsLoadingPublicSettings(true);
     await checkUserAuth();
+    // انتهى تحميل الإعدادات العامة (هنا hard-coded لكن البوابة تستخدمها لعرض spinner البداية).
+    setIsLoadingPublicSettings(false);
   };
 
   const checkUserAuth = async () => {
@@ -55,11 +58,35 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       setUser(null);
       setIsAuthenticated(false);
-      setAuthError({ type: 'auth_required', message: 'Authentication required' });
+      // ميّز بين "لا توجد جلسة أصلاً" و"الحساب موجود لكن معطّل/بانتظار الموافقة".
+      // الخادم يُرجع 403 "Account is inactive" عند تسجيل مستخدم لم تتم الموافقة عليه
+      // (isActive=false). نرفع النوع المناسب لتعرض App.jsx شاشة UserNotRegisteredError.
+      const status = error?.status;
+      const message = String(error?.message || '');
+      if (status === 403 || /inactive|not registered|not approved/i.test(message)) {
+        setAuthError({ type: 'user_not_registered', message });
+      } else {
+        setAuthError({ type: 'auth_required', message: 'Authentication required' });
+      }
     } finally {
       setIsLoadingAuth(false);
       setAuthChecked(true);
     }
+  };
+
+  // تسجيل الدخول داخل الـ SPA بدلاً من إعادة تحميل الصفحة كاملةً.
+  // يرمي كائن خطأ يحوي { status, type } ليُميّز المتصل بين:
+  //   - 403 / user_not_registered: الحساب معطّل (بانتظار موافقة المالك)
+  //   - 401: بيانات غير صحيحة
+  //   - غير ذلك: خطأ شبكة/خادم
+  const login = async (email, password) => {
+    const result = await base44.auth.loginViaEmailPassword(email, password);
+    // نجح الدخول → حدّث الحالة وامسح أي خطأ سابق.
+    setUser(result);
+    setIsAuthenticated(true);
+    setAuthError(null);
+    setAuthChecked(true);
+    return result;
   };
 
   const logout = (shouldRedirect = true) => {
@@ -84,6 +111,7 @@ export const AuthProvider = ({ children }) => {
       authError,
       appPublicSettings,
       authChecked,
+      login,
       logout,
       navigateToLogin,
       checkUserAuth,

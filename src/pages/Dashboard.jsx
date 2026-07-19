@@ -89,9 +89,12 @@ export default function Dashboard() {
         const notes = inv.notes ? JSON.parse(inv.notes) : {};
         const items = notes.items || [];
         items.forEach(it => {
-          if (!itemMap[it.name]) itemMap[it.name] = { name: it.name, qty: 0, revenue: 0 };
-          itemMap[it.name].qty += (it.qty || 1);
-          itemMap[it.name].revenue += (it.total || 0);
+          // POS يخزّن الأصناف تحت description (مع name الآن بعد الإصلاح).
+          // نأخذ الاسم من أي حقل متاح لتفادي بطاقات بلا اسم.
+          const name = it.name || it.description || '—';
+          if (!itemMap[name]) itemMap[name] = { name, qty: 0, revenue: 0 };
+          itemMap[name].qty += (it.qty || 1);
+          itemMap[name].revenue += (it.total || 0);
         });
       } catch { /* ignore */ }
     });

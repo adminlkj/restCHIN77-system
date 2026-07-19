@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PackageCheck, Search, Trash2, RefreshCw, Printer } from 'lucide-react';
+import { PackageCheck, Search, RefreshCw, Printer } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -196,9 +196,9 @@ export default function GoodsReceipts() {
                         <TableCell>
                           <div className="flex gap-1">
                             <Button variant="ghost" size="icon" className="size-8" title={t('معاينة السند', 'Preview', lang)} onClick={() => openPreview(item)}><Printer className="size-3.5" /></Button>
-                            {item.invoicedStatus !== 'INVOICED' && (
-                              <Button variant="ghost" size="icon" className="size-8 text-destructive" title={t('حذف', 'Delete', lang)} onClick={() => askDelete(item.id)}><Trash2 className="size-3.5" /></Button>
-                            )}
+                            {/* زر الحذف محذوف عمداً: كل سند استلام له status='RECEIVED' وهي حالة
+                                محمية (IMMUTABLE_STATUSES على الخادم)، فالخادم يرفض الحذف دائماً.
+                                التصحيح المناسب هو عكس القيد عبر حذف/عكس فاتورة المورد المرتبطة. */}
                           </div>
                         </TableCell>
                       </TableRow>
