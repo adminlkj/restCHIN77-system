@@ -170,22 +170,34 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
 
   // احسب الإجماليات.
   let grossSales = 0, vatCollected = 0, discounts = 0;
-  let expectedCashDelta = 0;
+  // النقد المتوقع في الدرج = الصندوق فقط (1111). البطاقات (1114) والبنك (1112)
+  // تُحصّل لاحقاً عبر تسويات، فلا تدخل في عدّاد الدرّج الفعلي. لو أضفناها لظهر
+  // "النقد المتوقع" = إجمالي المحصّل (نقد + بطاقات + بنك) وهو خطأ محاسبي.
+  let expectedCashDelta = 0;       // الصندوق فقط (1111)
+  let cardSettlementsDelta = 0;    // البطاقات (1114) — للمعلومة، لا للدرج
+  let bankDelta = 0;               // البنك (1112) — للمعلومة
   const byPaymentMethod = {};
   for (const l of dayLines) {
     const acc = accountMap[l.accountCode] || {};
+    const code = acc.code || '';
     if (acc.semanticRole === 'REVENUE_SALES' || acc.accountType === 'REVENUE') {
       grossSales += (l.credit - l.debit);
     } else if (acc.semanticRole === 'VAT_PAYABLE') {
       vatCollected += (l.credit - l.debit);
     }
-    // النقد المتوقع = زيادة الصندوق (مدين على حسابات النقد 1111/1112/1114)
-    if (/^111\d$/.test(acc.code || '') || acc.semanticRole === 'CASH' || acc.semanticRole === 'BANK') {
+    // النقد في الدرج = الصندوق (1111) فقط. لا البنك (1112) ولا البطاقات (1114).
+    if (code === '1111' || acc.semanticRole === 'CASH') {
       expectedCashDelta += (l.debit - l.credit);
+    } else if (code === '1114') {
+      // بطاقات POS — تُحصّل لاحقاً من البنك، لا في الدرّج الفعلي.
+      cardSettlementsDelta += (l.debit - l.credit);
+    } else if (code === '1112' || acc.semanticRole === 'BANK') {
+      bankDelta += (l.debit - l.credit);
     }
   }
 
   const openingCash = Number(open.openingCash) || 0;
+  // النقد المتوقع في الدرج = الافتتاحي + تحصيلات الصندوق فقط (لا البطاقات/البنك).
   const expectedCash = +(openingCash + expectedCashDelta).toFixed(2);
   const variance = +(Number(closingCash) - expectedCash).toFixed(2);
   const zReportNo = `Z-${dayDate.replace(/-/g, '')}-${String(open.dayDate ? 1 : 1).padStart(3, '0')}`;
@@ -206,6 +218,10 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
         netSales: +(grossSales - vatCollected).toFixed(2),
         vatCollected: +vatCollected.toFixed(2),
         discounts: +discounts.toFixed(2),
+        // تفصيل التحصيلات حسب النوع — النقد فقط هو ما يدخل الدرّج الفعلي.
+        cashCollected: +expectedCashDelta.toFixed(2),
+        cardCollected: +cardSettlementsDelta.toFixed(2),
+        bankCollected: +bankDelta.toFixed(2),
         byPaymentMethod,
       },
     });

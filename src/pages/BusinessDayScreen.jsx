@@ -110,25 +110,36 @@ export default function BusinessDayScreen() {
     setWorking('');
   };
 
-  // النقد المتوقع (للعرض قبل الإقفال) من القيود المرحّلة اليوم.
+  // النقد المتوقع في الدرج (للعرض قبل الإقفال) من القيود المرحّلة اليوم.
+  // مهم: نحسب الصندوق (1111) فقط — البطاقات (1114) والبنك (1112) تُحصّل لاحقاً
+  // ولا تدخل في عدّاد الدرّج الفعلي. لو جمعناها لظهر "النقد المتوقع" = إجمالي
+  // المحصّل، وهو خطأ محاسبي يربك الكاشير.
   const expectedCash = React.useMemo(() => {
     if (!today) return 0;
     const accountMap = buildAccountMap(accounts);
     const dayDate = today.dayDate;
-    let delta = 0;
+    let cashDelta = 0;       // 1111 — ما يدخل الدرّج
+    let cardDelta = 0;       // 1114 — للمعلومة
+    let bankDelta = 0;       // 1112 — للمعلومة
     for (const je of journal) {
       if (!je.isPosted) continue;
-      const jeDay = new Date(je.date ? String(je.date).slice(0, 10) + 'T00:00:00' : null);
-      // تصنيف بسيط حسب التاريخ الخام (لا نعيد منطق toBusinessDayDate هنا — يكفي للعرض).
-      if (String(je.date || '').slice(0, 10) !== dayDate) continue;
+      // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
+      if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
       for (const l of (je.lines || [])) {
         const acc = accountMap[l.accountCode] || {};
-        if (/^111\d$/.test(acc.code || '') || acc.semanticRole === 'CASH' || acc.semanticRole === 'BANK') {
-          delta += (Number(l.debit) || 0) - (Number(l.credit) || 0);
-        }
+        const code = acc.code || '';
+        const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
+        if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
+        else if (code === '1114') cardDelta += d;
+        else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
       }
     }
-    return +((Number(today.openingCash) || 0) + delta).toFixed(2);
+    return {
+      total: +((Number(today.openingCash) || 0) + cashDelta).toFixed(2),
+      cashCollected: +cashDelta.toFixed(2),
+      cardCollected: +cardDelta.toFixed(2),
+      bankCollected: +bankDelta.toFixed(2),
+    };
   }, [today, journal, accounts]);
 
   return (
@@ -161,7 +172,7 @@ export default function BusinessDayScreen() {
               )}
             </div>
             {today ? (
-              <Button onClick={() => { setClosingCash(String(expectedCash)); setCloseOpen(true); }} className="gap-2 bg-rose-600 hover:bg-rose-700">
+              <Button onClick={() => { setClosingCash(String(expectedCash.total)); setCloseOpen(true); }} className="gap-2 bg-rose-600 hover:bg-rose-700">
                 <Lock className="size-4" /> {t('إقفال اليوم + Z-Report', 'Close day + Z-Report', lang)}
               </Button>
             ) : (
@@ -190,14 +201,28 @@ export default function BusinessDayScreen() {
                 <p className="text-lg font-bold">{formatCurrency(Number(today.openingCash) || 0, lang)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">{t('تحصيلات اليوم', 'Today collections', lang)}</p>
-                <p className="text-lg font-bold text-emerald-600">{formatCurrency(expectedCash - (Number(today.openingCash) || 0), lang)}</p>
+                <p className="text-xs text-muted-foreground">{t('تحصيلات نقد اليوم', 'Today cash collections', lang)}</p>
+                <p className="text-lg font-bold text-emerald-600">{formatCurrency(expectedCash.cashCollected, lang)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">{t('المتوقع للإغلاق', 'Expected at close', lang)}</p>
-                <p className="text-lg font-bold text-blue-600">{formatCurrency(expectedCash, lang)}</p>
+                <p className="text-lg font-bold text-blue-600">{formatCurrency(expectedCash.total, lang)}</p>
               </div>
             </div>
+            {/* تفصيل التحصيلات حسب النوع — البطاقات/البنك لا تدخل الدرّج الفعلي
+                (تُحصّل لاحقاً عبر تسويات). نعرضها للمعلومة فقط ليفهم الكاشير الفرق. */}
+            {(expectedCash.cardCollected !== 0 || expectedCash.bankCollected !== 0) && (
+              <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>{t('تحصيلات البطاقات (خارج الدرّج)', 'Card collections (not in drawer)', lang)}</span>
+                  <span className="font-medium">{formatCurrency(expectedCash.cardCollected, lang)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{t('تحويلات بنكية (خارج الدرّج)', 'Bank transfers (not in drawer)', lang)}</span>
+                  <span className="font-medium">{formatCurrency(expectedCash.bankCollected, lang)}</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -260,18 +285,18 @@ export default function BusinessDayScreen() {
           <DialogHeader><DialogTitle className="flex items-center gap-2"><ReceiptIcon className="size-5" />{t('إقفال يوم العمل', 'Close Business Day', lang)}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">{t('النقد المتوقع', 'Expected cash', lang)}</span><strong>{formatCurrency(expectedCash, lang)}</strong></div>
-              <p className="text-xs text-blue-700">{t('أدخل العدّاد الفعلي للنقد في الدرج. سيتم حساب الفرق وإصدار Z-Report.', 'Enter the actual counted cash. Variance will be computed and Z-Report issued.', lang)}</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('النقد المتوقع في الدرج', 'Expected cash in drawer', lang)}</span><strong>{formatCurrency(expectedCash.total, lang)}</strong></div>
+              <p className="text-xs text-blue-700">{t('أدخل العدّاد الفعلي للنقد في الدرج فقط (لا يشمل البطاقات/البنك). سيتم حساب الفرق وإصدار Z-Report.', 'Enter the actual counted cash in the drawer only (excludes cards/bank). Variance will be computed and Z-Report issued.', lang)}</p>
             </div>
             <div className="space-y-1.5">
               <Label>{t('النقد الفعلي المعدود', 'Counted cash', lang)} *</Label>
               <Input type="number" min="0" step="0.01" value={closingCash} onChange={e => setClosingCash(e.target.value)} className="h-10" autoFocus />
-              {closingCash !== '' && Math.abs((Number(closingCash) || 0) - expectedCash) >= 0.01 && (
-                <p className={`text-xs flex items-center gap-1 ${Number(closingCash) < expectedCash ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {closingCash !== '' && Math.abs((Number(closingCash) || 0) - expectedCash.total) >= 0.01 && (
+                <p className={`text-xs flex items-center gap-1 ${Number(closingCash) < expectedCash.total ? 'text-rose-600' : 'text-emerald-600'}`}>
                   <AlertTriangle className="size-3" />
-                  {Number(closingCash) < expectedCash
-                    ? t('عجز بمقدار', 'Shortage of', lang) + ' ' + formatCurrency(expectedCash - (Number(closingCash) || 0), lang)
-                    : t('فائض بمقدار', 'Surplus of', lang) + ' ' + formatCurrency((Number(closingCash) || 0) - expectedCash, lang)}
+                  {Number(closingCash) < expectedCash.total
+                    ? t('عجز بمقدار', 'Shortage of', lang) + ' ' + formatCurrency(expectedCash.total - (Number(closingCash) || 0), lang)
+                    : t('فائض بمقدار', 'Surplus of', lang) + ' ' + formatCurrency((Number(closingCash) || 0) - expectedCash.total, lang)}
                 </p>
               )}
             </div>
