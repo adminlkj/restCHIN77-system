@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Pencil, Trash2, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, RefreshCw, CheckCircle2, XCircle, ArrowRightCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,19 +42,66 @@ export default function PurchaseRequests() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+  // حالة حوار "تحويل لأمر شراء": يختار المستخدم المورد، فيُنشأ أمر شراء DRAFT
+  // مرتبط بالطلب (purchaseRequestId/requestNo) وتُحدَّث حالة الطلب إلى CONVERTED.
+  const [suppliers, setSuppliers] = useState([]);
+  const [convertTarget, setConvertTarget] = useState(null); // الطلب قيد التحويل
+  const [convertSupplierId, setConvertSupplierId] = useState('');
+  const [converting, setConverting] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [r, p] = await Promise.all([
+      const [r, p, s] = await Promise.all([
         base44.entities.PurchaseRequest.list('-created_date', 200),
         base44.entities.Project.list(),
+        base44.entities.Supplier.list().catch(() => []),
       ]);
-      setItems(r); setProjects(p);
+      setItems(r); setProjects(p); setSuppliers(s || []);
     } catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  // تحويل طلب شراء معتمد إلى أمر شراء DRAFT مرتبط به.
+  // ينسخ الحقول الأساسية (المشروع، الوصف، القيمة التقديرية) ويربط المعرّف/الرقم،
+  // ثم يحدّث حالة الطلب إلى CONVERTED. يُكمل المستخدم تفاصيل الأمر من شاشة أوامر الشراء.
+  const convertToOrder = async () => {
+    if (!convertTarget) return;
+    if (!convertSupplierId) {
+      toast.error(t('اختر المورد أولاً', 'Select a supplier first', lang));
+      return;
+    }
+    setConverting(true);
+    try {
+      const supplier = suppliers.find(s => s.id === convertSupplierId);
+      const orderNo = nextCodeFromList([], 'PO', 'orderNo'); // رقم مبدئي — الخادم قد يُعيد توليده
+      await base44.entities.PurchaseOrder.create({
+        orderNo,
+        purchaseRequestId: convertTarget.id,
+        requestNo: convertTarget.requestNo || '',
+        supplierId: convertSupplierId,
+        supplierName: supplier?.name || '',
+        projectId: convertTarget.projectId || '',
+        projectName: convertTarget.projectName || '',
+        date: new Date().toISOString().slice(0, 10),
+        status: 'DRAFT',
+        description: convertTarget.description || '',
+        totalAmount: Number(convertTarget.estimatedAmount) || 0,
+        notes: convertTarget.notes || '',
+        lines: [],
+      });
+      // حدّث حالة الطلب الأصلي إلى CONVERTED لإغلاق دورته.
+      await base44.entities.PurchaseRequest.update(convertTarget.id, { status: 'CONVERTED' });
+      toast.success(t('تم إنشاء أمر شراء مرتبط بالطلب', 'Purchase order created and linked to the request', lang));
+      setConvertTarget(null);
+      setConvertSupplierId('');
+      load();
+    } catch (e) {
+      toast.error(e?.message || t('فشل التحويل', 'Conversion failed', lang));
+    }
+    setConverting(false);
+  };
 
   const filtered = items.filter(i => {
     const match = !search || i.requestNo?.toLowerCase().includes(search.toLowerCase()) || i.description?.toLowerCase().includes(search.toLowerCase());
@@ -165,7 +212,13 @@ export default function PurchaseRequests() {
                         <TableCell>
                           <div className="flex gap-1">
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8 text-emerald-700" title={t('اعتماد', 'Approve', lang)} onClick={() => setStatus(item, 'APPROVED')}><CheckCircle2 className="size-3.5" /></Button>}
-                            {item.status !== 'APPROVED' && item.status !== 'REJECTED' && <Button variant="ghost" size="icon" className="size-8 text-rose-700" title={t('رفض', 'Reject', lang)} onClick={() => setStatus(item, 'REJECTED')}><XCircle className="size-3.5" /></Button>}
+                            {item.status !== 'APPROVED' && item.status !== 'REJECTED' && item.status !== 'CONVERTED' && <Button variant="ghost" size="icon" className="size-8 text-rose-700" title={t('رفض', 'Reject', lang)} onClick={() => setStatus(item, 'REJECTED')}><XCircle className="size-3.5" /></Button>}
+                            {/* تحويل الطلب المعتمد إلى أمر شراء مرتبط */}
+                            {item.status === 'APPROVED' && (
+                              <Button variant="ghost" size="icon" className="size-8 text-amber-700" title={t('تحويل لأمر شراء', 'Convert to Purchase Order', lang)} onClick={() => { setConvertTarget(item); setConvertSupplierId(''); }}>
+                                <ArrowRightCircle className="size-3.5" />
+                              </Button>
+                            )}
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(item)}><Pencil className="size-3.5" /></Button>}
                             {item.status === 'DRAFT' && <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => askDelete(item.id)}><Trash2 className="size-3.5" /></Button>}
                           </div>
@@ -217,6 +270,37 @@ export default function PurchaseRequests() {
         title={t('حذف طلب الشراء', 'Delete Request', lang)}
         description={t('سيتم حذف الطلب نهائياً.', 'This request will be permanently deleted.', lang)}
         onConfirm={remove} confirmLabel={t('حذف', 'Delete', lang)} />
+
+      {/* حوار التحويل لأمر شراء: يختار المستخدم المورد، فيُنشأ أمر شراء DRAFT مرتبط */}
+      <Dialog open={!!convertTarget} onOpenChange={(o) => { if (!o) { setConvertTarget(null); setConvertSupplierId(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('تحويل إلى أمر شراء', 'Convert to Purchase Order', lang)}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              {t('سيُنشأ أمر شراء بحالة مسودة مرتبط بالطلب رقم', 'A draft purchase order linked to request')}{' '}
+              <span className="font-mono font-semibold">{convertTarget?.requestNo}</span>{' '}
+              {t('— يمكنك إكمال التفاصيل من شاشة أوامر الشراء.', '— you can complete details from Purchase Orders.')}
+            </p>
+            <div className="space-y-1.5">
+              <Label>{t('المورد', 'Supplier', lang)} *</Label>
+              <Select value={convertSupplierId} onValueChange={setConvertSupplierId}>
+                <SelectTrigger><SelectValue placeholder={t('اختر المورد', 'Select supplier', lang)} /></SelectTrigger>
+                <SelectContent>
+                  {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setConvertTarget(null); setConvertSupplierId(''); }}>{t('إلغاء', 'Cancel', lang)}</Button>
+            <Button onClick={convertToOrder} disabled={converting || !convertSupplierId} className="bg-amber-600 hover:bg-amber-700">
+              {converting ? t('جاري...', '...', lang) : t('تحويل', 'Convert', lang)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ModuleLayout>
   );
 }

@@ -47,17 +47,24 @@ export default function EmployeeReports() {
   const rows = useMemo(() => employees.map(emp => {
     const empAttendance = attendance.filter(a => a.employeeId === emp.id && inPeriod(a.date));
     const empAdvances = advances.filter(a => a.employeeId === emp.id && inPeriod(a.date));
-    const grossSalary = (Number(emp.salary) || 0) + (Number(emp.allowances) || 0);
+    const baseSalary = Number(emp.salary) || 0;
+    const grossSalary = baseSalary + (Number(emp.allowances) || 0);
     const presentDays = empAttendance.filter(a => a.status === 'PRESENT').length;
     const absentDays = empAttendance.filter(a => a.status === 'ABSENT').length;
     const leaveDays = empAttendance.filter(a => ['LEAVE', 'SICK', 'HOLIDAY'].includes(a.status)).length;
+    // خصم الغياب من الراتب: نقسم الراتب الأساسي على 30 يوماً ونخصم أيام الغياب غير المدفوعة.
+    // الإجازات (LEAVE/SICK/HOLIDAY) لا تُخصم (مدفوعة عرفاً). الخصم يُطبَّق على الراتب
+    // الأساسي فقط (البدلات تبقى كما هي). تجنّب قيم سالبة (لا خصم يتجاوز الراتب).
+    const dailyRate = baseSalary > 0 ? baseSalary / 30 : 0;
+    const absenceDeduction = Math.min(baseSalary, +(absentDays * dailyRate).toFixed(2));
+    const netSalary = +(grossSalary - absenceDeduction).toFixed(2);
     const openAdvance = empAdvances.reduce((s, a) => s + Math.max((Number(a.amount) || 0) - (Number(a.deductedAmount) || 0), 0), 0);
-    return { ...emp, grossSalary, presentDays, absentDays, leaveDays, openAdvance };
+    return { ...emp, grossSalary, netSalary, absenceDeduction, presentDays, absentDays, leaveDays, openAdvance };
   }), [employees, attendance, advances, from, to]);
 
   const filtered = rows.filter(r => !search || `${r.code} ${r.name} ${r.nameAr || ''} ${r.department || ''} ${r.position || ''}`.toLowerCase().includes(search.toLowerCase()));
   const activeCount = filtered.filter(e => e.status === 'ACTIVE' && e.isActive !== false).length;
-  const totalPayroll = filtered.reduce((s, e) => s + e.grossSalary, 0);
+  const totalPayroll = filtered.reduce((s, e) => s + e.netSalary, 0);
   const totalAdvances = filtered.reduce((s, e) => s + e.openAdvance, 0);
   const totalAbsences = filtered.reduce((s, e) => s + e.absentDays, 0);
 
@@ -67,6 +74,8 @@ export default function EmployeeReports() {
     { header: { ar: 'القسم', en: 'Department' }, value: r => r.department || '' },
     { header: { ar: 'الحالة', en: 'Status' }, value: r => r.status || '' },
     { header: { ar: 'إجمالي الراتب', en: 'Gross Salary' }, value: r => formatCurrency(r.grossSalary, lang) },
+    { header: { ar: 'خصم الغياب', en: 'Absence Deduction' }, value: r => formatCurrency(r.absenceDeduction, lang) },
+    { header: { ar: 'صافي الراتب', en: 'Net Salary' }, value: r => formatCurrency(r.netSalary, lang) },
     { header: { ar: 'حضور', en: 'Present' }, value: r => r.presentDays },
     { header: { ar: 'غياب', en: 'Absent' }, value: r => r.absentDays },
     { header: { ar: 'سلف مفتوحة', en: 'Open Advances' }, value: r => formatCurrency(r.openAdvance, lang) },

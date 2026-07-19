@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, RefreshCw, BadgeCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,6 +86,26 @@ export default function Advances() {
     catch { toast.error(t('فشل الحذف', 'Delete failed', lang)); }
   };
 
+  // تسوية سلفة: تخصم كامل المبلغ المتبقي دفعةً واحدة وتضبط الحالة SETTLED.
+  // بديل واضح ومباشر لتحرير حقل deductedAmount يدوياً من حوار التعديل.
+  const settle = async (item) => {
+    const remaining = (Number(item.amount) || 0) - (Number(item.deductedAmount) || 0);
+    if (remaining <= 0) {
+      toast.info(t('السلفة مسوّاة بالفعل', 'Advance already settled', lang));
+      return;
+    }
+    try {
+      await base44.entities.EmployeeAdvance.update(item.id, {
+        deductedAmount: Number(item.amount) || 0,
+        status: 'SETTLED',
+      });
+      toast.success(t('تمت تسوية السلفة', 'Advance settled', lang));
+      load();
+    } catch (e) {
+      toast.error(e?.message || t('فشلت التسوية', 'Settle failed', lang));
+    }
+  };
+
   const totalOpen = filtered.filter(r => r.status !== 'SETTLED').reduce((s, r) => s + ((r.amount || 0) - (r.deductedAmount || 0)), 0);
 
   const exportColumns = [
@@ -157,6 +177,12 @@ export default function Advances() {
                         <TableCell><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.color}`}>{lang === 'ar' ? st.ar : st.en}</span></TableCell>
                         <TableCell>
                           <div className="flex gap-1">
+                            {/* زر تسوية سريع: يظهر للسلف غير المسوّاة بالكامل */}
+                            {item.status !== 'SETTLED' && (
+                              <Button variant="ghost" size="icon" className="size-8 text-emerald-700" title={t('تسوية', 'Settle', lang)} onClick={() => settle(item)}>
+                                <BadgeCheck className="size-3.5" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(item)}><Pencil className="size-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => askDelete(item.id)}><Trash2 className="size-3.5" /></Button>
                           </div>

@@ -186,7 +186,15 @@ export default function SupplierInvoices() {
         sourceType: 'SupplierInvoice',
         entryNo: { $regex: escapeRegex(item.invoiceNo) },
       }, '-date', 50);
-      if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
+      if (jes.length === 0) {
+        // فاتورة مرتبطة بسند استلام و0% VAT: لا يوجد قيد SupplierInvoice مستقل
+        // (الذمة والمخزون مُثبتان من قيد سند الاستلام). اعتبرها قابلة للعكس مباشرةً
+        // بتحديث الحالة فقط دون إنشاء قيد عكسي (لأنه لا يوجد قيد أصلي لعكسه).
+        await base44.entities.SupplierInvoice.update(item.id, { status: 'CANCELLED' });
+        toast.success(t('تم إلغاء الفاتورة (لا يوجد قيد مستقل — مرتبطة بسند الاستلام)', 'Invoice cancelled (no standalone entry — linked to goods receipt)', lang));
+        load();
+        return;
+      }
       const orig = jes[0];
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));
       await base44.entities.JournalEntry.create({

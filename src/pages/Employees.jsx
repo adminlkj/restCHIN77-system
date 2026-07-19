@@ -35,7 +35,7 @@ export default function Employees() {
 
   const load = async () => {
     setLoading(true);
-    try { setItems(await base44.entities.Employee.list('-created_date', 200)); }
+    try { setItems(await base44.entities.Employee.list('-created_date', 1000)); }
     catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }
     setLoading(false);
   };
@@ -64,13 +64,15 @@ export default function Employees() {
 
   const remove = async () => {
     try {
+      // PayrollRun كيان تجميعي شهري بلا employeeId (لا يمكن فحصه هنا) — لذا نقتصر على
+      // EmployeeAdvance و EmployeeCustody المرتبطين فعلاً بمعرّف الموظف. الفحص القديم
+      // كان يستدعي PayrollRun.filter({employeeId}) الذي لا يُطابق أبداً (ميت).
       const checks = await Promise.all([
-        base44.entities.PayrollRun.filter({ employeeId: deleteId }),
         base44.entities.EmployeeAdvance.filter({ employeeId: deleteId }),
         base44.entities.EmployeeCustody.filter({ employeeId: deleteId }),
       ]);
       if (checks.some(list => list.length > 0)) {
-        toast.error(t('لا يمكن حذف موظف له رواتب أو سلف أو عهد', 'Cannot delete an employee with payroll, advances or custody', lang));
+        toast.error(t('لا يمكن حذف موظف له سلف أو عهد', 'Cannot delete an employee with advances or custody', lang));
         return;
       }
       await base44.entities.Employee.delete(deleteId); toast.success(t('تم الحذف', 'Deleted', lang)); load();

@@ -1200,8 +1200,11 @@ async function createExpense(base44, data) {
   const paymentAccount = payload.paymentAccountCode
     ? { code: payload.paymentAccountCode, name: payload.paymentAccountName || 'سداد المصروف' }
     : null;
-  const expense = await base44.asServiceRole.entities.Expense.create(payload);
+  // نُولّد المرجع قبل الإنشاء ونُخزّنه على المصروف، حتى يبقى رابط دقيق بين المصروف
+  // وقيده (JE-EXP-{ref}) عند العكس — بدل المطابقة الهشّة بالوصف النصي.
   const ref = `EXP-${Date.now()}`;
+  payload.reference = `JE-EXP-${ref}`;
+  const expense = await base44.asServiceRole.entities.Expense.create(payload);
   try {
     // بناء القيد مباشرةً من الحسابات المختارة حين يحدد المستخدم حساباً — اختياره الصريح
     // يتجاوز القالب. وإلا نرجع للقالب ثم للبناء الافتراضي حسب نوع المصروف.

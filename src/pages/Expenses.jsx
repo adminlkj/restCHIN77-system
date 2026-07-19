@@ -93,8 +93,23 @@ export default function Expenses() {
   const reverse = async (item) => {
     setReversingId(item.id);
     try {
-      const allJE = await base44.entities.JournalEntry.filter({ isPosted: true });
-      const jes = allJE.filter(je => je.sourceType === 'Expense' && (je.description || '').includes(item.description || '') && (je.description || '').includes(item.code || ''));
+      // فلترة الخادم عبر sourceType + entryNo المُخزَّن على المصروف (payload.reference).
+      // هذا يحل مشكلتين قديمتين: (1) نمط N+1 الذي كان يجلب كل القيود المرحَّلة،
+      // و(2) المطابقة الهشّة بـ description/item.code (item.code لم يكن موجوداً أصلاً).
+      let jes = [];
+      if (item.reference) {
+        jes = await base44.entities.JournalEntry.filter({
+          isPosted: true,
+          sourceType: 'Expense',
+          entryNo: item.reference,
+        }, '-date', 10);
+      }
+      // Fallback للسجلات القديمة قبل إضافة حقل reference: فلترة بالخادم على sourceType
+      // ثم مطابقة محلية بالوصف (أقل دقة لكن تُبقي السجلات القديمة قابلة للعكس).
+      if (jes.length === 0) {
+        const allExp = await base44.entities.JournalEntry.filter({ isPosted: true, sourceType: 'Expense' }, '-date', 200);
+        jes = allExp.filter(je => (je.description || '').includes(item.description || ''));
+      }
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
       const orig = jes[0];
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));
