@@ -25,7 +25,9 @@ import {
   TABLE_STATUS, getBranchTables, getBranchTableStats,
   addTable, updateTable, deleteTable,
   freeTable, reserveTable, setTableAvailable, clearTableDraft,
+  lockTableDB, loadBranchTablesFromDB,
 } from '@/lib/tables';
+import { useAuth } from '@/lib/AuthContext';
 import { getBranchSettings, setBranchSettings } from '@/lib/branchSettings';
 import { toast } from 'sonner';
 
@@ -57,6 +59,7 @@ const PER_ROW_OPTIONS = [3, 4, 5, 6, 8];
 
 export default function Tables() {
   const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
+  const { user: currentUser } = useAuth();
   const OpenArrow = lang === 'ar' ? ArrowLeft : ArrowRight;
 
   const [tables, setTables] = useState([]);
@@ -240,7 +243,27 @@ export default function Tables() {
   // لا نشغل الطاولة عند مجرد الدخول — تبقى AVAILABLE حتى تُضاف أول صنف
   // (حينها يحوّلها الحفظ التلقائي في POS إلى DRAFT). هذا يمنع "حجز" الطاولة
   // بمجرد فتحها ويسمح بتعديلها/حذفها ما لم يوجد طلب فعلي.
-  const openPOS = (table) => {
+  //
+  // مهم: نأخذ قفل متفائل على الخادم قبل الفتح — إن كانت الطاولة مفتوحة على جهاز آخر
+  // (قفل نشط)، نُنبّه المستخدم ونمنع الفتح لتفادي تضارب جهازين على نفس الطاولة.
+  const openPOS = async (table) => {
+    // تحقق من القفل عبر الخادم قبل الفتح.
+    if (activeProjectId && table?.id) {
+      try {
+        const lockResult = await lockTableDB(activeProjectId, table.id, currentUser);
+        if (!lockResult.ok) {
+          toast.error(t(
+            `هذه الطاولة مفتوحة حالياً على جهاز آخر (${lockResult.conflictBy || ''})`,
+            `This table is currently opened on another device (${lockResult.conflictBy || ''})`,
+            lang
+          ));
+          return;
+        }
+      } catch {
+        // فشل التحقق من القفل لا يمنع الفتح (نسمح بالعمل دون اتصال) لكن نُنبّه.
+        console.warn('lockTableDB check failed — proceeding without lock');
+      }
+    }
     try {
       localStorage.setItem('pos-active-table', JSON.stringify({
         tableId: table.id,

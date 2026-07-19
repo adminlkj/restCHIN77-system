@@ -213,3 +213,178 @@ export function getBranchDraftTables(branchId) {
   const tables = getBranchTables(branchId);
   return tables.filter(t => t.status === 'DRAFT' && t.draft);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// طبقة المزامنة المركزية (DB Sync Layer)
+// ═══════════════════════════════════════════════════════════════════════
+// localStorage يبقى للأداء (استجابة فورية)، لكن كل عملية حرجة (حفظ مسودة،
+// فتح POS، تحرير طاولة) تُزامَل مع كيان Table على الخادم. هذا يحقق:
+//   1) الرؤية عبر الأجهزة — جهاز 2 يرى مسودة جهاز 1
+//   2) القفل المتفائل — منع جهازين من فتح نفس الطاولة
+//   3) التدقيق — يُعرف من فتح/حرّر أي طاولة ومتى
+//
+// كل الدوال async وتُرجع Promise. المستهلكون يستدعونها بـ await مع try/catch
+// (الفشل لا يُعطّل التشغيل المحلي، لكن يُسجّل تحذيراً).
+// ═══════════════════════════════════════════════════════════════════════
+
+import { base44 } from '@/api/base44Client';
+
+// مهلة انتهاء القفل: 10 دقائق. لو مرّت دون تحديث، يُعتبر القفل منتهياً
+// ويمكن لمستخدم آخر أخذه.
+const LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+
+// هل القفل ما زال سارياً؟
+function isLockActive(lockedAt) {
+  if (!lockedAt) return false;
+  const dt = Date.now() - new Date(lockedAt).getTime();
+  return dt < LOCK_TIMEOUT_MS;
+}
+
+// مزامنة حالة طاولة محلية مع الخادم (upsert). يُستدعى بعد كل تعديل حرج.
+// نطابق الطاولة عبر branchId + tableId (المعرّف المحلي).
+export async function syncTableToDB(table) {
+  if (!table || !table.branchId) return null;
+  try {
+    const existing = await base44.entities.Table.filter({
+      branchId: table.branchId,
+      tableId: table.id,
+    }, '-updated_date', 5);
+    const payload = {
+      branchId: table.branchId,
+      tableId: table.id,
+      name: table.name || '',
+      seats: Number(table.seats) || 4,
+      status: table.status || 'AVAILABLE',
+      sortOrder: Number(table.sortOrder) || 0,
+      draft: table.draft || null,
+      currentInvoiceId: table.currentInvoiceId || '',
+    };
+    if (existing && existing.length > 0) {
+      return await base44.entities.Table.update(existing[0].id, payload);
+    }
+    return await base44.entities.Table.create(payload);
+  } catch (e) {
+    console.warn('syncTableToDB failed (continuing locally):', e);
+    return null;
+  }
+}
+
+// تحميل كل طاولات فرع من الخادم (للعرض الموحّد عبر الأجهزة).
+// ندمج: طاولات الخادم (المصدر) + أي طاولات محلية غير متزامنة بعد.
+export async function loadBranchTablesFromDB(branchId) {
+  if (!branchId) return [];
+  try {
+    const rows = await base44.entities.Table.filter({ branchId }, 'sortOrder', 500);
+    return (rows || []).map(r => ({
+      id: r.tableId || r.id,
+      dbId: r.id,
+      branchId: r.branchId,
+      name: r.name,
+      seats: r.seats,
+      status: r.status,
+      sortOrder: r.sortOrder,
+      draft: r.draft,
+      currentInvoiceId: r.currentInvoiceId || null,
+      lockedBy: r.lockedBy || '',
+      lockedByName: r.lockedByName || '',
+      lockedAt: r.lockedAt || '',
+      // هل الطاولة مفتوحة حالياً على جهاز آخر؟ (قفل نشط من مستخدم مختلف)
+      isLockedByOther: Boolean(r.lockedBy) && isLockActive(r.lockedAt),
+    }));
+  } catch (e) {
+    console.warn('loadBranchTablesFromDB failed (using local only):', e);
+    return [];
+  }
+}
+
+// أخذ قفل متفائل على طاولة في الخادم قبل فتح POS.
+// يُرجع { ok, conflictBy, conflictName } — ok=false يعني أن طاولة أخرى قفلها.
+export async function lockTableDB(branchId, tableId, user) {
+  if (!branchId || !tableId) return { ok: false };
+  try {
+    const existing = await base44.entities.Table.filter({
+      branchId, tableId,
+    }, '-updated_date', 5);
+    if (existing && existing.length > 0) {
+      const row = existing[0];
+      // هل يوجد قفل نشط من مستخدم مختلف؟
+      if (row.lockedBy && row.lockedBy !== user?.id && isLockActive(row.lockedAt)) {
+        return { ok: false, conflictBy: row.lockedByName || row.lockedBy };
+      }
+      // جدّد القفل لهذا المستخدم.
+      await base44.entities.Table.update(row.id, {
+        lockedBy: user?.id || 'unknown',
+        lockedByName: user?.full_name || user?.email || '',
+        lockedAt: new Date().toISOString(),
+      });
+      return { ok: true };
+    }
+    // لا يوجد سجل للطاولة على الخادم بعد — أنشئه بقفل.
+    await base44.entities.Table.create({
+      branchId, tableId,
+      lockedBy: user?.id || 'unknown',
+      lockedByName: user?.full_name || user?.email || '',
+      lockedAt: new Date().toISOString(),
+      status: 'AVAILABLE',
+    });
+    return { ok: true };
+  } catch (e) {
+    console.warn('lockTableDB failed (proceeding without lock):', e);
+    // الفشل في القفل لا يمنع الفتح (نسمح بالعمل المحلي) لكن نُنبّه.
+    return { ok: true, lockFailed: true };
+  }
+}
+
+// تحرير القفل عند الخروج من الطاولة (إغلاق POS دون بيع).
+export async function unlockTableDB(branchId, tableId) {
+  if (!branchId || !tableId) return;
+  try {
+    const existing = await base44.entities.Table.filter({
+      branchId, tableId,
+    }, '-updated_date', 5);
+    if (existing && existing.length > 0) {
+      await base44.entities.Table.update(existing[0].id, {
+        lockedBy: '',
+        lockedByName: '',
+        lockedAt: '',
+      });
+    }
+  } catch (e) {
+    console.warn('unlockTableDB failed:', e);
+  }
+}
+
+// حفظ مسودة طاولة على الخادد (للرؤية عبر الأجهزة). بديل مركزي عن localStorage.
+export async function saveDraftToTableDB(branchId, tableId, draft) {
+  if (!branchId || !tableId) return null;
+  const local = getTable(tableId) || { branchId, id: tableId, name: '', seats: 4 };
+  const updated = { ...local, status: 'DRAFT', draft: { ...draft, updatedAt: new Date().toISOString() } };
+  // حدّث محلياً أولاً (للاستجابة)، ثمزامن مع الخادم.
+  updateTable(tableId, { status: 'DRAFT', draft: updated.draft });
+  await syncTableToDB(updated);
+  return updated;
+}
+
+// تحرير طاولة على الخادم بعد إتمام البيع/الإلغاء (مسح المسودة + فك القفل).
+export async function clearTableDraftDB(branchId, tableId) {
+  if (!branchId || !tableId) return null;
+  clearTableDraft(tableId); // محلياً أولاً
+  try {
+    const existing = await base44.entities.Table.filter({
+      branchId, tableId,
+    }, '-updated_date', 5);
+    if (existing && existing.length > 0) {
+      await base44.entities.Table.update(existing[0].id, {
+        status: 'AVAILABLE',
+        currentInvoiceId: '',
+        draft: null,
+        lockedBy: '',
+        lockedByName: '',
+        lockedAt: '',
+      });
+    }
+  } catch (e) {
+    console.warn('clearTableDraftDB failed:', e);
+  }
+  return null;
+}

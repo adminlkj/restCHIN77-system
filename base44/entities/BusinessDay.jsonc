@@ -1,0 +1,96 @@
+{
+  "name": "BusinessDay",
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "معرّف الفرع الذي ينتمي إليه يوم العمل."
+    },
+    "branchName": {
+      "type": "string"
+    },
+    "dayDate": {
+      "type": "string",
+      "format": "date",
+      "description": "تاريخ يوم العمل (بالتوقيت المحلي للفرع)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["OPEN", "CLOSED"],
+      "default": "OPEN",
+      "description": "OPEN عند فتح اليوم، CLOSED عند إقفال الوردية (Z-Report)."
+    },
+    "openedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "openedBy": {
+      "type": "string",
+      "description": "معرّف المستخدم الذي فتح اليوم."
+    },
+    "openedByName": {
+      "type": "string"
+    },
+    "closedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "closedBy": {
+      "type": "string"
+    },
+    "closedByName": {
+      "type": "string"
+    },
+    "openingCash": {
+      "type": "number",
+      "default": 0,
+      "description": "عدّاد النقد الافتتاحي للدرج عند الفتح."
+    },
+    "closingCash": {
+      "type": "number",
+      "default": 0,
+      "description": "عدّاد النقد الفعلي عند الإقفال (للمطابقة مع المتوقع من القيود)."
+    },
+    "expectedCash": {
+      "type": "number",
+      "default": 0,
+      "description": "النقد المتوقع = افتتاحي + تحصيلات اليوم (من القيود على حساب الصندوق)."
+    },
+    "cashVariance": {
+      "type": "number",
+      "default": 0,
+      "description": "الفرق = closingCash − expectedCash. موجب = فائض، سالب = عجز."
+    },
+    "zReportNo": {
+      "type": "string",
+      "description": "رقم تقرير Z المتسلسل (يُولَّد عند الإقفال)."
+    },
+    "totals": {
+      "type": "object",
+      "description": "ملخص اليوم (salesCount, grossSales, netSales, vatCollected, discounts, byPaymentMethod) — يُملأ عند الإقفال من القيود المرحّلة."
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "branchId",
+    "dayDate"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "isActive": true } }
+      ]
+    },
+    "create": { "user_condition": { "isActive": true } },
+    "update": {
+      "$or": [
+        { "openedBy": "{{user.id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

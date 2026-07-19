@@ -28,25 +28,43 @@ function paymentLabel(key, lang) {
 // تقرير المبيعات اليومي: ملخص يوم محدد + توزيع الساعات + تفصيل طرق الدفع.
 export default function DailySalesReport() {
   const { lang } = useStore();
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
+  // نستخدم التاريخ المحلي (وليس UTC) ليوم اليوم — يتفادى إدراج فاتورة بعد منتصف
+  // الليل بالتاريخ الخاطئ. toLocaleDateString يعطي YYYY-MM-DD بمنطقة الرياض.
+  const todayLocal = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const [date, setDate] = useState(todayLocal());
   const [invoices, setInvoices] = useState([]);
+  const [journal, setJournal] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      // نحمّل آخر 2000 إيصال ثم نفلتر محلياً حسب التاريخ (لا يوجد فلتر تاريخي على الخادم)
-      const all = await base44.entities.SalesInvoice.list('-created_date', 2000);
+      // نحمّل الفواتير للإحصاءات التشغيلية (عدد الطلبات، توزيع الساعات، الإيراد)
+      // + القيود المرحّلة + دليل الحسابات لتفصيل طرق الدفع من المصدر المحاسبي الموحّد.
+      // هذا يضمن أن "النقد المتوقع" في التقرير = رصيد الصندوق (1111) في ميزان المراجعة.
+      const [all, jes, accs] = await Promise.all([
+        base44.entities.SalesInvoice.list('-created_date', 2000),
+        base44.entities.JournalEntry.filter({ isPosted: true }).catch(() => []),
+        base44.entities.ChartAccount.list('code', 1000).catch(() => []),
+      ]);
       const list = (all || []).filter(inv => {
         const d = inv.date ? String(inv.date).slice(0, 10) : '';
         return d === date && inv.status !== 'CANCELLED' && inv.status !== 'DRAFT';
       });
       setInvoices(list);
+      setJournal(jes || []);
+      setAccounts(accs || []);
     } catch (err) {
       console.warn('DailySalesReport load failed:', err);
       toast.error(err?.message || t('فشل تحميل البيانات', 'Failed to load data', lang));
-      setInvoices([]);
+      setInvoices([]); setJournal([]); setAccounts([]);
     } finally {
       setLoading(false);
     }
@@ -79,35 +97,44 @@ export default function DailySalesReport() {
 
   const maxHourRevenue = Math.max(1, ...hourly.map(b => b.revenue));
 
-  // تفصيل طرق الدفع (من notes.payments)
+  // تفصيل طرق الدفع من القيود المرحّلة (المصدر المحاسبي الموحّد).
+  // نقرأ سطور JE للحسابات النقدية (1111 = CASH, 1112 = BANK, 1114 = بطاقات POS)
+  // ضمن تاريخ اليوم. الإجمالي يطابق ميزان المراجعة 100%.
+  // البطاقات كلها تُجمَّع على 1114 على الخادم، فلا يمكننا التفصيل الفردي (مدى/فيزا) من JE
+  // وحده؛ لكن التفاصيل التشغيلية تبقى متاحة من notes.payments عند الحاجة.
   const paymentBreakdown = useMemo(() => {
+    const accountMap = {};
+    for (const a of (accounts || [])) accountMap[a.code] = a;
+    // خريطة الدور الدلالي إلى مفتاح طريقة الدفع.
     const map = {};
-    invoices.forEach(inv => {
-      let payments = [];
-      try {
-        const notes = inv.notes ? JSON.parse(inv.notes) : {};
-        payments = Array.isArray(notes.payments) ? notes.payments : [];
-      } catch { /* ignore */ }
-      if (!payments.length) {
-        // فاتورة بدون تفصيل دفع في notes — نسجّلها تحت "أخرى"
-        const k = 'CARD_OTHER';
-        if (!map[k]) map[k] = { key: k, count: 0, amount: 0 };
-        map[k].count += 1;
-        map[k].amount += Number(inv.paidAmount || inv.totalAmount) || 0;
-        return;
+    const ensure = (k) => { if (!map[k]) map[k] = { key: k, count: 0, amount: 0 }; return map[k]; };
+    for (const je of (journal || [])) {
+      if (!je || !je.isPosted || !Array.isArray(je.lines)) continue;
+      // نأخذ تاريخ القيد محلياً (لا UTC).
+      const jd = je.date ? String(je.date).slice(0, 10) : '';
+      if (jd !== date) continue;
+      for (const l of je.lines) {
+        const acc = accountMap[l.accountCode];
+        if (!acc) continue;
+        // الحسابات النقدية: CASH=1111, BANK=1112, وبطاقات POS=1114 (ومجموعة 111x عامة).
+        const isCashAccount = acc.semanticRole === 'CASH' || acc.code === '1111';
+        const isBankAccount = acc.semanticRole === 'BANK' || acc.code === '1112';
+        const isCardAccount = /^1114$/.test(acc.code || '');
+        if (!isCashAccount && !isBankAccount && !isCardAccount) continue;
+        // النقد أصل مدين: المدفوع مدين (inflow). نتتبع المدين فقط (تحصيل اليوم).
+        const debit = Number(l.debit) || 0;
+        if (debit <= 0) continue;
+        const key = isCashAccount ? 'CASH' : isBankAccount ? 'CARD_OTHER' : 'CARD_MADA';
+        const entry = ensure(key);
+        entry.amount += debit;
+        entry.count += 1;
       }
-      payments.forEach(p => {
-        const k = p.method || 'CARD_OTHER';
-        if (!map[k]) map[k] = { key: k, count: 0, amount: 0 };
-        map[k].count += 1;
-        map[k].amount += Number(p.amount) || 0;
-      });
-    });
+    }
     const total = Object.values(map).reduce((s, m) => s + m.amount, 0);
     return Object.values(map)
       .sort((a, b) => b.amount - a.amount)
       .map(m => ({ ...m, percent: total > 0 ? (m.amount / total) * 100 : 0 }));
-  }, [invoices]);
+  }, [journal, accounts, date]);
 
   const totalPayments = paymentBreakdown.reduce((s, m) => s + m.amount, 0);
 

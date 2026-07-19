@@ -22,17 +22,43 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+// المنطقة الزمنية للسعودية (Asia/Riyadh = UTC+3). ZATCA يتطلب التوقيت المحلي
+// في رمز QR، فلا نستخدم toISOString() (UTC) بل نُولّد محلي +03:00.
+const RIYADH_OFFSET_MINUTES = 180; // +3 ساعات
+
+// يُرجع طابع زمني ISO بصيغة محلية (+03:00) بدل UTC (Z).
+// ZATCA Phase-2 يتطلب توقيت المنطقة المحلية للبائع.
+function riyadhLocalIso(date = new Date()) {
+  // حوّل إلى توقيت الرياض بإضافة الإزاحة.
+  const local = new Date(date.getTime() + (RIYADH_OFFSET_MINUTES * 60000) - (date.getTimezoneOffset() * 60000));
+  const y = local.getUTCFullYear();
+  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(local.getUTCDate()).padStart(2, '0');
+  const hh = String(local.getUTCHours()).padStart(2, '0');
+  const mm = String(local.getUTCMinutes()).padStart(2, '0');
+  const ss = String(local.getUTCSeconds()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}+03:00`;
+}
+
 /**
  * يُنتج سلسلة Base64 لرمز ZATCA QR.
  * @param {Object} p
  * @param {string} p.sellerName   اسم البائع (الشركة)
  * @param {string} p.vatNumber    الرقم الضريبي
- * @param {string} p.timestamp    التاريخ والوقت بصيغة ISO (اختياري، الافتراضي الآن)
+ * @param {string} p.timestamp    التاريخ والوقت بصيغة ISO محلية (+03:00) — إن لم يُمرَّر، نُولّد محلياً.
  * @param {number} p.total        الإجمالي شامل الضريبة
  * @param {number} p.vatTotal     قيمة الضريبة
  */
 export function buildZatcaQrPayload({ sellerName, vatNumber, timestamp, total, vatTotal }) {
-  const ts = timestamp || new Date().toISOString();
+  // ملاحظة: ZATCA يتطلب التوقيت المحلي. لو مرّر المُستدعي ISO بلاحقة 'Z' (UTC)
+  // نحوّله لتوقيت الرياض. إن لم يُمرَّر، نُولّد محلياً الآن.
+  let ts = timestamp;
+  if (!ts) {
+    ts = riyadhLocalIso();
+  } else if (String(ts).endsWith('Z') || String(ts).includes('+00:00')) {
+    // حوّل UTC إلى توقيت الرياض.
+    ts = riyadhLocalIso(new Date(ts));
+  }
   const bytes = [
     ...tlv(1, sellerName || ''),
     ...tlv(2, vatNumber || ''),

@@ -1,0 +1,76 @@
+{
+  "name": "Table",
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "معرّف الفرع الذي تنتمي إليه الطاولة (Project.id)."
+    },
+    "tableId": {
+      "type": "string",
+      "description": "معرّف الطاولة محلياً (يُولَّد عند الإنشاء، يُستخدم للمطابقة مع localStorage القديم)."
+    },
+    "name": {
+      "type": "string",
+      "description": "اسم/رقم الطاولة المعروض (طاولة 1، طاولة 2 ...)."
+    },
+    "seats": {
+      "type": "number",
+      "default": 4
+    },
+    "status": {
+      "type": "string",
+      "enum": ["AVAILABLE", "OCCUPIED", "DRAFT", "RESERVED", "CLEANING"],
+      "default": "AVAILABLE"
+    },
+    "sortOrder": {
+      "type": "number",
+      "default": 0
+    },
+    "draft": {
+      "type": "object",
+      "description": "مسودة الطلب المحفوظة على الطاولة (cart/customerId/invoiceType/...) — بديل مركزي عن localStorage.",
+      "properties": {}
+    },
+    "currentInvoiceId": {
+      "type": "string",
+      "description": "معرّف الفاتورة المرتبطة بالطاولة (أثناء الدفع أو بعد البيع قبل التحرير)."
+    },
+    "lockedBy": {
+      "type": "string",
+      "description": "معرّف المستخدم/الجهاز الذي فتح الطاولة للتحرير (قفل متفائل لمنع التضارب بين الأجهزة)."
+    },
+    "lockedByName": {
+      "type": "string"
+    },
+    "lockedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "وقت أخذ القفل — يُستخدم لانتهاء القفل تلقائياً بعد مهلة (مثلاً 10 دقائق)."
+    },
+    "updatedBy": {
+      "type": "string",
+      "description": "آخر مستخدم عدّل سجل الطاولة (للتدقيق)."
+    }
+  },
+  "required": [
+    "branchId",
+    "name"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "isActive": true } }
+      ]
+    },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": {
+      "$or": [
+        { "created_by_id": "{{user.id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

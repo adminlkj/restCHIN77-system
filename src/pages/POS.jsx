@@ -33,6 +33,9 @@ import {
 } from '@/lib/tables';
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
 import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
+import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
+import { lockTableDB, unlockTableDB, saveDraftToTableDB, clearTableDraftDB } from '@/lib/tables';
+import { getOpenBusinessDay, DEFAULT_BUSINESS_HOURS } from '@/lib/businessDay';
 import { toast } from 'sonner';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -84,8 +87,10 @@ const PAYMENT_METHODS = [
   { key: 'CARD_OTHER', ar: 'بطاقة أخرى', en: 'Other Card', Icon: CreditCard,  color: 'bg-slate-100 text-slate-700 border-slate-300' },
 ];
 
-// ─── Feature 5: كلمات مرور المشرف المقبولة عند الإلغاء ───────────────
-const SUPERVISOR_PASSWORDS = ['admin', '123456', 'faisal.11223344'];
+// ─── Feature 5: التحقق من كلمة مرور المشرف عبر الخادم ────────────────
+// ملاحظة: كلمات المرور لم تعد مخزّنة في الـ bundle. التحقق يتم عبر endpoint
+// /api/functions/posVerifySupervisor الذي يقرأ الهاش من CompanySettings (أو قائمة
+// انتقالية مؤقتة). المالك (OWNER_EMAIL) يتجاوز التحقق.
 const OWNER_EMAIL = 'fysl71443@gmail.com';
 const MAX_CANCEL_ATTEMPTS = 3;
 
@@ -582,6 +587,10 @@ export default function POS() {
 
   // ─── إجراءات ────────────────────────────────────────────────────────
   const exitToTables = () => {
+    // حرّر قفل الطاولة على الخادم (ليمكن لجهاز آخر فتحها) ثم امسح محلياً واخرج.
+    if (activeProjectId && activeTable?.tableId) {
+      unlockTableDB(activeProjectId, activeTable.tableId).catch(() => {});
+    }
     clearActiveTable();
     setActiveItem('tables');
   };
@@ -731,17 +740,34 @@ export default function POS() {
     setActiveItem('tables');
   };
 
-  const submitCancelPassword = () => {
-    // المالك لا يحتاج كلمة مرور
+  const submitCancelPassword = async () => {
+    // المالك لا يحتاج كلمة مرور (يتحقق الخادم من ذلك أيضاً، لكن نتجاوز سريعاً محلياً).
     if (isOwner) {
+      await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: activeProjectId, name: branchLabel }, true);
       performCancel();
       return;
     }
-    if (SUPERVISOR_PASSWORDS.includes(cancelPassword)) {
-      performCancel();
+    if (!cancelPassword) {
+      setCancelError(t('أدخل كلمة مرور المشرف', 'Enter supervisor password', lang));
       return;
     }
-    // كلمة مرور خاطئة
+    // التحقق من كلمة المرور على الخادم (هاش، وليست قائمة بنص صريح في الـ bundle).
+    // هذا يحمي كلمات المرور من القراءة عبر DevTools.
+    try {
+      const result = await base44.functions.invoke('posVerifySupervisor', { password: cancelPassword });
+      const ok = result?.data?.ok === true;
+      if (ok) {
+        await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: activeProjectId, name: branchLabel }, true);
+        performCancel();
+        return;
+      }
+    } catch (e) {
+      // فشل الشبكة بالخادم: لا نسمح بالإلغاء (الأمان قبل الراحة).
+      toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
+      return;
+    }
+    // كلمة مرور خاطئة — نسجّل المحاولة الفاشلة في سجل التدقيق.
+    await audit.cancel(user, { invoiceNo: '' }, { id: activeProjectId, name: branchLabel }, false);
     const nextAttempts = cancelAttempts + 1;
     if (nextAttempts >= MAX_CANCEL_ATTEMPTS) {
       setConfirmCancelOpen(false);
@@ -774,6 +800,50 @@ export default function POS() {
         toast.error(t('المبلغ المدفوع أقل من الإجمالي', 'Paid amount is less than total', lang));
         return;
       }
+    }
+
+    // ─── التحقق من يوم العمل المفتوح للفرع ─────────────────────────────
+    // مطعّم بلا يوم عمل مفتوح = لا يمكن ربط المبيعات بوردية. نُنبّه الكاشير بفتحه
+    // أولاً من شاشة يوم العمل. (لا نمنع البيع قسراً لتفادي إرباك الكاشير في الذروة،
+    // لكن التنبيه واضح ويُسجَّل في سجل التدقيق للمتابعة.)
+    if (activeProjectId) {
+      try {
+        const openDay = await getOpenBusinessDay(activeProjectId, DEFAULT_BUSINESS_HOURS);
+        if (!openDay) {
+          toast.warning(
+            t('لا يوجد يوم عمل مفتوح لهذا الفرع — افتحه من شاشة يوم العمل قبل البيع', 'No open business day for this branch — open it from the Business Day screen before selling', lang)
+          );
+        }
+      } catch { /* الفحص غير معطّل — نواصل */ }
+    }
+
+    // ─── التحقق من حد ائتمان العميل المسجّل ────────────────────────────
+    // POS الحالي يبيع نقدياً دائماً (لا بيع آجل للعميل)، فحد الائتمان لا يُمنع به البيع،
+    // لكن نُنبّه الكاشير إن كان العميل المسجّل قد تجاوز حدّه (رؤية استباقية للائتمان).
+    if (customer && !customer.isCash && Number(customer.creditLimit) > 0) {
+      try {
+        // رصيد العميل من القيود المرحّلة على حساب RECEIVABLES.
+        const jes = await base44.entities.JournalEntry.filter({ isPosted: true }, '-date', 500).catch(() => []);
+        const accs = await base44.entities.ChartAccount.list('code', 1000).catch(() => []);
+        const accountMap = {};
+        for (const a of (accs || [])) accountMap[a.code] = a;
+        let balance = 0;
+        for (const je of (jes || [])) {
+          if (!je || !je.isPosted || !Array.isArray(je.lines)) continue;
+          for (const l of je.lines) {
+            const acc = accountMap[l.accountCode];
+            if (acc?.semanticRole === 'RECEIVABLES' && l.partyType === 'CLIENT' && l.partyId === customer.id) {
+              balance += (Number(l.debit) || 0) - (Number(l.credit) || 0);
+            }
+          }
+        }
+        const limit = Number(customer.creditLimit) || 0;
+        if (limit > 0 && balance > limit) {
+          toast.warning(
+            t(`العميل تجاوز حد الائتمان (الرصيد ${balance.toFixed(2)} / الحد ${limit.toFixed(2)})`, `Customer exceeds credit limit (balance ${balance.toFixed(2)} / limit ${limit.toFixed(2)})`, lang)
+          );
+        }
+      } catch { /* الفحص غير معطّل */ }
     }
 
     // بناء الإيصال
@@ -954,10 +1024,20 @@ export default function POS() {
     }
 
     // Feature 4: تحرير الطاولة + مسح المسودة عند إتمام البيع
+    // نُحرّر الطاولة على الخادم أيضاً (clearTableDraftDB) ليرى كل الأجهزة أنها متاحة.
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+      if (activeProjectId) {
+        clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
+      }
     }
+    // سجّل العملية في سجل التدقيق (البيع + الترحيل).
+    audit.sale(user, saved || { invoiceNo, totalAmount: total }, { id: activeProjectId, name: branchLabel },
+      approvedOk ? AUDIT_ACTIONS.SALE_APPROVE : AUDIT_ACTIONS.SALE_CREATE,
+      approvedOk ? 'INFO' : 'WARNING',
+      { approvedOk, paidAmount: invoice.paidAmount, isPlatformSale }
+    ).catch(() => {});
 
     // فتح معاينة الإيصال الحراري.
     // سجل الخادم (saved) لا يحتوي على lineItems/الخصومات التفصيلية (تُخزّن ضمن notes)،

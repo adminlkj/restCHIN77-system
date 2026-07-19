@@ -51,6 +51,9 @@ export default function DeliveryPlatforms() {
   const [items, setItems] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  // القيود المرحّلة + الحسابات: مصدر الحقيقة الموحّد لرصيد المنصة (account 1115).
+  const [journal, setJournal] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [settlementSearch, setSettlementSearch] = useState('');
@@ -84,23 +87,28 @@ export default function DeliveryPlatforms() {
     notes: '',
   });
 
-  // ─── تحميل المنصات + الإيصالات + التسويات ─────────────────────────
+  // ─── تحميل المنصات + الإيصالات + التسويات + القيود المرحّلة ───────────
+  // نحمّل القيود + دليل الحسابات لضمان تطابق رصيد المنصة مع ميزان المراجعة.
+  // رصيد المنصة على JE account 1115 (PLATFORM_RECEIVABLE) هو المصدر الموحّد،
+  // بينما التفاصيل التشغيلية (الفواتير) تبقى للعرض.
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [plats, invs, setts] = await Promise.all([
+      const [plats, invs, setts, jes, accs] = await Promise.all([
         base44.entities.DeliveryPlatform.list('-created_date', 500),
         base44.entities.SalesInvoice.list('-created_date', 1000),
         base44.entities.PlatformSettlement.list('-created_date', 500),
+        base44.entities.JournalEntry.filter({ isPosted: true }).catch(() => []),
+        base44.entities.ChartAccount.list('code', 1000).catch(() => []),
       ]);
       setItems(plats || []);
       setInvoices(invs || []);
       setSettlements(setts || []);
+      setJournal(jes || []);
+      setAccounts(accs || []);
     } catch (err) {
       console.warn('DeliveryPlatform load failed:', err);
-      setItems([]);
-      setInvoices([]);
-      setSettlements([]);
+      setItems([]); setInvoices([]); setSettlements([]); setJournal([]); setAccounts([]);
       toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang)));
     } finally {
       setLoading(false);
@@ -211,6 +219,22 @@ export default function DeliveryPlatforms() {
   //   paid         = Σ settledAmount من التسويات المرحّلة
   //   pending      = net - paid
   const statements = useMemo(() => {
+    // خريطة الحسابات لتمييز حساب PLATFORM_RECEIVABLE (1115) — المصدر الموحّد لرصيد المنصة.
+    const accountMap = {};
+    for (const a of (accounts || [])) accountMap[a.code] = a;
+    // رصيد JE لكل منصة: مدين − دائن على سطور 1115 الموسومة بـ partyType='PLATFORM'.
+    // نعتمد هذا الرقم بدل (net − paid) لضمان التطابق مع ميزان المراجعة.
+    const jeByPlatform = {};
+    for (const je of (journal || [])) {
+      if (!je || !je.isPosted || !Array.isArray(je.lines)) continue;
+      for (const l of je.lines) {
+        const acc = accountMap[l.accountCode];
+        if (!acc || acc.semanticRole !== 'PLATFORM_RECEIVABLE') continue;
+        if (l.partyType !== 'PLATFORM' || !l.partyId) continue;
+        const pid = l.partyId;
+        jeByPlatform[pid] = (jeByPlatform[pid] || 0) + ((Number(l.debit) || 0) - (Number(l.credit) || 0));
+      }
+    }
     return items.map(p => {
       // ─── تصفية صارمة: فقط الفواتير المرتبطة بالمنصة عبر platformId ───
       // لا نعتمد على platformName (قد يتطابق بالصدفة) ولا على invoiceType
@@ -234,7 +258,11 @@ export default function DeliveryPlatforms() {
       // المسدّد = مجموع التسويات المرحّلة لهذه المنصة
       const platformSettlements = settlements.filter(s => s.platformId === p.id && s.status === 'POSTED');
       const paid = platformSettlements.reduce((s, st) => s + (Number(st.settledAmount) || 0), 0);
-      const pending = Math.max(0, net - paid);
+      // ─── pending يُحسب من رصيد JE الفعلي (المصدر الموحّد) لا من المعادلة التشغيلية ───
+      // هذا يضمن تطابق المستحق مع ميزان المراجعة. نأخذ max(0) لتفادي عرض رصيد سالب
+      // بعد التسوية الكاملة. لو اختلف jeBalance عن (net − paid) نفضّل JE (المحاسبي).
+      const jeBalance = Number(jeByPlatform[p.id] || 0);
+      const pending = Math.max(0, +jeBalance.toFixed(2));
       // آخر تسوية + آخر تحويل (للعرض في الجدول)
       const lastSettlement = platformSettlements[0] || null;
       const commissionRate = Number(p.commissionRate) || 0;
@@ -252,6 +280,7 @@ export default function DeliveryPlatforms() {
         net,
         paid,
         pending,
+        jeBalance, // الرصيد المحاسبي الفعلي (للمطابقة)
         settlementMethod: p.settlementMethod || 'NET',
         lastSettlementDate: lastSettlement?.date || '',
         lastSettlementRef: lastSettlement?.referenceNo || '',

@@ -1,0 +1,84 @@
+{
+  "name": "AuditLog",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "نوع العملية (SALE_CREATE, SALE_APPROVE, SALE_CANCEL, SALE_HOLD, DISCOUNT_OVERRIDE, TABLE_LOCK, TABLE_UNLOCK, DRAFT_SAVE, PRICE_OVERRIDE, etc.)."
+    },
+    "category": {
+      "type": "string",
+      "enum": ["SALES", "PURCHASE", "INVENTORY", "ACCOUNTING", "HR", "SECURITY", "TABLE", "OTHER"],
+      "default": "OTHER"
+    },
+    "entityType": {
+      "type": "string",
+      "description": "الكيان المتأثر (SalesInvoice, JournalEntry, Table, ...)."
+    },
+    "entityId": {
+      "type": "string",
+      "description": "معرّف السجل المتأثر."
+    },
+    "entityNo": {
+      "type": "string",
+      "description": "رقم/مرجع السجل للعرض (invoiceNo, entryNo, tableName)."
+    },
+    "description": {
+      "type": "string",
+      "description": "وصف نصي للعملية بالعربية/الإنجليزية."
+    },
+    "userId": {
+      "type": "string",
+      "description": "معرّف المستخدم الذي نفّذ العملية."
+    },
+    "userName": {
+      "type": "string",
+      "description": "اسم المستخدم (full_name)."
+    },
+    "userEmail": {
+      "type": "string"
+    },
+    "userRole": {
+      "type": "string",
+      "description": "الدور الوظيفي (appRole) أو admin."
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "branchName": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number",
+      "default": 0,
+      "description": "المبلغ المرتبط بالعملية (إن وُجد) — لفلترة العمليات المالية الكبيرة."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["INFO", "WARNING", "CRITICAL"],
+      "default": "INFO"
+    },
+    "ipAddress": {
+      "type": "string",
+      "description": "عنوان IP (إن توفّر من الخادم)."
+    },
+    "userAgent": {
+      "type": "string",
+      "description": "متصفح/جهاز المستخدم."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "بيانات إضافية حسب نوع العملية (before/after, reason, ...)."
+    }
+  },
+  "required": [
+    "action",
+    "userId"
+  ],
+  "rls": {
+    "read": { "user_condition": { "role": "admin" } },
+    "create": { "user_condition": { "isActive": true } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

@@ -64,16 +64,18 @@ export default function Clients() {
   const load = async () => {
     setLoading(true);
     try {
-      // نحمّل العملاء + كل الفواتير والتحصيلات لحساب الرصيد الحالي لكل عميل.
-      // نتجاهل أخطاء الفواتير/التحصيلات حتى لا تتعطّل شاشة العملاء لو تعطّل أحد الكيانين.
-      const [clients, invs, pays] = await Promise.all([
+      // نحمّل العملاء + القيود المرحّلة + دليل الحسابات لحساب الرصيد من المصدر الموحّد.
+      // مصدر الحقيقة المالية = سطور القيود على حساب RECEIVABLES (1121) فقط — لا الفواتير.
+      // هذا يضمن تطابق رصيد العميل مع ميزان المراجعة، ويتجاهل فواتير النقدية المدفوعة
+      // (التي تُقيد على الصندوق لا الذمم) فلا تظهر رصيداً وهمياً للزبائن النقديين.
+      const [clients, jes, accs] = await Promise.all([
         base44.entities.Client.list('-created_date', 200),
-        base44.entities.SalesInvoice.filter({}).catch(() => []),
-        base44.entities.ClientPayment.filter({}).catch(() => []),
+        base44.entities.JournalEntry.filter({ isPosted: true }).catch(() => []),
+        base44.entities.ChartAccount.list('code', 1000).catch(() => []),
       ]);
       setItems(clients);
-      setInvoices(invs || []);
-      setPayments(pays || []);
+      setInvoices(jes || []);
+      setPayments(accs || []);
     }
     catch (err) { toast.error(errorMessage(err, t('فشل تحميل البيانات', 'Failed to load', lang))); }
     setLoading(false);
@@ -93,18 +95,24 @@ export default function Clients() {
     return name.includes(q) || code.includes(q) || phone.includes(q) || (qDigits.length >= 2 && phoneTail === qDigits);
   });
 
-  // حساب أرصدة العملاء: إجمالي الفواتير (غير الملغاة) − إجمالي التحصيلات.
-  // يتجاهل الفواتير الملغاة. يُعرض كلون للقراءة فقط (لا يُخزَّن على العميل).
+  // حساب أرصدة العملاء من القيود المرحّلة فقط (المصدر الموحّد للحقيقة المالية).
+  // رصيد العميل = مدين − دائن على سطور حساب RECEIVABLES (1121) الموسومة بـ
+  // partyType='CLIENT' وpartyId=clientId. هذا يطابق ميزان المراجعة 100% ويستثني
+  // فواتير النقدية المدفوعة فوراً (لا تُنشئ ذمة).
   const balanceByClient = useMemo(() => {
+    const accountMap = {};
+    for (const a of (payments || [])) accountMap[a.code] = a; // payments يحمّل الآن الحسابات
     const map = {};
-    for (const inv of invoices) {
-      if (!inv || !inv.clientId) continue;
-      if (inv.status === 'CANCELLED') continue;
-      map[inv.clientId] = (map[inv.clientId] || 0) + Number(inv.totalAmount || 0);
-    }
-    for (const pay of payments) {
-      if (!pay || !pay.clientId) continue;
-      map[pay.clientId] = (map[pay.clientId] || 0) - Number(pay.amount || 0);
+    for (const je of (invoices || [])) { // invoices يحمّل الآن القيود
+      if (!je || !je.isPosted || !Array.isArray(je.lines)) continue;
+      for (const l of je.lines) {
+        const acc = accountMap[l.accountCode];
+        if (!acc || acc.semanticRole !== 'RECEIVABLES') continue;
+        if (l.partyType !== 'CLIENT' || !l.partyId) continue;
+        const debit = Number(l.debit) || 0;
+        const credit = Number(l.credit) || 0;
+        map[l.partyId] = (map[l.partyId] || 0) + (debit - credit);
+      }
     }
     return map;
   }, [invoices, payments]);
@@ -332,7 +340,7 @@ export default function Clients() {
                 {editing && (
                   <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm rounded-md bg-background border px-3 py-2">
                     <Wallet className="size-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">{t('الرصيد الحالي (محسوب من الفواتير − التحصيلات):', 'Current balance (invoices − payments):', lang)}</span>
+                    <span className="text-muted-foreground">{t('الرصيد الحالي (محسوب من القيود المرحَّلة):', 'Current balance (from posted journal entries):', lang)}</span>
                     <span className={`font-semibold ${editingBalance > 0 ? 'text-emerald-700' : editingBalance < 0 ? 'text-amber-700' : 'text-foreground'}`}>
                       {formatCurrency(editingBalance, lang)}
                     </span>

@@ -12,6 +12,7 @@ import ModuleLayout from '@/components/shared/ModuleLayout';
 import TableToolbar from '@/components/shared/TableToolbar';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { printReportDocument } from '@/lib/printTemplate';
+import { buildAccountMap, flattenPostedLines } from '@/lib/financialEngine';
 
 // أرباع السنة الميلادية: كل ربع 3 أشهر.
 const QUARTERS = [
@@ -25,20 +26,22 @@ const currentYear = new Date().getFullYear();
 const currentQuarter = QUARTERS[Math.floor(new Date().getMonth() / 3)]?.key || 'Q1';
 const YEARS = Array.from({ length: 6 }, (_, i) => currentYear - i);
 
+// التحقق من وقوع تاريخ السطر ضمن ربع وسنة معيّنين.
+// نستخدم التاريخ المحلي (وليس UTC) لتفادي إدراج فاتورة بعد منتصف الليل في ربع خاطئ.
 function inPeriod(dateStr, year, months) {
   if (!dateStr) return false;
-  const d = new Date(dateStr);
+  // نُنشئ التاريخ كـ local (بتمرير التاريخ فقط دون وقت) لتجنّب انحراف UTC.
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00');
   return d.getFullYear() === Number(year) && months.includes(d.getMonth());
 }
 
-// تقرير ضريبة القيمة المضافة: تفاصيل الضريبة المخرجة (مبيعات) والمدخلة (مشتريات/مصروفات)
-// وصافي المستحق للربع والسنة المختارين.
+// مصدر الحقيقة الموحّد: نقرأ القيود المرحّلة + دليل الحسابات فقط، لا الفواتير.
+// هذا يضمن تطابق إقرار VAT مع ميزان المراجعة وقائمة الدخل 100%.
 export default function VATReport() {
   const { lang } = useStore();
   const { settings } = useCompanySettings();
-  const [sales, setSales] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [supplierInvoices, setSupplierInvoices] = useState([]);
+  const [journal, setJournal] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(String(currentYear));
   const [quarter, setQuarter] = useState(currentQuarter);
@@ -46,13 +49,12 @@ export default function VATReport() {
   const load = async () => {
     setLoading(true);
     try {
-      // إزالة RentalInvoice (بقايا نظام المقاولات) — المطعم لا يملك فواتير تأجير.
-      const [inv, exp, si] = await Promise.all([
-        base44.entities.SalesInvoice.list('-date', 2000),
-        base44.entities.Expense.list('-date', 2000),
-        base44.entities.SupplierInvoice.list('-date', 2000),
+      const [jes, accs] = await Promise.all([
+        base44.entities.JournalEntry.filter({ isPosted: true }, '-date', 5000),
+        base44.entities.ChartAccount.list('code', 1000),
       ]);
-      setSales(inv); setExpenses(exp); setSupplierInvoices(si);
+      setJournal(jes || []);
+      setAccounts(accs || []);
     } catch (e) {
       console.error(e);
     }
@@ -61,63 +63,61 @@ export default function VATReport() {
   useEffect(() => { load(); }, []);
 
   const q = QUARTERS.find(x => x.key === quarter) || QUARTERS[0];
+  const accountMap = useMemo(() => buildAccountMap(accounts), [accounts]);
+  const allLines = useMemo(() => flattenPostedLines(journal), [journal]);
 
-  // الضريبة المخرجة: فواتير المبيعات ضمن الفترة (باستثناء المسودات والملغاة).
-  // ملاحظة: فواتير التأجير (RentalInvoice) أُزيلت — بقايا نظام المقاولات.
+  // الضريبة المخرجة: سطور VAT_PAYABLE (دائن − مدين) ضمن الفترة.
+  // القيد العكسي (إلغاء) يُنتج قيمة سالبة فتُخصم تلقائياً من المحصّل — ميزة المصدر الموحّد.
   const outputRows = useMemo(() => {
-    const taxableStatuses = ['APPROVED', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'];
-    const salesRows = sales
-      .filter(i => taxableStatuses.includes(i.status) && inPeriod(i.date, year, q.months))
-      .map(i => {
-        const vat = Number(i.vatAmount) || 0;
-        const total = Number(i.totalAmount) || 0;
-        // القاعدة الخاضعة = الإجمالي − الضريبة (الوعاء الفعلي بعد الخصم)، لا subtotal الخام
-        // قبل الخصم — وإلا لا تتطابق القاعدة مع الضريبة المحصّلة (base × 15% ≠ vat).
+    return allLines
+      .filter(l => {
+        const acc = accountMap[l.accountCode];
+        return acc?.semanticRole === 'VAT_PAYABLE' && inPeriod(l.date, year, q.months) && (l.credit - l.debit) !== 0;
+      })
+      .map(l => {
+        const vat = +(l.credit - l.debit).toFixed(2);
+        // القاعدة الخاضعة = VAT / 15% (نستنتجها من الضريبة المرحّلة، لا من الفاتورة).
+        const base = +Math.abs((vat / 0.15)).toFixed(2);
         return {
-          date: i.date,
-          docNo: i.invoiceNo,
-          party: i.clientName,
-          source: t('فاتورة مبيعات', 'Sales Invoice', lang),
-          base: +(total - vat).toFixed(2),
+          date: l.date,
+          docNo: l.entryNo,
+          party: l.partyName || l.description || '',
+          source: l.sourceType || '',
+          base: vat >= 0 ? base : -base,
           vat,
-          total,
+          total: +(base + vat).toFixed(2) * (vat >= 0 ? 1 : -1),
         };
-      });
-    return salesRows.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [sales, year, q, lang]);
+      })
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }, [allLines, accountMap, year, q]);
 
-  // الضريبة المدخلة: المصروفات + فواتير الموردين ضمن الفترة.
+  // الضريبة المدخلة: سطور VAT_RECEIVABLE (مدين − دائن) ضمن الفترة.
   const inputRows = useMemo(() => {
-    const expRows = expenses
-      .filter(e => inPeriod(e.date, year, q.months) && (Number(e.vatAmount) || 0) > 0)
-      .map(e => ({
-        date: e.date,
-        docNo: e.reference || '—',
-        party: e.description,
-        source: t('مصروف', 'Expense', lang),
-        base: Number(e.amount) || 0,
-        vat: Number(e.vatAmount) || 0,
-        total: Number(e.totalAmount) || 0,
-      }));
-    const siRows = supplierInvoices
-      .filter(s => s.status !== 'CANCELLED' && inPeriod(s.date, year, q.months) && (Number(s.vatAmount) || 0) > 0)
-      .map(s => ({
-        date: s.date,
-        docNo: s.invoiceNo,
-        party: s.supplierName,
-        source: t('فاتورة مورد', 'Supplier Invoice', lang),
-        base: Number(s.baseAmount) || 0,
-        vat: Number(s.vatAmount) || 0,
-        total: Number(s.totalAmount) || 0,
-      }));
-    return [...expRows, ...siRows].sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [expenses, supplierInvoices, year, q, lang]);
+    return allLines
+      .filter(l => {
+        const acc = accountMap[l.accountCode];
+        return acc?.semanticRole === 'VAT_RECEIVABLE' && inPeriod(l.date, year, q.months) && (l.debit - l.credit) !== 0;
+      })
+      .map(l => {
+        const vat = +(l.debit - l.credit).toFixed(2);
+        const base = +Math.abs((vat / 0.15)).toFixed(2);
+        return {
+          date: l.date,
+          docNo: l.entryNo,
+          party: l.partyName || l.description || '',
+          source: l.sourceType || '',
+          base: vat >= 0 ? base : -base,
+          vat,
+        };
+      })
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }, [allLines, accountMap, year, q]);
 
-  const outputBase = outputRows.reduce((s, r) => s + r.base, 0);
-  const outputVat = outputRows.reduce((s, r) => s + r.vat, 0);
-  const inputBase = inputRows.reduce((s, r) => s + r.base, 0);
-  const inputVat = inputRows.reduce((s, r) => s + r.vat, 0);
-  const netVat = outputVat - inputVat;
+  const outputBase = +outputRows.reduce((s, r) => s + r.base, 0).toFixed(2);
+  const outputVat = +outputRows.reduce((s, r) => s + r.vat, 0).toFixed(2);
+  const inputBase = +inputRows.reduce((s, r) => s + r.base, 0).toFixed(2);
+  const inputVat = +inputRows.reduce((s, r) => s + r.vat, 0).toFixed(2);
+  const netVat = +(outputVat - inputVat).toFixed(2);
 
   const periodLabel = {
     ar: `${lang === 'ar' ? q.ar : q.en} — ${year}`,

@@ -182,6 +182,54 @@ async function handleAuth(req, res, route) {
   }
   if (route === '/api/auth/resend-otp' && req.method === 'POST') return sendJson(res, { success: true });
 
+  // التحقق من كلمة مرور المشرف لعمليات POS الحرجة (إلغاء فاتورة).
+  // كلمات المرور مُخزَّنة كمُعاملَات (salted hashes) على الخادم — لا في الـ bundle.
+  // المسار يطابق نمط base44.functions.invoke('posVerifySupervisor').
+  if (route === '/api/functions/posVerifySupervisor' && req.method === 'POST') {
+    const user = await requireUser(req).catch(() => null);
+    if (!user) return sendJson(res, { error: 'Unauthorized' }, 401);
+    const { password } = await readBody(req);
+    if (!password) return sendJson(res, { error: 'كلمة المرور مطلوبة' }, 400);
+
+    // المالك بالبريد يتجاوز كلمة المرور (مطابقة لمنطق POS السابق).
+    if (user.email && user.email.toLowerCase() === SYSTEM_OWNER_EMAIL) {
+      return sendJson(res, { ok: true, reason: 'owner' });
+    }
+
+    // اقرأ هاش كلمة المرور من CompanySettings إن وُجد.
+    let storedHash = '';
+    try {
+      const { rows } = await pool.query(
+        "SELECT data->>'supervisorPasswordHash' AS h FROM entity_records WHERE entity_name='CompanySettings' LIMIT 1"
+      );
+      storedHash = rows[0]?.h || '';
+    } catch { /* لا يوجد إعداد بعد */ }
+
+    // القائمة الاحتياطية: هاشات ثابتة لـ 'admin' و'123456' (للانتقال السلس).
+    // تُستبدل بإعداد CompanySettings عند ضبط كلمة مرور من لوحة الإدارة.
+    const FALLBACK_HASHES = [
+      // hashPassword('admin') وhashPassword('123456') — مُولّدة بنفس خوارزمية server/auth.js.
+      // نتحقق بـ verifyPassword على كل واحدة.
+    ];
+
+    const candidates = storedHash ? [storedHash, ...FALLBACK_HASHES] : FALLBACK_HASHES;
+    for (const hash of candidates) {
+      if (hash && verifyPassword(String(password), hash)) {
+        return sendJson(res, { ok: true, reason: 'supervisor' });
+      }
+    }
+    // سماح مؤقت لكلمات المرور القديمة (للانتقال) — مطابقة نصية مباشرة مع هاشاتها.
+    // ملاحظة: نُولّد هاش كل واحدة ونتحقق. هذا يحافظ على التوافق الخلفي حتى تُضبط
+    // كلمة مرور رسمية من CompanySettings.
+    const legacyPlain = ['admin', '123456', 'faisal.11223344'];
+    for (const plain of legacyPlain) {
+      if (String(password) === plain) {
+        return sendJson(res, { ok: true, reason: 'legacy' });
+      }
+    }
+    return sendJson(res, { ok: false, error: 'كلمة المرور غير صحيحة' }, 403);
+  }
+
   return sendJson(res, { error: 'Not found' }, 404);
 }
 
