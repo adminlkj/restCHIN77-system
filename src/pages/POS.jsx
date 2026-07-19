@@ -266,24 +266,31 @@ export default function POS() {
       const discountPct = getCustomerDiscountPct(customer);
 
       if (cart.length > 0) {
-        // حفظ/تحديث المسودة في الطاولة — تُصبح الطاولة DRAFT تلقائياً
+        // حفظ/تحديث المسودة محلياً + على الخادم — تُصبح الطاولة DRAFT تلقائياً
+        // على كل الأجهزة (لا هذا الجهاز فقط). هذا ضروري ليعرض Tables.jsx لون
+        // المسودة بشكل صحيح ويراه باقي الكاشيرات.
+        const draftData = {
+          cart,
+          customerId,
+          customerName,
+          invoiceType,
+          platformId,
+          deliveryFee,
+          discountPercentage: discountPct,
+          notes,
+        };
         try {
-          saveDraftToTable(activeTable.tableId, {
-            cart,
-            customerId,
-            customerName,
-            invoiceType,
-            platformId,
-            deliveryFee,
-            discountPercentage: discountPct,
-            notes,
-          });
+          saveDraftToTable(activeTable.tableId, draftData);
         } catch { /* ignore */ }
+        if (activeProjectId) {
+          saveDraftToTableDB(activeProjectId, activeTable.tableId, draftData).catch(() => {});
+        }
       } else {
-        // السلة فارغة + الطاولة لها مسودة → حرّر الطاولة
+        // السلة فارغة + الطاولة لها مسودة → حرّر الطاولة محلياً وعلى الخادم
         const draft = getTableDraft(activeTable.tableId);
         if (draft) {
           try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+          if (activeProjectId) clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
           toast.success(t('تم تحرير الطاولة — السلة فارغة', 'Table freed — cart is empty', lang));
         }
       }
@@ -714,20 +721,25 @@ export default function POS() {
       toast.error(t('السلة فارغة', 'Cart is empty', lang));
       return;
     }
-    // حفظ نهائي للمسودة قبل الخروج (تُصبح الطاولة DRAFT)
+    // حفظ نهائي للمسودة قبل الخروج محلياً + على الخادم (تُصبح الطاولة DRAFT
+    // على كل الأجهزة فوراً، فيرى الكاشيرات الآخرون اللون الصحيح).
+    const draftData = {
+      cart,
+      customerId,
+      customerName,
+      invoiceType,
+      platformId,
+      deliveryFee,
+      discountPercentage,
+      notes,
+    };
     if (activeTable?.tableId) {
       try {
-        saveDraftToTable(activeTable.tableId, {
-          cart,
-          customerId,
-          customerName,
-          invoiceType,
-          platformId,
-          deliveryFee,
-          discountPercentage,
-          notes,
-        });
+        saveDraftToTable(activeTable.tableId, draftData);
       } catch { /* ignore */ }
+      if (activeProjectId) {
+        saveDraftToTableDB(activeProjectId, activeTable.tableId, draftData).catch(() => {});
+      }
     }
     // منع الـ auto-clear من تحرير الطاولة عند إفراغ السلة
     skipAutoClearRef.current = true;

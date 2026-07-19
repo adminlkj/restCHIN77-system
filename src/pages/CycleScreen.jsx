@@ -5,7 +5,6 @@ import { canAccess } from '@/lib/permissions';
 import { CYCLE_BY_KEY, READY_TABS } from '@/lib/cycles';
 
 // Tab content screens
-import Orders from '@/pages/Orders';
 import SalesInvoices from '@/pages/SalesInvoices';
 import ClientPayments from '@/pages/ClientPayments';
 import Equipment from '@/pages/Equipment';
@@ -47,7 +46,6 @@ import Settings from '@/pages/Settings';
 import BusinessDayScreen from '@/pages/BusinessDayScreen';
 
 const TAB_CONTENT = {
-  projects: <Orders />,
   sales: <SalesInvoices />,
   'client-payments': <ClientPayments />,
   equipment: <Equipment />,

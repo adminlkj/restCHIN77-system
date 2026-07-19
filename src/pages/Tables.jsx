@@ -136,7 +136,24 @@ export default function Tables() {
     return () => window.removeEventListener('focus', handler);
   }, [load]);
 
-  const stats = useMemo(() => getBranchTableStats(activeProjectId), [tables, activeProjectId]);
+  // تحديث دوري خفيف كل 15 ثانية — يعكس تغييرات الطاولات من أجهزة أخرى (مسودة
+  // جديدة، تحرير طاولة، إلخ) دون انتظار إعادة تحميل يدوي. مهم لرؤية لون/حالة
+  // الطاولة يتحدّث فوراً عبر كل نقاط البيع.
+  useEffect(() => {
+    const tid = setInterval(() => { load(); }, 15000);
+    return () => clearInterval(tid);
+  }, [load]);
+
+  // الإحصائيات تُحسب من قائمة الطاولات المعروضة (tables المدموجة DB+محلي)،
+  // لا من getBranchTableStats المنفصل (الذي كان يقرأ المحلي فقط فيخالف العرض).
+  const stats = useMemo(() => ({
+    total: tables.length,
+    available: tables.filter(t => t.status === 'AVAILABLE').length,
+    occupied: tables.filter(t => t.status === 'OCCUPIED').length,
+    reserved: tables.filter(t => t.status === 'RESERVED').length,
+    cleaning: tables.filter(t => t.status === 'CLEANING').length,
+    draft: tables.filter(t => t.status === 'DRAFT').length,
+  }), [tables]);
 
   const filtered = useMemo(() => {
     if (filter === 'ALL') return tables;

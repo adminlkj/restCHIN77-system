@@ -32,13 +32,12 @@ export const READY_TABS = new Set([
 export const CYCLES = [
   {
     key: 'projects-cycle',
-    label: { ar: 'الطلبات والمبيعات', en: 'Orders & Sales' },
+    label: { ar: 'الإيصالات والتحصيلات', en: 'Receipts & Collections' },
     Icon: UtensilsCrossed,
     color: { text: 'text-emerald-600', border: 'border-emerald-500', light: 'bg-emerald-50', bg: 'bg-emerald-600' },
-    // دورة المبيعات الرئيسية تعرض فقط: الطلبات، الإيصالات، التحصيلات.
-    // باقي الأقسام تبقى حصراً داخل مركز عمل كل طلب لتفادي التكرار.
+    // دورة المبيعات: الإيصالات + التحصيلات فقط. تبويب "الطلبات" (projects) أُزيل
+    // لأن منطقه عقيم — الإيصال نفسه يحوي الطلب، ولا حاجة لطبقة منفصلة.
     tabs: [
-      { key: 'projects',        ar: 'الطلبات',            en: 'Orders',          Icon: ClipboardList },
       { key: 'sales',           ar: 'الإيصالات',          en: 'Receipts',        Icon: ReceiptText },
       { key: 'client-payments', ar: 'التحصيلات',          en: 'Collections',     Icon: CreditCard },
     ],
