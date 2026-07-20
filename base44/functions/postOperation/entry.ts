@@ -1747,6 +1747,10 @@ async function createSalesReturn(base44, data) {
   if (!inv) throw new Error('الفاتورة الأصلية غير موجودة');
   if (inv.status === 'CANCELLED') throw new Error('لا يمكن مرتجع فاتورة ملغاة');
   if (inv.status === 'RETURNED') throw new Error('الفاتورة مرتجعة بالكامل بالفعل');
+  // لا يمكن مرتجع فاتورة غير معتمدة — المسودة لم تُرحّل قيدها بعد، فلا يوجد
+  // ما يُعكَس. الفاتورة INV-2026-1376 في تقرير الاعتماد ظهرت "مسودة + مرتجعة"
+  // وهذا تناقض منطقي نمنعه هنا.
+  if (inv.status === 'DRAFT') throw new Error('لا يمكن مرتجع فاتورة في حالة مسودة — اعتمدها أولاً');
 
   // بنود الفاتورة الأصلية (من notes.items — المصدر الكنسي).
   let notesObj = {};
@@ -1859,6 +1863,7 @@ async function createPurchaseReturn(base44, data) {
   if (!inv) throw new Error('فاتورة المورد الأصلية غير موجودة');
   if (inv.status === 'CANCELLED') throw new Error('لا يمكن مرتجع فاتورة ملغاة');
   if (inv.status === 'RETURNED') throw new Error('فاتورة المورد مرتجعة بالكامل بالفعل');
+  if (inv.status === 'DRAFT') throw new Error('لا يمكن مرتجع فاتورة مورد في حالة مسودة — اعتمدها أولاً');
 
   // بنود فاتورة المورد.
   const originalItems = Array.isArray(inv.items) ? inv.items : (Array.isArray(inv.lines) ? inv.lines : []);

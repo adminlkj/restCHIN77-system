@@ -11,6 +11,7 @@ import { useStore } from '@/lib/store';
 import { t, formatCurrency } from '@/lib/utils-binaa';
 import { toBusinessDayDate } from '@/lib/businessDay';
 import { getBranchTableStats } from '@/lib/tables';
+import { buildAccountMap, flattenPostedLines } from '@/lib/financialEngine';
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 function KPICard({ title, value, subtitle, icon: Icon, tint, onClick }) {
@@ -40,18 +41,24 @@ function KPICard({ title, value, subtitle, icon: Icon, tint, onClick }) {
 export default function Dashboard() {
   const { lang, setActiveItem, activeProjectId } = useStore();
   const [data, setData] = useState({ invoices: [], menuItems: [], branches: [] });
+  const [journal, setJournal] = useState([]);
+  const [chartAccounts, setChartAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tableStats, setTableStats] = useState({ total: 0, available: 0, occupied: 0, reserved: 0, cleaning: 0 });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [invoices, menuItems, branches] = await Promise.all([
+      const [invoices, menuItems, branches, jes, accs] = await Promise.all([
         base44.entities.SalesInvoice.list('-created_date', 500).catch(() => []),
         base44.entities.InventoryItem.filter({ isActive: true }).catch(() => []),
         base44.entities.Project.filter({ status: 'ACTIVE' }).catch(() => []),
+        base44.entities.JournalEntry.filter({ isPosted: true }, '-date', 2000).catch(() => []),
+        base44.entities.ChartAccount.list('code', 1000).catch(() => []),
       ]);
       setData({ invoices, menuItems, branches });
+      setJournal(jes || []);
+      setChartAccounts(accs || []);
       // إحصائيات الطاولات للفرع النشط
       if (activeProjectId) {
         setTableStats(getBranchTableStats(activeProjectId));
@@ -67,21 +74,39 @@ export default function Dashboard() {
   // ─── مشتقات من البيانات ─────────────────────────────────────────────────
   // يوم العمل الحالي (محلي، لا UTC) — فاتورة بعد منتصف الليل تُحتسب في اليوم الصحيح.
   const today = toBusinessDayDate(new Date().toISOString());
+  // خريطة الحسابات لتمييز الأدوار الدلالية (REVENUE / CASH / VAT).
+  const accountMap = useMemo(() => buildAccountMap(chartAccounts), [chartAccounts]);
+  const allLines = useMemo(() => flattenPostedLines(journal), [journal]);
+
+  // الإيراد اليومي من القيود المرحّلة (المصدر الموحّد) — صافي بلا VAT.
+  // يطابق قائمة الدخل وميزان المراجعة تماماً.
+  const todayRevenue = useMemo(() => {
+    return allLines
+      .filter(l => toBusinessDayDate(l.date) === today)
+      .reduce((s, l) => {
+        const acc = accountMap[l.accountCode] || {};
+        if (acc.accountType === 'REVENUE') return s + (l.credit - l.debit);
+        return s;
+      }, 0);
+  }, [allLines, accountMap, today]);
+
   const todayInvoices = useMemo(() => {
     return (data.invoices || []).filter(inv => {
       if (inv.status === 'CANCELLED' || inv.status === 'DRAFT') return false;
       return toBusinessDayDate(inv.date) === today;
     });
   }, [data.invoices, today]);
-
-  const todayRevenue = todayInvoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
   const todayOrdersCount = todayInvoices.length;
   const avgOrderValue = todayOrdersCount > 0 ? todayRevenue / todayOrdersCount : 0;
 
-  // إجمالي الإيرادات (كل الفترة)
-  const totalRevenue = (data.invoices || [])
-    .filter(i => i.status === 'PAID' || i.status === 'PARTIALLY_PAID')
-    .reduce((s, i) => s + (i.totalAmount || 0), 0);
+  // إجمالي الإيرادات (كل الفترة) — من JE ليتطابق مع قائمة الدخل.
+  const totalRevenue = useMemo(() => {
+    return allLines.reduce((s, l) => {
+      const acc = accountMap[l.accountCode] || {};
+      if (acc.accountType === 'REVENUE') return s + (l.credit - l.debit);
+      return s;
+    }, 0);
+  }, [allLines, accountMap]);
 
   // أكثر الأصناف مبيعاً (من notes الإيصالات اليوم)
   const topItems = useMemo(() => {
@@ -104,31 +129,40 @@ export default function Dashboard() {
   }, [todayInvoices]);
 
   // إيرادات حسب طريقة الدفع (اليوم)
+  // إيرادات حسب طريقة الدفع (اليوم) — من JE ليتطابق مع ميزان المراجعة.
+  // صندوق الكاشير (1111) = نقد، بطاقات POS (1114) = بطاقات.
   const paymentBreakdown = useMemo(() => {
     const methods = { cash: 0, card_mada: 0, card_visa: 0, card_mc: 0, card_other: 0 };
-    todayInvoices.forEach(inv => {
-      try {
-        const notes = inv.notes ? JSON.parse(inv.notes) : {};
-        const payments = notes.payments || [];
-        payments.forEach(p => {
-          if (methods[p.method] !== undefined) methods[p.method] += (p.amount || 0);
-        });
-      } catch { /* ignore */ }
-    });
+    allLines
+      .filter(l => toBusinessDayDate(l.date) === today)
+      .forEach(l => {
+        const acc = accountMap[l.accountCode] || {};
+        const code = acc.code || '';
+        const debit = Number(l.debit) || 0;
+        if (debit <= 0) return;
+        if (code === '1111' || acc.semanticRole === 'CASH') methods.cash += debit;
+        else if (code === '1114') {
+          // كل البطاقات تُجمَّع على 1114 — نضعها تحت card_mada (أكبر فئة).
+          methods.card_mada += debit;
+        }
+      });
     return methods;
-  }, [todayInvoices]);
+  }, [allLines, accountMap, today]);
 
-  // إيرادات حسب الفرع
+  // إيرادات حسب الفرع (اليوم) — من JE ليتطابق مع قائمة الدخل.
   const branchRevenue = useMemo(() => {
     const branchMap = {};
-    todayInvoices.forEach(inv => {
-      const name = inv.projectName || 'غير محدد';
-      if (!branchMap[name]) branchMap[name] = { name, count: 0, revenue: 0 };
-      branchMap[name].count++;
-      branchMap[name].revenue += (inv.totalAmount || 0);
-    });
+    allLines
+      .filter(l => toBusinessDayDate(l.date) === today)
+      .forEach(l => {
+        const acc = accountMap[l.accountCode] || {};
+        if (acc.accountType !== 'REVENUE') return;
+        const name = l.costCenter || 'غير محدد';
+        if (!branchMap[name]) branchMap[name] = { name, count: 0, revenue: 0 };
+        branchMap[name].revenue += (l.credit - l.debit);
+      });
     return Object.values(branchMap).sort((a, b) => b.revenue - a.revenue);
-  }, [todayInvoices]);
+  }, [allLines, accountMap, today]);
 
   const greeting = (() => {
     const h = new Date().getHours();

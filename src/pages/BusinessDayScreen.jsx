@@ -13,7 +13,7 @@ import { t, formatCurrency, formatDate } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import { toast } from 'sonner';
 import {
-  currentBusinessDay, getOpenBusinessDay, openBusinessDay, closeBusinessDay, DEFAULT_BUSINESS_HOURS,
+  currentBusinessDay, getOpenBusinessDay, openBusinessDay, closeBusinessDay, closeStaleOpenDays, DEFAULT_BUSINESS_HOURS,
 } from '@/lib/businessDay';
 import { buildAccountMap } from '@/lib/financialEngine';
 
@@ -37,6 +37,12 @@ export default function BusinessDayScreen() {
     if (!activeProjectId) { setLoading(false); return; }
     setLoading(true);
     try {
+      // صحّح أيام العمل المفتوحة الزائدة (أغلق القديم، أبقِ الأحدث) لمنع وجود
+      // يومين OPEN لنفس الفرع — وهو خلل وصفته في تقرير الاعتماد.
+      const closedCount = await closeStaleOpenDays(activeProjectId);
+      if (closedCount > 0) {
+        toast.info(t(`أُغلق ${closedCount} يوم عمل مفتوح زائد تلقائياً`, `Auto-closed ${closedCount} stale open business day(s)`, lang));
+      }
       const [open, days, jes, accs] = await Promise.all([
         getOpenBusinessDay(activeProjectId, DEFAULT_BUSINESS_HOURS),
         base44.entities.BusinessDay.filter({ branchId: activeProjectId }, '-dayDate', 60).catch(() => []),

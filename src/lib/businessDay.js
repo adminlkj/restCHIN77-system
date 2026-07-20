@@ -128,6 +128,35 @@ export async function openBusinessDay({ branchId, branchName, user, openingCash 
 }
 
 /**
+ * يُغلق قسراً أيام العمل المفتوزة الزائدة عن واحدة للفرع — يُبقي أحدث يوم OPEN
+ * ويُغلق الباقي (status=CLOSED, بدون Z-Report) لمنع وجود يومين مفتوحين.
+ * يُستدعى عند فتح شاشة يوم العمل لتصحيح الحالة إن وُجدت أيام زائدة من فتح سابق خاطئ.
+ * يُرجع عدد الأيام التي أُغلقت قسراً.
+ */
+export async function closeStaleOpenDays(branchId) {
+  if (!branchId) return 0;
+  try {
+    const open = await base44.entities.BusinessDay.filter({
+      branchId, status: 'OPEN',
+    }, '-dayDate', 50);
+    if (!open || open.length <= 1) return 0;
+    // أبقِ الأحدث، أغلق الباقي.
+    const toClose = open.slice(1);
+    for (const day of toClose) {
+      await base44.entities.BusinessDay.update(day.id, {
+        status: 'CLOSED',
+        closedAt: new Date().toISOString(),
+        notes: 'أُغلق قسراً — كان مفتوحاً بالتزامن مع يوم أحدث (تصحيح آلي)',
+      });
+    }
+    return toClose.length;
+  } catch (e) {
+    console.warn('closeStaleOpenDays failed:', e);
+    return 0;
+  }
+}
+
+/**
  * يُرجع يوم العمل المفتوح حالياً لفرع (أو null).
  *
  * منطق البحث المتين: نبحث عن آخر يوم مفتوح للفرع (status=OPEN) مرتّباً تنازلياً
