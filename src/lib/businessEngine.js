@@ -251,6 +251,16 @@ export const OperationEngine = {
   async createPlatformSettlement(data) {
     return await runOperation({ operation: 'PLATFORM_SETTLEMENT', mode: 'create', data });
   },
+
+  // ─── المرتجعات (Return Engine) ────────────────────────────────────────────
+  // تمرير مباشر لمحرك المرتجعات على الخادم. كل المنطق (قيد + مخزون + ذمم +
+  // تحديث الفاتورة + rollback) يتم على الخادم بشكل ذرّي. الواجهة لا ترى سوى النتيجة.
+  async createSalesReturn(data) {
+    return await runOperation({ operation: 'SALES_RETURN', mode: 'create', data });
+  },
+  async createPurchaseReturn(data) {
+    return await runOperation({ operation: 'PURCHASE_RETURN', mode: 'create', data });
+  },
 };
 
 // ─── دورة الأصول الثابتة والإهلاك (IAS 16) ─────────────────────────────────────

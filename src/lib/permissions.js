@@ -11,6 +11,7 @@ export const MODULES = [
   { key: 'projects', ar: 'الطلبات', en: 'Orders', group: 'projects' },
   { key: 'sales', ar: 'الإيصالات', en: 'Receipts', group: 'projects' },
   { key: 'client-payments', ar: 'التحصيلات', en: 'Collections', group: 'projects' },
+  { key: 'sales-returns', ar: 'مرتجع المبيعات', en: 'Sales Returns', group: 'projects' },
   // Restaurant Equipment
   { key: 'equipment', ar: 'سجل المعدات', en: 'Equipment', group: 'rental' },
   { key: 'equipment-maintenance', ar: 'الصيانة', en: 'Maintenance', group: 'rental' },
@@ -21,6 +22,7 @@ export const MODULES = [
   { key: 'expenses', ar: 'المصروفات', en: 'Expenses', group: 'costs' },
   { key: 'supplier-invoices', ar: 'فواتير الموردين', en: 'Supplier Invoices', group: 'costs' },
   { key: 'supplier-payments', ar: 'سداد الموردين', en: 'Supplier Payments', group: 'costs' },
+  { key: 'purchase-returns', ar: 'مرتجع المشتريات', en: 'Purchase Returns', group: 'costs' },
   { key: 'inventory', ar: 'المخزون والمواد', en: 'Inventory', group: 'costs' },
   // HR
   { key: 'employees', ar: 'الموظفون', en: 'Employees', group: 'hr' },
@@ -91,12 +93,13 @@ export const APP_ROLES = {
     modules: ['pos', 'tables', 'projects', 'sales', 'client-payments',
       'purchase-orders', 'purchase-requests', 'goods-receipts', 'expenses',
       'reports', 'clients', 'suppliers', 'platforms', 'menu', 'inventory', 'warehouses', 'stock-movements',
-      'employees', 'attendance', 'equipment', 'equipment-maintenance', 'business-day'],
+      'employees', 'attendance', 'equipment', 'equipment-maintenance', 'business-day',
+      'sales-returns', 'purchase-returns'],
   },
   CASHIER: {
     ar: 'كاشير', en: 'Cashier',
     color: 'bg-amber-100 text-amber-700 border border-amber-200',
-    modules: ['pos', 'tables', 'sales', 'client-payments', 'clients', 'business-day'],
+    modules: ['pos', 'tables', 'sales', 'client-payments', 'clients', 'business-day', 'sales-returns'],
   },
   ACCOUNTANT: {
     ar: 'محاسب', en: 'Accountant',
@@ -104,7 +107,7 @@ export const APP_ROLES = {
     modules: ['sales', 'client-payments', 'purchase-orders', 'purchase-requests', 'goods-receipts', 'expenses', 'supplier-invoices',
       'supplier-payments', 'chart-accounts', 'accounting', 'general-ledger', 'trial-balance', 'cost-centers',
       'vat', 'reports', 'fiscal-years', 'fixed-assets', 'audit', 'payroll-runs', 'payroll-sheets', 'clients', 'suppliers', 'platforms',
-      'projects'],
+      'projects', 'sales-returns', 'purchase-returns'],
   },
   BRANCH_MANAGER: {
     ar: 'مدير فرع', en: 'Branch Manager',
@@ -117,7 +120,7 @@ export const APP_ROLES = {
     ar: 'مسؤول مشتريات', en: 'Procurement',
     color: 'bg-amber-100 text-amber-700 border border-amber-200',
     modules: ['purchase-orders', 'purchase-requests', 'goods-receipts', 'supplier-invoices', 'supplier-payments', 'inventory',
-      'warehouses', 'stock-movements', 'suppliers'],
+      'warehouses', 'stock-movements', 'suppliers', 'purchase-returns'],
   },
   HR: {
     ar: 'موارد بشرية', en: 'Human Resources',

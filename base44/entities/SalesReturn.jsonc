@@ -1,0 +1,92 @@
+{
+  "name": "SalesReturn",
+  "type": "object",
+  "properties": {
+    "returnNo": {
+      "type": "string",
+      "description": "رقم مرتجع المبيعات (SR-YYYY-XXXX) — يُولَّد تلقائياً."
+    },
+    "originalInvoiceId": {
+      "type": "string",
+      "description": "معرّف الفاتورة الأصلية (SalesInvoice.id). إلزامي."
+    },
+    "originalInvoiceNo": {
+      "type": "string",
+      "description": "رقم الفاتورة الأصلية للعرض السريع."
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "isFullReturn": {
+      "type": "boolean",
+      "default": false,
+      "description": "true = مرتجع كامل لكل الفاتورة، false = مرتجع جزئي."
+    },
+    "lines": {
+      "type": "array",
+      "description": "بنود المرتجع: {itemId, name, qty, unitPrice, total}. الكميات مُتحقَّق منها ألا تتجاوز المتبقي القابل للإرجاع بالفعل.",
+      "items": { "type": "object" }
+    },
+    "subtotal": {
+      "type": "number",
+      "default": 0,
+      "description": "إجمالي المرتجع قبل الضريبة."
+    },
+    "vatAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "totalAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "reason": {
+      "type": "string",
+      "description": "سبب المرتجع (اختياري حسب سياسة الفرع)."
+    },
+    "cashRefund": {
+      "type": "number",
+      "default": 0,
+      "description": "مبلغ رد النقد للزبون (إن كان البيع نقدياً)."
+    },
+    "refundMethod": {
+      "type": "string",
+      "enum": ["CASH", "CREDIT_NOTE", "NONE"],
+      "default": "CASH",
+      "description": "طريقة التعويض: نقد / إشعار دائن / لا شيء (للمنصات تُعدَّل الذمم)."
+    },
+    "projectId": { "type": "string" },
+    "projectName": { "type": "string" },
+    "clientId": { "type": "string" },
+    "clientName": { "type": "string" },
+    "cashierId": { "type": "string" },
+    "cashierName": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["POSTED", "CANCELLED"],
+      "default": "POSTED"
+    },
+    "jeEntryNo": {
+      "type": "string",
+      "description": "رقم قيد المرتجع (JE-SRET-{returnNo}) للربط والتتبع."
+    }
+  },
+  "required": [
+    "returnNo",
+    "originalInvoiceId",
+    "date",
+    "totalAmount"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "isActive": true } }
+      ]
+    },
+    "create": { "user_condition": { "isActive": true } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

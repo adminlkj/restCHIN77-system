@@ -1,0 +1,85 @@
+{
+  "name": "PurchaseReturn",
+  "type": "object",
+  "properties": {
+    "returnNo": {
+      "type": "string",
+      "description": "رقم مرتجع المشتريات (PR-YYYY-XXXX) — يُولَّد تلقائياً."
+    },
+    "originalInvoiceId": {
+      "type": "string",
+      "description": "معرّف فاتورة المورد الأصلية (SupplierInvoice.id). إلزامي."
+    },
+    "originalInvoiceNo": {
+      "type": "string",
+      "description": "رقم فاتورة المورد الأصلية للعرض السريع."
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "isFullReturn": {
+      "type": "boolean",
+      "default": false,
+      "description": "true = مرتجع كامل، false = مرتجع جزئي."
+    },
+    "lines": {
+      "type": "array",
+      "description": "بنود المرتجع: {itemId, name, qty, unitPrice, total}. الكميات مُتحقَّق منها ألا تتجاوز المتبقي القابل للإرجاع.",
+      "items": { "type": "object" }
+    },
+    "baseAmount": {
+      "type": "number",
+      "default": 0,
+      "description": "إجمالي المرتجع قبل الضريبة."
+    },
+    "vatAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "totalAmount": {
+      "type": "number",
+      "default": 0
+    },
+    "reason": {
+      "type": "string"
+    },
+    "supplierId": { "type": "string" },
+    "supplierName": { "type": "string" },
+    "warehouseId": {
+      "type": "string",
+      "description": "المخزن الذي ستُعاد منه الأصناف للمورد."
+    },
+    "warehouseName": { "type": "string" },
+    "projectId": { "type": "string" },
+    "projectName": { "type": "string" },
+    "userId": { "type": "string" },
+    "userName": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["POSTED", "CANCELLED"],
+      "default": "POSTED"
+    },
+    "jeEntryNo": {
+      "type": "string",
+      "description": "رقم قيد المرتجع (JE-PRET-{returnNo}) للربط والتتبع."
+    }
+  },
+  "required": [
+    "returnNo",
+    "originalInvoiceId",
+    "date",
+    "totalAmount"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "isActive": true } }
+      ]
+    },
+    "create": { "user_condition": { "isActive": true } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

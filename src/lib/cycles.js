@@ -10,7 +10,7 @@ import {
   Wrench, CalendarDays, CalendarClock, DollarSign, Wallet, HandCoins,
   UsersRound, Package, Warehouse, Boxes, ShieldCheck, Network, BookOpen, Shield, BarChart3, CalendarRange, Scale,
   GitPullRequestArrow, TrendingUp, PieChart, Landmark, Waves, ShieldQuestion,
-  UtensilsCrossed, ChefHat, Bike, Soup, Cookie, Apple,
+  UtensilsCrossed, ChefHat, Bike, Soup, Cookie, Apple, RotateCcw,
 } from 'lucide-react';
 
 // Keys that have a real screen wired in App.jsx. Others render a ComingSoon placeholder.
@@ -19,6 +19,8 @@ export const READY_TABS = new Set([
   'projects', 'sales', 'client-payments',
   'equipment', 'equipment-maintenance',
   'purchase-requests', 'purchase-orders', 'goods-receipts', 'supplier-invoices', 'supplier-payments',
+  'purchase-returns',
+  'sales-returns',
   'expenses',
   'employees', 'payroll-runs', 'payroll-sheets', 'attendance', 'advances',
   'chart-accounts', 'accounting', 'cost-centers', 'fiscal-years', 'fixed-assets', 'audit',
@@ -35,11 +37,11 @@ export const CYCLES = [
     label: { ar: 'الإيصالات والتحصيلات', en: 'Receipts & Collections' },
     Icon: UtensilsCrossed,
     color: { text: 'text-emerald-600', border: 'border-emerald-500', light: 'bg-emerald-50', bg: 'bg-emerald-600' },
-    // دورة المبيعات: الإيصالات + التحصيلات فقط. تبويب "الطلبات" (projects) أُزيل
-    // لأن منطقه عقيم — الإيصال نفسه يحوي الطلب، ولا حاجة لطبقة منفصلة.
+    // دورة المبيعات: الإيصالات + التحصيلات + المرتجع فقط.
     tabs: [
       { key: 'sales',           ar: 'الإيصالات',          en: 'Receipts',        Icon: ReceiptText },
       { key: 'client-payments', ar: 'التحصيلات',          en: 'Collections',     Icon: CreditCard },
+      { key: 'sales-returns',   ar: 'مرتجع المبيعات',     en: 'Sales Returns',   Icon: RotateCcw },
     ],
   },
   {
@@ -63,6 +65,7 @@ export const CYCLES = [
       { key: 'goods-receipts',    ar: 'الاستلام',        en: 'Goods Receipts',    Icon: Package },
       { key: 'supplier-invoices', ar: 'فواتير الموردين', en: 'Supplier Invoices', Icon: ReceiptText },
       { key: 'supplier-payments', ar: 'سداد الموردين',   en: 'Supplier Payments', Icon: Wallet },
+      { key: 'purchase-returns',  ar: 'مرتجع المشتريات', en: 'Purchase Returns',  Icon: RotateCcw },
     ],
   },
   {

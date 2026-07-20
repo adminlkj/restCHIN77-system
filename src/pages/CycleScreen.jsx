@@ -7,6 +7,8 @@ import { CYCLE_BY_KEY, READY_TABS } from '@/lib/cycles';
 // Tab content screens
 import SalesInvoices from '@/pages/SalesInvoices';
 import ClientPayments from '@/pages/ClientPayments';
+import SalesReturns from '@/pages/SalesReturns';
+import PurchaseReturns from '@/pages/PurchaseReturns';
 import Equipment from '@/pages/Equipment';
 import PurchaseRequests from '@/pages/PurchaseRequests';
 import PurchaseOrders from '@/pages/PurchaseOrders';
@@ -48,6 +50,7 @@ import BusinessDayScreen from '@/pages/BusinessDayScreen';
 const TAB_CONTENT = {
   sales: <SalesInvoices />,
   'client-payments': <ClientPayments />,
+  'sales-returns': <SalesReturns />,
   equipment: <Equipment />,
   'equipment-maintenance': <EquipmentMaintenance />,
   'purchase-requests': <PurchaseRequests />,
@@ -56,6 +59,7 @@ const TAB_CONTENT = {
   expenses: <Expenses />,
   'supplier-invoices': <SupplierInvoices />,
   'supplier-payments': <SupplierPayments />,
+  'purchase-returns': <PurchaseReturns />,
   employees: <Employees />,
   'payroll-runs': <PayrollRuns />,
   'payroll-sheets': <PayrollSheets />,

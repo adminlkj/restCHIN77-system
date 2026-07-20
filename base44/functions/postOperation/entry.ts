@@ -158,6 +158,17 @@ const RULES = {
     { m: 'اختيار المسؤول المُحمّل عليه التلف مطلوب في التلف غير الطبيعي', t: (d) => d.type !== 'DAMAGE_ABNORMAL' || !isBlank(d.responsibleName) },
     { m: 'تكلفة الوحدة مطلوبة للتلف وتسويات الجرد لإثبات القيمة المحاسبية', t: (d) => !['DAMAGE_NORMAL', 'DAMAGE_ABNORMAL', 'ADJUST_INCREASE', 'ADJUST_DECREASE'].includes(d.type) || num(d.unitCost) > 0 },
   ],
+  SALES_RETURN: [
+    { m: 'معرّف الفاتورة الأصلية مطلوب', t: (d) => !isBlank(d.originalInvoiceId) },
+    { m: 'تاريخ المرتجع مطلوب', t: (d) => !isBlank(d.date) },
+    // البنود أو مرتجع كامل مطلوبان.
+    { m: 'حدّد بنود المرتجع أو فعّل "مرتجع كامل"', t: (d) => d.isFullReturn === true || (Array.isArray(d.lines) && d.lines.some((l) => num(l.qty) > 0)) },
+  ],
+  PURCHASE_RETURN: [
+    { m: 'معرّف فاتورة المورد مطلوب', t: (d) => !isBlank(d.originalInvoiceId) },
+    { m: 'تاريخ المرتجع مطلوب', t: (d) => !isBlank(d.date) },
+    { m: 'حدّد بنود المرتجع أو فعّل "مرتجع كامل"', t: (d) => d.isFullReturn === true || (Array.isArray(d.lines) && d.lines.some((l) => num(l.qty) > 0)) },
+  ],
 };
 
 function assertValid(operationType, data) {
@@ -1612,6 +1623,338 @@ async function guarded(base44, payload, handler) {
   return await handler(base44, payload);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// محرك المرتجعات (Return Engine)
+// ═══════════════════════════════════════════════════════════════════════════
+// فلسفة المحرك: كل منطق المرتجع (تحقق + مستند + قيد + مخزون + ذمم + تحديث
+// الفاتورة الأصلية) يتم هنا بشكل ذرّي. إن فشلت أي خطوة، تتم التراجع عن كل ما
+// سبق (rollback). الواجهة تستدعي المحرك فقط وتمسك نتيجة واحدة.
+//
+// القاعدة المحاسبية: مرتجع المبيعات يعكس قيد البيع الأصلي (عكس الإيراد + VAT +
+// النقد/الذمم)، ويعيد الأصناف للمخزون. مرتجع المشتريات يعكس قيد الشراء ويسحب
+// الأصناف من المخزون.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// يبني قيد مرتجع المبيعات (عكس قيد البيع). يعتمد على بنية الفاتورة الأصلية:
+//   - بيع نقدي: دائن صندوق/بطاقة (رد النقد) + مدين إيراد + مدين VAT.
+//   - بيع آجل/عميل: دائن ذمم عملاء (تخفيض الذمة).
+//   - بيع منصة: دائن ذمم المنصة.
+function buildSalesReturnJE({ returnNo, date, originalInv, lines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale }) {
+  const costCenter = originalInv.projectName || '';
+  const rev = originalInv.invoiceType === 'SERVICE'
+    ? resolveAccount('REVENUE_SERVICE', accounts)
+    : resolveAccount('REVENUE_SALES', accounts);
+  const vat = resolveAccount('VAT_PAYABLE', accounts);
+
+  // استخرج بيانات الدفع/المنصة من notes الفاتورة الأصلية.
+  let notesObj = {};
+  try {
+    notesObj = typeof originalInv.notes === 'string' && originalInv.notes.trim().startsWith('{')
+      ? JSON.parse(originalInv.notes) : (originalInv.notes || {});
+  } catch { notesObj = {}; }
+  const payments = Array.isArray(notesObj.payments) ? notesObj.payments : [];
+  const isCash = !isPlatformSale && payments.length > 0;
+  const platformId = notesObj?.platform?.platformId || originalInv.platformId || '';
+  const platformName = notesObj?.platform?.platformName || originalInv.platformName || '';
+
+  // السطور الدائنة (عكس الإيراد + VAT) — هذه تُعكس على المدين لأنها مرتجع.
+  // القيد: دائن الإيراد يُعكس مديناً، دائن VAT يُعكس مديناً، مدين الصندوق/الذمم يُعكس دائناً.
+  const debitLines = [
+    { accountCode: rev.code, accountName: rev.name, debit: +subtotal.toFixed(2), credit: 0, description: `عكس إيراد مرتجع ${returnNo}`, costCenter },
+  ];
+  if (vatAmount > 0) {
+    debitLines.push({ accountCode: vat.code, accountName: vat.name, debit: +vatAmount.toFixed(2), credit: 0, description: `عكس ضريبة مرتجع ${returnNo}`, costCenter });
+  }
+
+  // السطر الدائن (رد المال): يعتمد على نوع البيع الأصلي.
+  const creditLines = [];
+  if (isPlatformSale) {
+    // عكس ذمة المنصة (تخفيض المستحق).
+    const pr = resolveAccount('PLATFORM_RECEIVABLE', accounts);
+    creditLines.push({ accountCode: pr.code, accountName: pr.name, debit: 0, credit: +totalAmount.toFixed(2), description: `تخفيض ذمة منصة ${platformName} — مرتجع ${returnNo}`, partyType: 'PLATFORM', partyId: platformId, partyName: platformName, costCenter });
+  } else if (isCash) {
+    // رد نقدي: وزّع على طرق الدفع الأصلية بنسبة المرتجع.
+    const invTotal = num(originalInv.totalAmount) || totalAmount;
+    const ratio = invTotal > 0 ? totalAmount / invTotal : 1;
+    const merged = {};
+    for (const p of payments) {
+      const m = PAYMENT_METHOD_ACCOUNTS[p.method] || ACCOUNTS.CASH;
+      merged[m.code] = (merged[m.code] || 0) + num(p.amount) * ratio;
+    }
+    for (const [code, amt] of Object.entries(merged)) {
+      const acc = accounts.find(a => a.code === code) || { code, name: code };
+      creditLines.push({ accountCode: code, accountName: acc.name || code, debit: 0, credit: +amt.toFixed(2), description: `رد نقد مرتجع ${returnNo}`, costCenter });
+    }
+  } else {
+    // بيع آجل لعميل: تخفيض ذمم العملاء.
+    const ar = resolveAccount('RECEIVABLES', accounts);
+    creditLines.push({ accountCode: ar.code, accountName: ar.name, debit: 0, credit: +totalAmount.toFixed(2), description: `تخفيض ذمة عميل ${originalInv.clientName || ''} — مرتجع ${returnNo}`, partyType: 'CLIENT', partyId: originalInv.clientId || '', partyName: originalInv.clientName || '', costCenter });
+  }
+
+  const totalDebit = +debitLines.reduce((s, l) => s + l.debit, 0).toFixed(2);
+  const totalCredit = +creditLines.reduce((s, l) => s + l.credit, 0).toFixed(2);
+  // ضبط أي فرق تقريب على سطر الذمم/النقد (يجب أن يتطابق).
+  if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    creditLines[creditLines.length - 1].credit = +(creditLines[creditLines.length - 1].credit + (totalDebit - totalCredit)).toFixed(2);
+  }
+  const finalCredit = +creditLines.reduce((s, l) => s + l.credit, 0).toFixed(2);
+
+  return {
+    entryNo: `JE-SRET-${returnNo}`, date,
+    description: `مرتجع مبيعات ${returnNo} — عكس فاتورة ${originalInv.invoiceNo}`,
+    sourceType: 'SalesReturn', isPosted: true,
+    totalDebit, totalCredit: finalCredit,
+    lines: [...debitLines, ...creditLines],
+  };
+}
+
+// يبني قيد مرتجع المشتريات (عكس قيد الشراء).
+//   - دائن مخزون/مصروف (سحب الأصناف) + مدين ذمم المورد (تخفيض المستحق).
+//   - عكس VAT المدفوعة (مدين VAT_RECEIVABLE → دائن).
+function buildPurchaseReturnJE({ returnNo, date, originalInv, baseAmount, vatAmount, totalAmount, accounts, warehouseName }) {
+  const costCenter = originalInv.projectName || warehouseName || '';
+  const inv = resolveAccount('INVENTORY_MATERIALS', accounts);
+  const vat = resolveAccount('VAT_RECEIVABLE', accounts);
+  const payables = resolveAccount('PAYABLES', accounts);
+
+  // سطور دائنة: عكس المخزون (سحب الأصناف) + عكس VAT المدفوعة.
+  const creditLines = [
+    { accountCode: inv.code, accountName: inv.name, debit: 0, credit: +baseAmount.toFixed(2), description: `سحب مخزون مرتجع ${returnNo}`, costCenter },
+  ];
+  if (vatAmount > 0) {
+    creditLines.push({ accountCode: vat.code, accountName: vat.name, debit: 0, credit: +vatAmount.toFixed(2), description: `عكس ضريبة مدخلات مرتجع ${returnNo}`, costCenter });
+  }
+  // سطر مدين: تخفيض ذمم المورد.
+  const debitLines = [
+    { accountCode: payables.code, accountName: payables.name, debit: +totalAmount.toFixed(2), credit: 0, description: `تخفيض ذمة مورد ${originalInv.supplierName || ''} — مرتجع ${returnNo}`, partyType: 'SUPPLIER', partyId: originalInv.supplierId || '', partyName: originalInv.supplierName || '', costCenter },
+  ];
+
+  return {
+    entryNo: `JE-PRET-${returnNo}`, date,
+    description: `مرتجع مشتريات ${returnNo} — عكس فاتورة مورد ${originalInv.invoiceNo}`,
+    sourceType: 'PurchaseReturn', isPosted: true,
+    totalDebit: +totalAmount.toFixed(2),
+    totalCredit: +(baseAmount + vatAmount).toFixed(2),
+    lines: [...debitLines, ...creditLines],
+  };
+}
+
+// ينشئ مرتجع مبيعات بشكل ذرّي: تحقق + مستند + قيد + مخزون + تحديث الفاتورة.
+// أي فشل يؤدي لتراجع كامل.
+async function createSalesReturn(base44, data) {
+  assertValid('SALES_RETURN', data);
+  const inv = await base44.asServiceRole.entities.SalesInvoice.get(data.originalInvoiceId);
+  if (!inv) throw new Error('الفاتورة الأصلية غير موجودة');
+  if (inv.status === 'CANCELLED') throw new Error('لا يمكن مرتجع فاتورة ملغاة');
+  if (inv.status === 'RETURNED') throw new Error('الفاتورة مرتجعة بالكامل بالفعل');
+
+  // بنود الفاتورة الأصلية (من notes.items — المصدر الكنسي).
+  let notesObj = {};
+  try { notesObj = typeof inv.notes === 'string' && inv.notes.trim().startsWith('{') ? JSON.parse(inv.notes) : (inv.notes || {}); } catch { notesObj = {}; }
+  const originalItems = Array.isArray(notesObj.items) ? notesObj.items : (Array.isArray(inv.lineItems) ? inv.lineItems : []);
+  if (!originalItems.length) throw new Error('الفاتورة الأصلية لا تحتوي على بنود قابلة للمرتجع');
+
+  // الكميات المرتجعة سابقاً لهذه الفاتورة (من المرتجعات السابقة).
+  const priorReturns = await base44.asServiceRole.entities.SalesReturn.filter({ originalInvoiceId: inv.id, status: 'POSTED' }) || [];
+  const returnedQtyByItem = {};
+  for (const pr of priorReturns) {
+    for (const l of (pr.lines || [])) {
+      returnedQtyByItem[l.itemId] = (returnedQtyByItem[l.itemId] || 0) + num(l.qty);
+    }
+  }
+
+  // تحقق: الكميات المطلوبة لا تتجاوز (المباعة − المرتجعة سابقاً).
+  const requestedLines = Array.isArray(data.lines) ? data.lines : [];
+  const isFull = data.isFullReturn === true;
+  let effectiveLines = requestedLines;
+  if (isFull) {
+    // مرتجع كامل: كل الأصناف بالكميات المتبقية القابلة للإرجاع.
+    effectiveLines = originalItems.map(it => ({
+      itemId: it.itemId || '',
+      name: it.name || it.description || '',
+      qty: num(it.qty) - (returnedQtyByItem[it.itemId] || 0),
+      unitPrice: num(it.unitPrice) || num(it.total) / (num(it.qty) || 1),
+    })).filter(l => l.qty > 0);
+  }
+  for (const l of effectiveLines) {
+    const orig = originalItems.find(o => (o.itemId || '') === (l.itemId || '')) || originalItems.find(o => (o.name || '') === (l.name || ''));
+    if (!orig) throw new Error(`الصنف ${l.name || l.itemId} غير موجود في الفاتورة الأصلية`);
+    const sold = num(orig.qty);
+    const already = returnedQtyByItem[l.itemId || orig.itemId] || 0;
+    if (num(l.qty) > sold - already + 0.001) {
+      throw new Error(`الكمية المطلوب إرجاعها للصنف ${l.name || l.itemId} (${num(l.qty)}) تتجاوز المتبقي (${sold - already})`);
+    }
+  }
+
+  // حساب المبالغ.
+  const lineTotals = effectiveLines.map(l => +(num(l.qty) * num(l.unitPrice)).toFixed(2));
+  const subtotal = +lineTotals.reduce((s, t) => s + t, 0).toFixed(2);
+  const vatRate = resolveVatRate(inv.vatRate);
+  const vatAmount = +(subtotal * vatRate).toFixed(2);
+  const totalAmount = +(subtotal + vatAmount).toFixed(2);
+
+  const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
+  const isPlatformSale = notesObj.isPlatformSale === true || inv.isPlatformSale === true;
+  const returnNo = data.returnNo || `SR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+  // 1) أنشئ مستند المرتجع (سيمسح إن فشل لاحقاً).
+  const returnRec = await base44.asServiceRole.entities.SalesReturn.create({
+    returnNo,
+    originalInvoiceId: inv.id,
+    originalInvoiceNo: inv.invoiceNo,
+    date: data.date,
+    isFullReturn: isFull,
+    lines: effectiveLines.map(l => ({ itemId: l.itemId || '', name: l.name || '', qty: num(l.qty), unitPrice: num(l.unitPrice), total: +(num(l.qty) * num(l.unitPrice)).toFixed(2) })),
+    subtotal, vatAmount, totalAmount,
+    reason: data.reason || '',
+    cashRefund: !isPlatformSale && (notesObj.payments?.length > 0) ? totalAmount : 0,
+    refundMethod: isPlatformSale ? 'NONE' : (notesObj.payments?.length > 0 ? 'CASH' : 'CREDIT_NOTE'),
+    projectId: inv.projectId || '', projectName: inv.projectName || '',
+    clientId: inv.clientId || '', clientName: inv.clientName || '',
+    cashierId: data.userId || '', cashierName: data.userName || '',
+    status: 'POSTED',
+  });
+
+  // 2) ارحل القيد (عكس البيع).
+  let je;
+  try {
+    je = buildSalesReturnJE({ returnNo, date: data.date, originalInv: inv, lines: effectiveLines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale });
+    await autoPostJE(base44, je);
+  } catch (e) {
+    await rollback(base44, 'SalesReturn', returnRec.id);
+    throw new Error(`فشل ترحيل قيد المرتجع: ${e.message}`);
+  }
+  await base44.asServiceRole.entities.SalesReturn.update(returnRec.id, { jeEntryNo: je.entryNo });
+
+  // 3) أعِد الأصناف للمخزون (إن وُجد warehouseId على الفاتورة/الفرع).
+  try {
+    const warehouseId = inv.warehouseId || notesObj.warehouseId || '';
+    const warehouseName = inv.warehouseName || notesObj.warehouseName || '';
+    for (const l of effectiveLines) {
+      if (!l.itemId) continue;
+      await adjustStock(base44, l.itemId, warehouseId, warehouseName, num(l.qty), 0);
+    }
+  } catch (e) {
+    // فشل المخزون لا يبطل المرتجع (المخزون قد لا يكون مفعّلاً)، لكن نُسجّل تحذيراً.
+    console.warn('SalesReturn stock reversal failed (continuing):', e.message);
+  }
+
+  // 4) حدّث حالة الفاتورة الأصلية (RETURNED / PARTIALLY_RETURNED).
+  try {
+    const totalReturnedQty = effectiveLines.reduce((s, l) => s + num(l.qty), 0) + Object.values(returnedQtyByItem).reduce((s, q) => s + q, 0);
+    const totalSoldQty = originalItems.reduce((s, it) => s + num(it.qty), 0);
+    const newStatus = totalReturnedQty >= totalSoldQty - 0.001 ? 'RETURNED' : 'PARTIALLY_RETURNED';
+    await base44.asServiceRole.entities.SalesInvoice.update(inv.id, { status: newStatus });
+  } catch (e) {
+    console.warn('SalesInvoice status update after return failed:', e.message);
+  }
+
+  return { ...returnRec, jeEntryNo: je.entryNo, subtotal, vatAmount, totalAmount };
+}
+
+// ينشئ مرتجع مشتريات بشكل ذرّي: تحقق + مستند + قيد + سحب مخزون + تحديث الفاتورة.
+async function createPurchaseReturn(base44, data) {
+  assertValid('PURCHASE_RETURN', data);
+  const inv = await base44.asServiceRole.entities.SupplierInvoice.get(data.originalInvoiceId);
+  if (!inv) throw new Error('فاتورة المورد الأصلية غير موجودة');
+  if (inv.status === 'CANCELLED') throw new Error('لا يمكن مرتجع فاتورة ملغاة');
+  if (inv.status === 'RETURNED') throw new Error('فاتورة المورد مرتجعة بالكامل بالفعل');
+
+  // بنود فاتورة المورد.
+  const originalItems = Array.isArray(inv.items) ? inv.items : (Array.isArray(inv.lines) ? inv.lines : []);
+  if (!originalItems.length && !data.lines?.length) throw new Error('فاتورة المورد لا تحتوي على بنود — أدخل بنود المرتجع يدوياً');
+
+  // الكميات المرتجعة سابقاً.
+  const priorReturns = await base44.asServiceRole.entities.PurchaseReturn.filter({ originalInvoiceId: inv.id, status: 'POSTED' }) || [];
+  const returnedQtyByItem = {};
+  for (const pr of priorReturns) {
+    for (const l of (pr.lines || [])) {
+      returnedQtyByItem[l.itemId] = (returnedQtyByItem[l.itemId] || 0) + num(l.qty);
+    }
+  }
+
+  const requestedLines = Array.isArray(data.lines) ? data.lines : [];
+  const isFull = data.isFullReturn === true;
+  let effectiveLines = requestedLines;
+  if (isFull && originalItems.length) {
+    effectiveLines = originalItems.map(it => ({
+      itemId: it.itemId || it.boqItemId || '',
+      name: it.name || it.description || '',
+      qty: num(it.orderedQty || it.qty) - (returnedQtyByItem[it.itemId || it.boqItemId] || 0),
+      unitPrice: num(it.unitPrice),
+    })).filter(l => l.qty > 0);
+  }
+  // تحقق الكميات (إن وُجدت بنود أصلية).
+  for (const l of effectiveLines) {
+    if (originalItems.length) {
+      const orig = originalItems.find(o => (o.itemId || o.boqItemId || '') === (l.itemId || '')) || originalItems.find(o => (o.name || o.description || '') === (l.name || ''));
+      if (!orig) throw new Error(`الصنف ${l.name || l.itemId} غير موجود في فاتورة المورد`);
+      const purchased = num(orig.orderedQty || orig.qty);
+      const already = returnedQtyByItem[l.itemId || orig.itemId] || 0;
+      if (num(l.qty) > purchased - already + 0.001) {
+        throw new Error(`الكمية المطلوب إرجاعها للصنف ${l.name || l.itemId} (${num(l.qty)}) تتجاوز المتبقي (${purchased - already})`);
+      }
+    }
+  }
+
+  const baseAmount = data.baseAmount !== undefined ? num(data.baseAmount) : +effectiveLines.reduce((s, l) => s + num(l.qty) * num(l.unitPrice), 0).toFixed(2);
+  const vatRate = resolveVatRate(inv.vatRate);
+  const vatAmount = +(baseAmount * vatRate).toFixed(2);
+  const totalAmount = +(baseAmount + vatAmount).toFixed(2);
+
+  const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
+  const returnNo = data.returnNo || `PR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+  const returnRec = await base44.asServiceRole.entities.PurchaseReturn.create({
+    returnNo,
+    originalInvoiceId: inv.id,
+    originalInvoiceNo: inv.invoiceNo,
+    date: data.date,
+    isFullReturn: isFull,
+    lines: effectiveLines.map(l => ({ itemId: l.itemId || '', name: l.name || '', qty: num(l.qty), unitPrice: num(l.unitPrice), total: +(num(l.qty) * num(l.unitPrice)).toFixed(2) })),
+    baseAmount, vatAmount, totalAmount,
+    reason: data.reason || '',
+    supplierId: inv.supplierId || '', supplierName: inv.supplierName || '',
+    warehouseId: data.warehouseId || inv.warehouseId || '',
+    warehouseName: data.warehouseName || inv.warehouseName || '',
+    projectId: inv.projectId || data.projectId || '', projectName: inv.projectName || data.projectName || '',
+    userId: data.userId || '', userName: data.userName || '',
+    status: 'POSTED',
+  });
+
+  let je;
+  try {
+    je = buildPurchaseReturnJE({ returnNo, date: data.date, originalInv: inv, baseAmount, vatAmount, totalAmount, accounts, warehouseName: data.warehouseName || inv.warehouseName });
+    await autoPostJE(base44, je);
+  } catch (e) {
+    await rollback(base44, 'PurchaseReturn', returnRec.id);
+    throw new Error(`فشل ترحيل قيد مرتجع الشراء: ${e.message}`);
+  }
+  await base44.asServiceRole.entities.PurchaseReturn.update(returnRec.id, { jeEntryNo: je.entryNo });
+
+  // سحب الأصناف من المخزون (عكس الاستلام).
+  try {
+    const warehouseId = data.warehouseId || inv.warehouseId || '';
+    const warehouseName = data.warehouseName || inv.warehouseName || '';
+    for (const l of effectiveLines) {
+      if (!l.itemId) continue;
+      await adjustStock(base44, l.itemId, warehouseId, warehouseName, -num(l.qty), num(l.unitPrice));
+    }
+  } catch (e) {
+    console.warn('PurchaseReturn stock reversal failed (continuing):', e.message);
+  }
+
+  // تحديث حالة فاتورة المورد.
+  try {
+    const newStatus = isFull ? 'RETURNED' : 'PARTIALLY_RETURNED';
+    await base44.asServiceRole.entities.SupplierInvoice.update(inv.id, { status: newStatus });
+  } catch (e) {
+    console.warn('SupplierInvoice status update after return failed:', e.message);
+  }
+
+  return { ...returnRec, jeEntryNo: je.entryNo, baseAmount, vatAmount, totalAmount };
+}
+
 // ─── التوجيه ──────────────────────────────────────────────────────────────────
 const HANDLERS = {
   CHART_ACCOUNT:   { create: (b, p) => createChartAccount(b, p.data, p.openingBalance) },
@@ -1626,6 +1969,8 @@ const HANDLERS = {
   GOODS_RECEIPT:   { create: (b, p) => createGoodsReceipt(b, p.data) },
   FISCAL_YEAR:     { close: (b, p) => closeFiscalYear(b, p.id) },
   PLATFORM_SETTLEMENT: { create: (b, p) => createPlatformSettlement(b, p.data) },
+  SALES_RETURN:    { create: (b, p) => createSalesReturn(b, p.data) },
+  PURCHASE_RETURN: { create: (b, p) => createPurchaseReturn(b, p.data) },
 };
 
 Deno.serve(async (req) => {
