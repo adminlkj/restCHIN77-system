@@ -29,7 +29,7 @@ export default function BusinessDayScreen() {
   const [journal, setJournal] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [returns, setReturns] = useState([]);
+  const [salesReturns, setSalesReturns] = useState([]);
   const [openingCash, setOpeningCash] = useState('');
   const [closingCash, setClosingCash] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
@@ -59,7 +59,7 @@ export default function BusinessDayScreen() {
       setJournal(jes || []);
       setAccounts(accs || []);
       setInvoices(invs || []);
-      setReturns(rets || []);
+      setSalesReturns(rets || []);
     } catch (e) {
       toast.error(e?.message || t('فشل تحميل البيانات', 'Failed to load', lang));
     }
@@ -75,6 +75,55 @@ export default function BusinessDayScreen() {
     const tid = setInterval(() => load(), 30000);
     return () => { window.removeEventListener('focus', onFocus); clearInterval(tid); };
   }, [activeProjectId]);
+
+  // النقد المتوقع في الدرج (للعرض قبل الإقفال) من القيود المرحّلة اليوم.
+  // مهم: نحسب الصندوق (1111) فقط — البطاقات (1114) والبنك (1112) تُحصّل لاحقاً
+  // ولا تدخل في عدّاد الدرّج الفعلي. لو جمعناها لظهر "النقد المتوقع" = إجمالي
+  // المحصّل، وهو خطأ محاسبي يربك الكاشير.
+  // ملاحظة حرجة: نُرجع دائماً نفس البنية (كائن) حتى عند غياب اليوم — لو أرجعنا
+  // رقم 0 ثم حاول الـ render قراءة .total سيصطدم بنوع مختلف ويتعطّل (شاشة بيضاء).
+  // ملاحظة هندسية: هذا الـ Hook يجب أن يكون قبل أي return شرطي (قواعد Hooks).
+  const expectedCash = React.useMemo(() => {
+    const ZERO = { total: 0, cashCollected: 0, cardCollected: 0, bankCollected: 0 };
+    if (!today) return ZERO;
+    try {
+      const accountMap = buildAccountMap(accounts);
+      const dayDate = today.dayDate;
+      // هام: نُجمَع فقط سطور هذا الفرع. الدرّج يخصّ الفرع المفتوح، فلو جمعنا
+      // كل الفروع لظهر للكاشير نقدٌ ليس في درجّه (وكان يحدث: PALACE INDIA
+      // يعرض 391 بدل 207 لأنه ضمّن نقد CHINA TOWN). نطابق عبر costCenter
+      // (اسم الفرع المخزّن على السطر) مع branchName لليوم المفتوح.
+      const branchName = today.branchName || '';
+      let cashDelta = 0;       // 1111 — ما يدخل الدرّج
+      let cardDelta = 0;       // 1114 — للمعلومة
+      let bankDelta = 0;       // 1112 — للمعلومة
+      for (const je of (journal || [])) {
+        if (!je || !je.isPosted) continue;
+        // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
+        if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
+        for (const l of (je.lines || [])) {
+          // فلترة الفرع: السطر يجب أن ينتمي لنفس فرع اليوم المفتوح.
+          if (branchName && (l.costCenter || '') !== branchName) continue;
+          const acc = accountMap[l.accountCode] || {};
+          const code = acc.code || '';
+          const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
+          if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
+          else if (code === '1114') cardDelta += d;
+          else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
+        }
+      }
+      return {
+        total: +((Number(today.openingCash) || 0) + cashDelta).toFixed(2),
+        cashCollected: +cashDelta.toFixed(2),
+        cardCollected: +cardDelta.toFixed(2),
+        bankCollected: +bankDelta.toFixed(2),
+      };
+    } catch (e) {
+      // أي خطأ في الحساب لا يُعطّل الشاشة — نُرجع صفرية آمنة.
+      console.warn('expectedCash computation failed:', e);
+      return ZERO;
+    }
+  }, [today, journal, accounts]);
 
   if (!activeProjectId) {
     return (
@@ -121,7 +170,7 @@ export default function BusinessDayScreen() {
         journalEntries: journal,
         accountMap,
         salesInvoices: invoices,
-        salesReturns: returns,
+        salesReturns: salesReturns,
       });
       toast.success(t('تم إقفال اليوم وإصدار Z-Report', 'Day closed & Z-Report issued', lang));
       setCloseOpen(false);
@@ -133,54 +182,6 @@ export default function BusinessDayScreen() {
     }
     setWorking('');
   };
-
-  // النقد المتوقع في الدرج (للعرض قبل الإقفال) من القيود المرحّلة اليوم.
-  // مهم: نحسب الصندوق (1111) فقط — البطاقات (1114) والبنك (1112) تُحصّل لاحقاً
-  // ولا تدخل في عدّاد الدرّج الفعلي. لو جمعناها لظهر "النقد المتوقع" = إجمالي
-  // المحصّل، وهو خطأ محاسبي يربك الكاشير.
-  // ملاحظة حرجة: نُرجع دائماً نفس البنية (كائن) حتى عند غياب اليوم — لو أرجعنا
-  // رقم 0 ثم حاول الـ render قراءة .total سيصطدم بنوع مختلف ويتعطّل (شاشة بيضاء).
-  const expectedCash = React.useMemo(() => {
-    const ZERO = { total: 0, cashCollected: 0, cardCollected: 0, bankCollected: 0 };
-    if (!today) return ZERO;
-    try {
-      const accountMap = buildAccountMap(accounts);
-      const dayDate = today.dayDate;
-      // هام: نُجمَع فقط سطور هذا الفرع. الدرّج يخصّ الفرع المفتوح، فلو جمعنا
-      // كل الفروع لظهر للكاشير نقدٌ ليس في درجّه (وكان يحدث: PALACE INDIA
-      // يعرض 391 بدل 207 لأنه ضمّن نقد CHINA TOWN). نطابق عبر costCenter
-      // (اسم الفرع المخزّن على السطر) مع branchName لليوم المفتوح.
-      const branchName = today.branchName || '';
-      let cashDelta = 0;       // 1111 — ما يدخل الدرّج
-      let cardDelta = 0;       // 1114 — للمعلومة
-      let bankDelta = 0;       // 1112 — للمعلومة
-      for (const je of (journal || [])) {
-        if (!je || !je.isPosted) continue;
-        // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
-        if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
-        for (const l of (je.lines || [])) {
-          // فلترة الفرع: السطر يجب أن ينتمي لنفس فرع اليوم المفتوح.
-          if (branchName && (l.costCenter || '') !== branchName) continue;
-          const acc = accountMap[l.accountCode] || {};
-          const code = acc.code || '';
-          const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
-          if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
-          else if (code === '1114') cardDelta += d;
-          else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
-        }
-      }
-      return {
-        total: +((Number(today.openingCash) || 0) + cashDelta).toFixed(2),
-        cashCollected: +cashDelta.toFixed(2),
-        cardCollected: +cardDelta.toFixed(2),
-        bankCollected: +bankDelta.toFixed(2),
-      };
-    } catch (e) {
-      // أي خطأ في الحساب لا يُعطّل الشاشة — نُرجع صفرية آمنة.
-      console.warn('expectedCash computation failed:', e);
-      return ZERO;
-    }
-  }, [today, journal, accounts]);
 
   return (
     <ModuleLayout
