@@ -103,6 +103,7 @@ export const INVOICE_STATUS = {
   PARTIALLY_PAID: { ar: 'مدفوع جزئياً', en: 'Partially Paid', color: 'bg-amber-100 text-amber-700 border border-amber-200' },
   PAID: { ar: 'مدفوع', en: 'Paid', color: 'bg-emerald-100 text-emerald-700 border border-emerald-200' },
   OVERDUE: { ar: 'متأخر', en: 'Overdue', color: 'bg-rose-100 text-rose-700 border border-rose-200' },
+  RETURNED: { ar: 'مُرجَع', en: 'Returned', color: 'bg-purple-100 text-purple-700 border border-purple-200' },
   CANCELLED: { ar: 'ملغي', en: 'Cancelled', color: 'bg-gray-100 text-gray-500 border border-gray-200' },
 };
 
