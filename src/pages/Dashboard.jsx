@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
-import { t, formatCurrency } from '@/lib/utils-binaa';
+import { t, formatCurrency, INVOICE_STATUS } from '@/lib/utils-binaa';
 import { toBusinessDayDate } from '@/lib/businessDay';
 import { getBranchTableStats } from '@/lib/tables';
 import { buildAccountMap, flattenPostedLines } from '@/lib/financialEngine';
@@ -427,9 +427,14 @@ export default function Dashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold tabular-nums">{formatCurrency(inv.totalAmount || 0, lang)}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {inv.status === 'PAID' ? (lang === 'ar' ? 'مدفوع' : 'Paid') : (lang === 'ar' ? 'مسودة' : 'Draft')}
-                      </span>
+                      {(() => {
+                        const st = INVOICE_STATUS[inv.status] || INVOICE_STATUS.DRAFT;
+                        return (
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${st.color}`}>
+                            {lang === 'ar' ? st.ar : st.en}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
