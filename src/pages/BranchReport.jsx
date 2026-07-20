@@ -11,56 +11,78 @@ import { useStore } from '@/lib/store';
 import { t, formatCurrency } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import { toast } from 'sonner';
+import { buildAccountMap, flattenPostedLines } from '@/lib/financialEngine';
 
 // تقرير مقارنة الفروع ضمن فترة محددة — عدد الطلبات والإيراد ومتوسط الطلب لكل فرع.
+// المصدر الموحّد: القيود المرحّلة فقط. الإيراد = رصيد حسابات الإيراد (4xxx) في
+// الفترة، مصنّفة حسب costCenter (اسم الفرع على السطر). هذا يضمن تطابق الرقم مع
+// قائمة الدخل وميزان المراجعة — لا من inv.totalAmount الذي يضمّ VAT فيُعطي رقماً
+// أكبر ويُربك المقارنة مع التقارير الأخرى.
 export default function BranchReport() {
   const { lang } = useStore();
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [from, setFrom] = useState(monthAgo);
   const [to, setTo] = useState(today);
-  const [invoices, setInvoices] = useState([]);
+  const [journal, setJournal] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const all = await base44.entities.SalesInvoice.list('-created_date', 3000);
-      const list = (all || []).filter(inv => {
-        if (inv.status === 'CANCELLED' || inv.status === 'DRAFT') return false;
-        const d = inv.date ? String(inv.date).slice(0, 10) : '';
-        if (!d) return false;
-        if (from && d < from) return false;
-        if (to && d > to) return false;
-        return true;
-      });
-      setInvoices(list);
+      const [jes, accs] = await Promise.all([
+        base44.entities.JournalEntry.filter({ isPosted: true }, '-date', 5000).catch(() => []),
+        base44.entities.ChartAccount.list('code', 2000).catch(() => []),
+      ]);
+      setJournal(jes || []);
+      setAccounts(accs || []);
     } catch (err) {
       console.warn('BranchReport load failed:', err);
       toast.error(err?.message || t('فشل تحميل البيانات', 'Failed to load data', lang));
-      setInvoices([]);
+      setJournal([]);
+      setAccounts([]);
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => { load(); }, []);
 
+  const accountMap = useMemo(() => buildAccountMap(accounts), [accounts]);
+  const allLines = useMemo(() => flattenPostedLines(journal), [journal]);
+
   const rows = useMemo(() => {
+    // فلترة الفترة: نقارن بالتاريخ الخام (ISO) لأن المستخدم يختار يوماً تقويمياً.
+    const fromTs = from ? new Date(from + 'T00:00:00').toISOString() : '';
+    const toTs = to ? new Date(to + 'T23:59:59').toISOString() : '';
     const map = {};
-    invoices.forEach(inv => {
-      const id = inv.projectId || '__none__';
-      const name = inv.projectName || t('غير محدد', 'Unspecified', lang);
-      if (!map[id]) map[id] = { id, name, orders: 0, revenue: 0 };
-      map[id].orders += 1;
-      map[id].revenue += Number(inv.totalAmount) || 0;
+    const orderSet = new Map(); // branch → Set of entryNo
+    allLines.forEach(l => {
+      const acc = accountMap[l.accountCode] || {};
+      if (acc.accountType !== 'REVENUE') return;
+      // سطور الإيراد فقط هي ما يهم. تاريخ القيد خام (ISO string).
+      const d = l.date || '';
+      if (fromTs && d < fromTs) return;
+      if (toTs && d > toTs) return;
+      const name = l.costCenter || t('غير محدد', 'Unspecified', lang);
+      if (!map[name]) map[name] = { id: name, name, orders: 0, revenue: 0 };
+      map[name].revenue += (Number(l.credit) || 0) - (Number(l.debit) || 0);
+      // عدد الطلبات: نعدّ entryNo فريداً لكل فرع (من سطور الإيراد).
+      if (!orderSet.has(name)) orderSet.set(name, new Set());
+      if (l.entryNo) orderSet.get(name).add(l.entryNo);
     });
     return Object.values(map)
-      .map(r => ({
-        ...r,
-        avgOrder: r.orders > 0 ? r.revenue / r.orders : 0,
-      }))
+      .map(r => {
+        const orders = orderSet.get(r.name)?.size || 0;
+        return {
+          ...r,
+          orders,
+          revenue: +r.revenue.toFixed(2),
+          avgOrder: orders > 0 ? +(r.revenue / orders).toFixed(2) : 0,
+        };
+      })
       .sort((a, b) => b.revenue - a.revenue);
-  }, [invoices, lang]);
+  }, [allLines, accountMap, from, to, lang]);
 
   const totalOrders = rows.reduce((s, r) => s + r.orders, 0);
   const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
