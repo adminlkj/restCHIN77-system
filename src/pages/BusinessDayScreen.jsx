@@ -114,32 +114,41 @@ export default function BusinessDayScreen() {
   // مهم: نحسب الصندوق (1111) فقط — البطاقات (1114) والبنك (1112) تُحصّل لاحقاً
   // ولا تدخل في عدّاد الدرّج الفعلي. لو جمعناها لظهر "النقد المتوقع" = إجمالي
   // المحصّل، وهو خطأ محاسبي يربك الكاشير.
+  // ملاحظة حرجة: نُرجع دائماً نفس البنية (كائن) حتى عند غياب اليوم — لو أرجعنا
+  // رقم 0 ثم حاول الـ render قراءة .total سيصطدم بنوع مختلف ويتعطّل (شاشة بيضاء).
   const expectedCash = React.useMemo(() => {
-    if (!today) return 0;
-    const accountMap = buildAccountMap(accounts);
-    const dayDate = today.dayDate;
-    let cashDelta = 0;       // 1111 — ما يدخل الدرّج
-    let cardDelta = 0;       // 1114 — للمعلومة
-    let bankDelta = 0;       // 1112 — للمعلومة
-    for (const je of journal) {
-      if (!je.isPosted) continue;
-      // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
-      if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
-      for (const l of (je.lines || [])) {
-        const acc = accountMap[l.accountCode] || {};
-        const code = acc.code || '';
-        const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
-        if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
-        else if (code === '1114') cardDelta += d;
-        else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
+    const ZERO = { total: 0, cashCollected: 0, cardCollected: 0, bankCollected: 0 };
+    if (!today) return ZERO;
+    try {
+      const accountMap = buildAccountMap(accounts);
+      const dayDate = today.dayDate;
+      let cashDelta = 0;       // 1111 — ما يدخل الدرّج
+      let cardDelta = 0;       // 1114 — للمعلومة
+      let bankDelta = 0;       // 1112 — للمعلومة
+      for (const je of (journal || [])) {
+        if (!je || !je.isPosted) continue;
+        // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
+        if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
+        for (const l of (je.lines || [])) {
+          const acc = accountMap[l.accountCode] || {};
+          const code = acc.code || '';
+          const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
+          if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
+          else if (code === '1114') cardDelta += d;
+          else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
+        }
       }
+      return {
+        total: +((Number(today.openingCash) || 0) + cashDelta).toFixed(2),
+        cashCollected: +cashDelta.toFixed(2),
+        cardCollected: +cardDelta.toFixed(2),
+        bankCollected: +bankDelta.toFixed(2),
+      };
+    } catch (e) {
+      // أي خطأ في الحساب لا يُعطّل الشاشة — نُرجع صفرية آمنة.
+      console.warn('expectedCash computation failed:', e);
+      return ZERO;
     }
-    return {
-      total: +((Number(today.openingCash) || 0) + cashDelta).toFixed(2),
-      cashCollected: +cashDelta.toFixed(2),
-      cardCollected: +cardDelta.toFixed(2),
-      bankCollected: +bankDelta.toFixed(2),
-    };
   }, [today, journal, accounts]);
 
   return (
