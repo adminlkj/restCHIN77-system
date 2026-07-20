@@ -695,9 +695,11 @@ export default function DeliveryPlatforms() {
                         <div className="font-medium">{s.platform.name}</div>
                         <div className="text-[10px] text-muted-foreground font-mono" dir="ltr">{s.platform.code}</div>
                         <Badge variant="outline" className="text-[10px] mt-0.5">
-                          {s.settlementMethod === 'GROSS'
-                            ? t('العمولة على الإجمالي', 'Commission on Gross', lang)
-                            : t('العمولة على الصافي', 'Commission on Net', lang)}
+                          {/* commissionMethod = على ماذا تُحسب العمولة (GROSS=إجمالي، NET=صافي قبل VAT) */}
+                          {/* settlementMethod = كيف تتم التسوية مع المنصة — يُعرض في عمود منفصل إن لزم */}
+                          {(s.platform?.commissionMethod || s.platform?.commission_method) === 'NET'
+                            ? t('العمولة على الصافي', 'Commission on Net (pre-tax)')
+                            : t('العمولة على الإجمالي', 'Commission on Gross')}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center font-semibold">{s.orders}</TableCell>

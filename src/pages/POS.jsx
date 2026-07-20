@@ -498,13 +498,22 @@ export default function POS() {
   const total = totals.total;
   // (calcVAT لم يعد مستخدماً مباشرة — محرّك الخصومات يحسبها داخلياً بشكل متسق)
 
-  // عمولة المنصة (للمعلومة فقط — لا تُخصم من الإجمالي)
+  // عمولة المنصة — تُحسب حسب commissionMethod المخزّن على المنصة:
+  //   GROSS (افتراضي) = على الإجمالي شامل VAT
+  //   NET              = على الصافي قبل VAT (subtotal / vatBase)
+  // العمولة معروضة للمعلومة ولا تُخصم من إجمالي الفاتورة (تُخصمها المنصة عند التسوية).
+  // ملاحظة محاسبية: إن كانت نسبة المنصة 15% مثلاً وcommissionMethod=NET، فالعمولة
+  // تُحسب على القاعدة الخاضعة فقط (بدون VAT)، وهذا المتعارف عليه في أغلب المنصات.
   const platformCommission = useMemo(() => {
     if (!isDelivery || !selectedPlatform) return 0;
     const rate = parseFloat(selectedPlatform.commissionRate) || 0;
     if (rate <= 0) return 0;
-    return +(total * (rate / 100)).toFixed(2);
-  }, [isDelivery, selectedPlatform, total]);
+    // NET = على الصافي قبل الضريبة. نأخذ vatBase إن وُجد (بعد الخصومات) وإلا subtotal.
+    const basis = (selectedPlatform.commissionMethod === 'NET')
+      ? (Number(totals.vatBase) || Number(totals.subtotal) || 0)
+      : total;
+    return +(basis * (rate / 100)).toFixed(2);
+  }, [isDelivery, selectedPlatform, total, totals]);
 
   const totalPaid = useMemo(
     () => payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
@@ -1449,8 +1458,8 @@ export default function POS() {
                 {selectedPlatform && selectedPlatform.commissionRate > 0 && (
                   <div className="text-[11px] text-muted-foreground italic">
                     {t(
-                      `عمولة المنصة (${selectedPlatform.commissionRate}%): ${formatCurrency(platformCommission, lang)} — تُحتسب في كشف المنصة`,
-                      `Platform commission (${selectedPlatform.commissionRate}%): ${formatCurrency(platformCommission, lang)} — tracked in platform statement`,
+                      `عمولة المنصة ${selectedPlatform.commissionRate}% على ${selectedPlatform.commissionMethod === 'NET' ? 'الصافي قبل الضريبة' : 'الإجمالي'}: ${formatCurrency(platformCommission, lang)} — تُحتسب في كشف المنصة`,
+                      `Platform commission ${selectedPlatform.commissionRate}% on ${selectedPlatform.commissionMethod === 'NET' ? 'net (pre-tax)' : 'gross'}: ${formatCurrency(platformCommission, lang)} — tracked in platform statement`,
                       lang
                     )}
                   </div>

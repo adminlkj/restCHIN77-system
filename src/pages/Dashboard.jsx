@@ -128,9 +128,11 @@ export default function Dashboard() {
     return Object.values(itemMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
   }, [todayInvoices]);
 
-  // إيرادات حسب طريقة الدفع (اليوم)
   // إيرادات حسب طريقة الدفع (اليوم) — من JE ليتطابق مع ميزان المراجعة.
   // صندوق الكاشير (1111) = نقد، بطاقات POS (1114) = بطاقات.
+  // هام: نستخدم **الصافي** (مدين − دائن) وليس المدين وحده، حتى نخصم مرتجعات
+  // النقد (رَدّ النقد للزبون عند الإرجاع = دائن على 1111). سابقاً كان العرض
+  // يجمع المدين فقط فيُظهر نقداً أعلى من المحصّل الفعلي (521.02 بدل 391.01).
   const paymentBreakdown = useMemo(() => {
     const methods = { cash: 0, card_mada: 0, card_visa: 0, card_mc: 0, card_other: 0 };
     allLines
@@ -138,18 +140,25 @@ export default function Dashboard() {
       .forEach(l => {
         const acc = accountMap[l.accountCode] || {};
         const code = acc.code || '';
-        const debit = Number(l.debit) || 0;
-        if (debit <= 0) return;
-        if (code === '1111' || acc.semanticRole === 'CASH') methods.cash += debit;
+        // الصافي = مدين − دائن. للنقد المدين موجب، وللمرتجع دائن (سالب).
+        const net = (Number(l.debit) || 0) - (Number(l.credit) || 0);
+        if (net === 0) return;
+        if (code === '1111' || acc.semanticRole === 'CASH') methods.cash += net;
         else if (code === '1114') {
           // كل البطاقات تُجمَّع على 1114 — نضعها تحت card_mada (أكبر فئة).
-          methods.card_mada += debit;
+          methods.card_mada += net;
         }
       });
+    // نقّب للأرقام السالبة (مثلاً مرتجع بنك).
+    methods.cash = +methods.cash.toFixed(2);
+    methods.card_mada = +methods.card_mada.toFixed(2);
     return methods;
   }, [allLines, accountMap, today]);
 
   // إيرادات حسب الفرع (اليوم) — من JE ليتطابق مع قائمة الدخل.
+  // نعدّ الإيصالات الفريدة لكل فرع عبر تتبّع entryNo على سطور الإيراد (REVENUE)
+  // التابعة لكل costCenter. لاحظ أن قيد فاتورة البيع يحمل سطر REVENUE واحد لكل
+  // فرع، فعدّ entryNos الفريدة = عدد الإيصالات الفعلية (لا عدد السطور).
   const branchRevenue = useMemo(() => {
     const branchMap = {};
     allLines
@@ -158,10 +167,18 @@ export default function Dashboard() {
         const acc = accountMap[l.accountCode] || {};
         if (acc.accountType !== 'REVENUE') return;
         const name = l.costCenter || 'غير محدد';
-        if (!branchMap[name]) branchMap[name] = { name, count: 0, revenue: 0 };
+        if (!branchMap[name]) branchMap[name] = { name, count: 0, revenue: 0, _entryNos: new Set() };
         branchMap[name].revenue += (l.credit - l.debit);
+        // عدّ الإيصال مرة واحدة لكل entryNo فريد.
+        if (l.entryNo) branchMap[name]._entryNos.add(l.entryNo);
       });
-    return Object.values(branchMap).sort((a, b) => b.revenue - a.revenue);
+    // حوّل الـ Set إلى عدد نهائي.
+    const result = Object.values(branchMap).map(b => ({
+      name: b.name,
+      count: b._entryNos.size,
+      revenue: +b.revenue.toFixed(2),
+    }));
+    return result.sort((a, b) => b.revenue - a.revenue);
   }, [allLines, accountMap, today]);
 
   const greeting = (() => {
