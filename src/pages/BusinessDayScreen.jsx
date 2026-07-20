@@ -137,6 +137,11 @@ export default function BusinessDayScreen() {
     try {
       const accountMap = buildAccountMap(accounts);
       const dayDate = today.dayDate;
+      // هام: نُجمَع فقط سطور هذا الفرع. الدرّج يخصّ الفرع المفتوح، فلو جمعنا
+      // كل الفروع لظهر للكاشير نقدٌ ليس في درجّه (وكان يحدث: PALACE INDIA
+      // يعرض 391 بدل 207 لأنه ضمّن نقد CHINA TOWN). نطابق عبر costCenter
+      // (اسم الفرع المخزّن على السطر) مع branchName لليوم المفتوح.
+      const branchName = today.branchName || '';
       let cashDelta = 0;       // 1111 — ما يدخل الدرّج
       let cardDelta = 0;       // 1114 — للمعلومة
       let bankDelta = 0;       // 1112 — للمعلومة
@@ -145,6 +150,8 @@ export default function BusinessDayScreen() {
         // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
         if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
         for (const l of (je.lines || [])) {
+          // فلترة الفرع: السطر يجب أن ينتمي لنفس فرع اليوم المفتوح.
+          if (branchName && (l.costCenter || '') !== branchName) continue;
           const acc = accountMap[l.accountCode] || {};
           const code = acc.code || '';
           const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);

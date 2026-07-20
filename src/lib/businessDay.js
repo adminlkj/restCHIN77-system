@@ -187,15 +187,22 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
   const open = await getOpenBusinessDay(branchId, hours);
   if (!open) throw new Error('لا يوجد يوم عمل مفتوح لهذا الفرع');
   const dayDate = open.dayDate;
+  // اسم الفرع — نُجمَع فقط سطور هذا الفرع (costCenter على السطر) حتى لا
+  // يختلط نقد فرع بآخر في Z-Report. كل فرع له درجّه وزرّه الخاص.
+  const branchName = open.branchName || '';
 
-  // اجمع كل القيود المرحّلة لهذا اليوم (حسب يوم العمل، لا التقويم الخام).
+  // اجمع كل القيود المرحّلة لهذا اليوم (حسب يوم العمل، لا التقويم الخام)
+  // ولهذا الفرع فقط.
   const dayLines = [];
   for (const je of (journalEntries || [])) {
     if (!je || !je.isPosted) continue;
     if (toBusinessDayDate(je.date, hours) !== dayDate) continue;
     for (const l of (je.lines || [])) {
+      // فلترة الفرع: السطر يجب أن ينتمي لنفس فرع اليوم المفتوح.
+      if (branchName && (l.costCenter || '') !== branchName) continue;
       dayLines.push({
         ...l,
+        entryNo: je.entryNo || '',
         accountCode: l.accountCode || '',
         debit: Number(l.debit) || 0,
         credit: Number(l.credit) || 0,
@@ -248,7 +255,7 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
       cashVariance: variance,
       zReportNo,
       totals: {
-        salesCount: (journalEntries || []).filter(je => je.isPosted && toBusinessDayDate(je.date, hours) === dayDate).length,
+        salesCount: dayLines.length ? new Set(dayLines.map(l => l.entryNo).filter(Boolean)).size : 0,
         grossSales: +grossSales.toFixed(2),
         netSales: +(grossSales - vatCollected).toFixed(2),
         vatCollected: +vatCollected.toFixed(2),
