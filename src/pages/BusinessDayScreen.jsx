@@ -34,6 +34,7 @@ export default function BusinessDayScreen() {
   const [closingCash, setClosingCash] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
   const [working, setWorking] = useState('');
+  const [zReportDay, setZReportDay] = useState(null);  // اليوم المختار لعرض Z-Report التفصيلي
 
   const load = async () => {
     if (!activeProjectId) { setLoading(false); return; }
@@ -308,7 +309,13 @@ export default function BusinessDayScreen() {
                       <TableCell className={`text-end text-sm font-semibold ${Math.abs(variance) < 0.01 ? 'text-muted-foreground' : variance > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {variance >= 0 ? '+' : ''}{formatCurrency(variance, lang)}
                       </TableCell>
-                      <TableCell className="text-xs font-mono">{d.zReportNo || '—'}</TableCell>
+                      <TableCell className="text-xs font-mono">
+                        {d.zReportNo ? (
+                          <button onClick={() => setZReportDay(d)} className="text-blue-600 hover:underline" title={t('عرض Z-Report', 'View Z-Report', lang)}>
+                            {d.zReportNo}
+                          </button>
+                        ) : '—'}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -349,6 +356,178 @@ export default function BusinessDayScreen() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* حوار Z-Report التفصيلي — يعرض كل المكوّنات التي طلبها المستخدم */}
+      <ZReportDialog day={zReportDay} onClose={() => setZReportDay(null)} lang={lang} branchName={activeProjectName} />
     </ModuleLayout>
+  );
+}
+
+/**
+ * مربع حوار يعرض Z-Report التفصيلي ليوم مقفل:
+ *   - البيع النقدي
+ *   - البيع عبر البنك
+ *   - البطاقات بالتفصيل (مدى/فيزا/ماستركارد/أخرى)
+ *   - بيع المنصات بالتفصيل (هنقرستيشن/كيتا/جاهز...)
+ *   - الخصومات الممنوحة
+ *   - المرتجعات وفواتيرها
+ * البيانات تُقرأ من day.totals الذي أنتجه closeBusinessDay.
+ */
+function ZReportDialog({ day, onClose, lang, branchName }) {
+  if (!day) return null;
+  const totals = day.totals || {};
+  const pb = totals.paymentBreakdown || {};
+  const cards = pb.cards || {};
+  const platforms = totals.platforms || {};
+  const returns = totals.returns || {};
+
+  return (
+    <Dialog open={!!day} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ReceiptIcon className="size-5 text-blue-600" />
+            {t('تقرير Z-Report التفصيلي', 'Detailed Z-Report', lang)}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 text-sm">
+          {/* رأس التقرير */}
+          <div className="rounded-lg bg-muted/50 p-3 grid grid-cols-2 gap-2">
+            <div><span className="text-muted-foreground">{t('الفرع', 'Branch', lang)}:</span> <strong>{branchName || day.branchName || '—'}</strong></div>
+            <div><span className="text-muted-foreground">{t('التاريخ', 'Date', lang)}:</span> <strong>{day.dayDate}</strong></div>
+            <div><span className="text-muted-foreground">{t('رقم Z-Report', 'Z-Report No', lang)}:</span> <strong className="font-mono">{day.zReportNo}</strong></div>
+            <div><span className="text-muted-foreground">{t('أُقفل بواسطة', 'Closed by', lang)}:</span> <strong>{day.closedByName || '—'}</strong></div>
+          </div>
+
+          {/* 1. ملخص النقد في الدرج */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('١. النقد في الدرج', '1. Cash in Drawer', lang)}</h4>
+            <div className="rounded-md border divide-y">
+              <Row label={t('النقد الافتتاحي', 'Opening Cash', lang)} value={formatCurrency(Number(day.openingCash) || 0, lang)} />
+              <Row label={t('تحصيلات نقد اليوم', 'Today Cash Sales', lang)} value={formatCurrency(totals.cashCollected || 0, lang)} />
+              <Row label={t('النقد المتوقع', 'Expected Cash', lang)} value={formatCurrency(Number(day.expectedCash) || 0, lang)} strong />
+              <Row label={t('النقد الفعلي المعدود', 'Counted Cash', lang)} value={formatCurrency(Number(day.closingCash) || 0, lang)} />
+              <Row label={t('الفرق', 'Variance', lang)} value={formatCurrency(Number(day.cashVariance) || 0, lang)}
+                tone={Math.abs(Number(day.cashVariance) || 0) < 0.01 ? '' : (Number(day.cashVariance) < 0 ? 'text-rose-600' : 'text-emerald-600')} strong />
+            </div>
+          </div>
+
+          {/* 2. تفصيل طرق التحصيل */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('٢. تفصيل طرق التحصيل', '2. Collection Methods', lang)}</h4>
+            <div className="rounded-md border divide-y">
+              <Row label={t('البيع النقدي', 'Cash Sales', lang)} value={formatCurrency(pb.cash || totals.cashCollected || 0, lang)} />
+              <Row label={t('تحويلات بنكية', 'Bank Transfers', lang)} value={formatCurrency(pb.bank || totals.bankCollected || 0, lang)} />
+              <Row label={t('بطاقة مدى', 'Mada', lang)} value={formatCurrency(cards.mada || 0, lang)} />
+              <Row label={t('بطاقة فيزا', 'Visa', lang)} value={formatCurrency(cards.visa || 0, lang)} />
+              <Row label={t('بطاقة ماستركارد', 'Mastercard', lang)} value={formatCurrency(cards.mastercard || 0, lang)} />
+              <Row label={t('بطاقة أخرى', 'Other Card', lang)} value={formatCurrency(cards.other || 0, lang)} />
+              <Row label={t('إجمالي البطاقات', 'Total Cards', lang)} value={formatCurrency(cards.total || totals.cardCollected || 0, lang)} strong />
+            </div>
+          </div>
+
+          {/* 3. بيع المنصات */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('٣. بيع المنصات', '3. Platform Sales', lang)}</h4>
+            {Object.keys(platforms).length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t('لا يبيع منصات في هذا اليوم', 'No platform sales this day', lang)}</p>
+            ) : (
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('المنصة', 'Platform', lang)}</TableHead>
+                      <TableHead className="text-center">{t('عدد', 'Count', lang)}</TableHead>
+                      <TableHead className="text-end">{t('الإجمالي', 'Gross', lang)}</TableHead>
+                      <TableHead className="text-end">{t('العمولة', 'Commission', lang)}</TableHead>
+                      <TableHead className="text-end">{t('الصافي', 'Net', lang)}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(platforms).map(([name, p]) => (
+                      <TableRow key={name}>
+                        <TableCell className="font-medium">{name}</TableCell>
+                        <TableCell className="text-center">{p.count}</TableCell>
+                        <TableCell className="text-end">{formatCurrency(p.gross || 0, lang)}</TableCell>
+                        <TableCell className="text-end text-rose-600">{formatCurrency(p.commission || 0, lang)}</TableCell>
+                        <TableCell className="text-end font-medium">{formatCurrency(p.net || 0, lang)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          {/* 4. الخصومات */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('٤. الخصومات الممنوحة', '4. Discounts Granted', lang)}</h4>
+            <div className="rounded-md border divide-y">
+              <Row label={t('إجمالي الخصومات', 'Total Discounts', lang)} value={formatCurrency(totals.totalDiscounts || totals.discounts || 0, lang)} strong />
+            </div>
+          </div>
+
+          {/* 5. المرتجعات */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('٥. المرتجعات', '5. Returns', lang)}</h4>
+            {returns.count === 0 ? (
+              <p className="text-xs text-muted-foreground">{t('لا مرتجعات في هذا اليوم', 'No returns this day', lang)}</p>
+            ) : (
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('رقم المرتجع', 'Return No', lang)}</TableHead>
+                      <TableHead>{t('الفاتورة الأصلية', 'Original Invoice', lang)}</TableHead>
+                      <TableHead>{t('النوع', 'Type', lang)}</TableHead>
+                      <TableHead className="text-end">{t('المبلغ', 'Amount', lang)}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(returns.details || []).map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono text-xs">{r.returnNo || '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.originalInvoiceNo || '—'}</TableCell>
+                        <TableCell className="text-xs">{r.type === 'FULL' ? t('كامل', 'Full', lang) : t('جزئي', 'Partial', lang)}</TableCell>
+                        <TableCell className="text-end text-rose-600">{formatCurrency(r.amount || 0, lang)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/30 font-semibold">
+                      <TableCell colSpan={3}>{t('الإجمالي', 'Total', lang)}</TableCell>
+                      <TableCell className="text-end text-rose-600">{formatCurrency(returns.total || 0, lang)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          {/* ملخص المبيعات */}
+          <div>
+            <h4 className="font-bold mb-2 text-blue-700">{t('ملخص المبيعات', 'Sales Summary', lang)}</h4>
+            <div className="rounded-md border divide-y">
+              <Row label={t('عدد الفواتير', 'Invoices Count', lang)} value={totals.salesCount || 0} />
+              <Row label={t('إجمالي المبيعات (شامل VAT)', 'Gross Sales (incl. VAT)', lang)} value={formatCurrency(totals.grossSales || 0, lang)} />
+              <Row label={t('ضريبة القيمة المضافة', 'VAT Collected', lang)} value={formatCurrency(totals.vatCollected || 0, lang)} />
+              <Row label={t('صافي المبيعات (بدون VAT)', 'Net Sales (excl. VAT)', lang)} value={formatCurrency(totals.netSales || 0, lang)} strong />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t('إغلاق', 'Close', lang)}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Row({ label, value, strong, tone }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={`text-sm ${strong ? 'font-bold' : 'font-medium'} ${tone || ''}`}>{value}</span>
+    </div>
   );
 }
