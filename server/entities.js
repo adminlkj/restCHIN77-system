@@ -121,13 +121,18 @@ export async function createEntity(entityName, data, user) {
 export async function updateEntity(entityName, id, data, options = {}) {
   const current = await getEntity(entityName, id);
   if (!current) throw validationError('السجل غير موجود');
-  // CRITICAL: block PATCH on posted/approved documents
-  await assertNotImmutable(entityName, current, data);
-  // CRITICAL: block direct status transitions EXCEPT when called by postOperation
-  // (postOperation uses 'internal: true' option to bypass this check)
-  // postOperation is the ONLY legitimate way to change status because it
-  // also creates/reverses JEs and updates related accounts.
+  // CRITICAL: block PATCH on posted/approved documents.
+  // postOperation يمرّر {internal:true} لأنه المسار الشرعي الوحيد لتعديل
+  // المستندات المرحّلة (مثلاً PayrollRun APPROVED→PAID، أو تحديث paidAmount
+  // على SalesInvoice عند السداد). من دونه، الـ PATCH المباشر من الواجهة
+  // يُمنع منعاً باتاً. لاحظ أن postOperation نفسه يُنشئ/يعكس القيود ويحدّث
+  // الحقول المالية بشكل متّسق، لذلك نثق به كمسار داخلي موثوق.
   if (!options.internal) {
+    await assertNotImmutable(entityName, current, data);
+    // CRITICAL: block direct status transitions EXCEPT when called by postOperation
+    // (postOperation uses 'internal: true' option to bypass this check)
+    // postOperation is the ONLY legitimate way to change status because it
+    // also creates/reverses JEs and updates related accounts.
     await assertNoDirectStatusChange(entityName, current, data);
     // CRITICAL: block direct PATCH on financial fields (subtotal, vatAmount, etc.)
     // These must be changed only via postOperation which recomputes totals + JEs.

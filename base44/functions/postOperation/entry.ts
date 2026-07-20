@@ -1285,15 +1285,38 @@ async function payPayrollRun(base44, id, data) {
   const run = await base44.asServiceRole.entities.PayrollRun.get(id);
   if (!run) throw new Error('مسير الرواتب غير موجود');
   if (run.status !== 'APPROVED') throw new Error('لا يمكن سداد إلا مسير معتمد');
+  // منع السداد المزدوج: لو السندات السابقة فشلت في تحديث الحالة لكن القيد نُشر،
+  // لا نسمح بإعادة المحاولة لأن ذلك سيُرحّل قيداً مكرّراً. الحالة APPROVED فقط
+  // تسمح بالسداد؛ فلو أصبحت PAID لا يمكن السداد مرة أخرى.
   const payload = { ...run, paymentAccountCode: data.paymentAccountCode, paymentAccountName: data.paymentAccountName, paymentDate: data.paymentDate, status: 'PAID' };
   assertValid('PAYROLL', payload);
+  let postedJE = null;
   try {
     const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-    await autoPostJE(base44, buildPayrollPaymentJE(payload, accounts));
+    postedJE = await autoPostJE(base44, buildPayrollPaymentJE(payload, accounts));
   } catch (e) {
+    // فشل ترحيل قيد السداد: نتراجع عن القيد (لو نُشر جزئياً) ولا نُغيّر حالة المسير.
+    if (postedJE && postedJE.id) {
+      try { await base44.asServiceRole.entities.JournalEntry.delete(postedJE.id); } catch {}
+    }
     throw e;
   }
-  return await base44.asServiceRole.entities.PayrollRun.update(id, { paymentAccountCode: payload.paymentAccountCode, paymentAccountName: payload.paymentAccountName, paymentDate: payload.paymentDate, status: 'PAID' });
+  // بعد نجاح القيد: حدّث المسير إلى PAID (internal:true يتخطى قفل APPROVED
+  // لأن الانتقال APPROVED→PAID جزء مشروع من السداد).
+  try {
+    return await base44.asServiceRole.entities.PayrollRun.update(id, {
+      paymentAccountCode: payload.paymentAccountCode,
+      paymentAccountName: payload.paymentAccountName,
+      paymentDate: payload.paymentDate,
+      status: 'PAID',
+    });
+  } catch (e) {
+    // فشل تحديث الحالة رغم نجاح القيد: نحذف القيد لنبقى متّسقين (لا قيد بلا حالة PAID).
+    if (postedJE && postedJE.id) {
+      try { await base44.asServiceRole.entities.JournalEntry.delete(postedJE.id); } catch {}
+    }
+    throw new Error('فشل تحديث حالة المسير بعد ترحيل قيد السداد — تم إلغاء القيد. ' + (e?.message || ''));
+  }
 }
 
 // ─── تحصيلات العملاء ──────────────────────────────────────────────────────────
@@ -1301,11 +1324,13 @@ async function createClientPayment(base44, data) {
   assertValid('CLIENT_PAYMENT', data);
   const payload = { ...data, amount: num(data.amount) };
   const rec = await base44.asServiceRole.entities.ClientPayment.create(payload);
+  let postedJE = null;
   try {
     const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-    await autoPostJE(base44, buildClientPaymentJE({ ...payload, id: rec.id }, accounts));
+    postedJE = await autoPostJE(base44, buildClientPaymentJE({ ...payload, id: rec.id }, accounts));
   } catch (e) {
-    await rollback(base44, 'ClientPayment', rec.id);
+    // فشل ترحيل القيد: نحذف السند + القيد (إن نُشر جزئياً) لضمان السلامة المحاسبية.
+    await rollbackPayment(base44, 'ClientPayment', rec.id, postedJE);
     throw e;
   }
   return rec;
@@ -1326,6 +1351,10 @@ async function createSupplierPayment(base44, data) {
   if (data.supplierInvoiceId) {
     linkedInvoice = await base44.asServiceRole.entities.SupplierInvoice.get(data.supplierInvoiceId);
     if (linkedInvoice) {
+      // منع السداد المزدوج: إن كانت الفاتورة مدفوعة بالكامل بالفعل، نرفض.
+      if (linkedInvoice.status === 'PAID') {
+        throw new Error(`الفاتورة ${linkedInvoice.invoiceNo || ''} مدفوعة بالكامل — لا يمكن السداد مرتين`);
+      }
       const invTotal = num(linkedInvoice.totalAmount);
       const alreadyPaid = num(linkedInvoice.paidAmount);
       if (amount > invTotal - alreadyPaid + 0.01) {
@@ -1335,10 +1364,13 @@ async function createSupplierPayment(base44, data) {
   }
   const payload = { ...data, amount, status: 'POSTED' };
   const rec = await base44.asServiceRole.entities.SupplierPayment.create(payload);
+  let postedJE = null;
   try {
     const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-    await autoPostJE(base44, buildSupplierPaymentJE({ ...payload, id: rec.id }, accounts));
+    postedJE = await autoPostJE(base44, buildSupplierPaymentJE({ ...payload, id: rec.id }, accounts));
     // بعد نجاح القيد: حدّث الفاتورة المرتبطة (paidAmount + status) إن وُجدت.
+    // ملاحظة: هذا التحديث يتم عبر asServiceRole (internal:true) فيتخطى قفل
+    // APPROVED — فتحديث paidAmount جزء مشروع من السداد لا تعديل يدوي.
     if (linkedInvoice) {
       const newPaid = num(linkedInvoice.paidAmount) + amount;
       const invTotal = num(linkedInvoice.totalAmount);
@@ -1349,10 +1381,30 @@ async function createSupplierPayment(base44, data) {
       });
     }
   } catch (e) {
-    await rollback(base44, 'SupplierPayment', rec.id);
+    // فشل أي خطوة بعد إنشاء السند: نتراجع كاملاً (السند + القيد) لضمان السلامة
+    // المحاسبية. سابقاً كان يُحذف السند فقط ويبقى القيد معلّقاً فيُظهر النظام
+    // "تم السداد" بينما السند محذوف — وهى الحالة التي وصفها المستخدم.
+    await rollbackPayment(base44, 'SupplierPayment', rec.id, postedJE);
     throw e;
   }
   return rec;
+}
+
+// تراجع كامل لعملية سداد: يحذف السند + القيد المرحّل المرتبط به.
+async function rollbackPayment(base44, entityName, recordId, postedJE) {
+  // احذف القيد أولاً (إن وُجد) حتى لا يبقى أثر محاسبي لسند محذوف.
+  if (postedJE && postedJE.id) {
+    try { await base44.asServiceRole.entities.JournalEntry.delete(postedJE.id); } catch { /* قد يكون حُذف */ }
+  } else if (recordId) {
+    // إن لم يُرجع autoPostJE كائناً بالـ id، نحاول حذف القيود المرتبطة برقم السند.
+    try {
+      const related = await base44.asServiceRole.entities.JournalEntry.filter({ sourceId: recordId });
+      for (const je of (related || [])) {
+        try { await base44.asServiceRole.entities.JournalEntry.delete(je.id); } catch {}
+      }
+    } catch { /* تجاهل */ }
+  }
+  try { await base44.asServiceRole.entities[entityName].delete(recordId); } catch { /* قد يكون حُذف */ }
 }
 
 async function updateSupplierPayment(base44, id, data) {
