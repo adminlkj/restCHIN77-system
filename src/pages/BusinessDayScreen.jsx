@@ -28,6 +28,8 @@ export default function BusinessDayScreen() {
   const [history, setHistory] = useState([]);
   const [journal, setJournal] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [returns, setReturns] = useState([]);
   const [openingCash, setOpeningCash] = useState('');
   const [closingCash, setClosingCash] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
@@ -43,16 +45,20 @@ export default function BusinessDayScreen() {
       if (closedCount > 0) {
         toast.info(t(`أُغلق ${closedCount} يوم عمل مفتوح زائد تلقائياً`, `Auto-closed ${closedCount} stale open business day(s)`, lang));
       }
-      const [open, days, jes, accs] = await Promise.all([
+      const [open, days, jes, accs, invs, rets] = await Promise.all([
         getOpenBusinessDay(activeProjectId, DEFAULT_BUSINESS_HOURS),
         base44.entities.BusinessDay.filter({ branchId: activeProjectId }, '-dayDate', 60).catch(() => []),
         base44.entities.JournalEntry.filter({ isPosted: true }).catch(() => []),
         base44.entities.ChartAccount.list('code', 1000).catch(() => []),
+        base44.entities.SalesInvoice.list('-date', 500).catch(() => []),
+        base44.entities.SalesReturn.list('-date', 200).catch(() => []),
       ]);
       setToday(open);
       setHistory(days || []);
       setJournal(jes || []);
       setAccounts(accs || []);
+      setInvoices(invs || []);
+      setReturns(rets || []);
     } catch (e) {
       toast.error(e?.message || t('فشل تحميل البيانات', 'Failed to load', lang));
     }
@@ -113,6 +119,8 @@ export default function BusinessDayScreen() {
         user,
         journalEntries: journal,
         accountMap,
+        salesInvoices: invoices,
+        salesReturns: returns,
       });
       toast.success(t('تم إقفال اليوم وإصدار Z-Report', 'Day closed & Z-Report issued', lang));
       setCloseOpen(false);

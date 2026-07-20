@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import ContextBar from '@/components/shared/ContextBar';
 import GlobalSearch from './GlobalSearch';
 import NotificationCenter from './NotificationCenter';
+import ShiftStatusButton from './ShiftStatusButton';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { t } from '@/lib/utils-binaa';
@@ -81,6 +82,9 @@ export default function AppShell({ children }) {
 
           <GlobalSearch />
           <div className="flex-1" />
+
+          {/* زر حالة الوردية — فتح/إقفال يوم العمل للفرع النشط من الشريط العلوي */}
+          <ShiftStatusButton />
 
           <NotificationCenter />
 

@@ -182,7 +182,7 @@ export async function getOpenBusinessDay(branchId, hours) {
  * يُقفل يوم العمل: يحسب الإجماليات من القيود المرحّلة، يحسب النقد المتوقع،
  * يطابق مع العدّاد الفعلي، ويُصدر رقم Z-Report.
  */
-export async function closeBusinessDay({ branchId, hours, closingCash = 0, user, journalEntries = [], accountMap = {} }) {
+export async function closeBusinessDay({ branchId, hours, closingCash = 0, user, journalEntries = [], accountMap = {}, salesInvoices = [], salesReturns = [] }) {
   if (!branchId) return null;
   const open = await getOpenBusinessDay(branchId, hours);
   if (!open) throw new Error('لا يوجد يوم عمل مفتوح لهذا الفرع');
@@ -203,6 +203,7 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
       dayLines.push({
         ...l,
         entryNo: je.entryNo || '',
+        sourceType: je.sourceType || '',
         accountCode: l.accountCode || '',
         debit: Number(l.debit) || 0,
         credit: Number(l.credit) || 0,
@@ -210,22 +211,35 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
     }
   }
 
-  // احسب الإجماليات.
-  let grossSales = 0, vatCollected = 0, discounts = 0;
+  // احسب الإجماليات من القيود المرحّلة.
+  let grossSales = 0, vatCollected = 0;
+  // الخصومات: نُجمَعها من فواتير اليوم (discountAmount) لأنها لا تظهر كحساب
+  // مستقل في القيود (الإيراد يُسجَّل صافياً بعد الخصم وفقاً لـ ZATCA).
+  let discounts = 0;
+  let grossReturns = 0;       // إجمالي مرتجعات اليوم
+  const returnsList = [];      // تفصيل المرتجعات (رقم المرتجع + الفاتورة + المبلغ)
   // النقد المتوقع في الدرج = الصندوق فقط (1111). البطاقات (1114) والبنك (1112)
   // تُحصّل لاحقاً عبر تسويات، فلا تدخل في عدّاد الدرّج الفعلي. لو أضفناها لظهر
   // "النقد المتوقع" = إجمالي المحصّل (نقد + بطاقات + بنك) وهو خطأ محاسبي.
   let expectedCashDelta = 0;       // الصندوق فقط (1111)
   let cardSettlementsDelta = 0;    // البطاقات (1114) — للمعلومة، لا للدرج
   let bankDelta = 0;               // البنك (1112) — للمعلومة
-  const byPaymentMethod = {};
   for (const l of dayLines) {
     const acc = accountMap[l.accountCode] || {};
     const code = acc.code || '';
     if (acc.semanticRole === 'REVENUE_SALES' || acc.accountType === 'REVENUE') {
-      grossSales += (l.credit - l.debit);
+      // مرتجع المبيعات يقلب الإيراد (مدين) فلا نضيفه لإجمالي المبيعات الخام.
+      if (l.sourceType === 'SalesReturn') {
+        grossReturns += (l.debit - l.credit);
+      } else {
+        grossSales += (l.credit - l.debit);
+      }
     } else if (acc.semanticRole === 'VAT_PAYABLE') {
-      vatCollected += (l.credit - l.debit);
+      if (l.sourceType === 'SalesReturn') {
+        // عكس الضريبة — لا تُضمّ لل VAT المحصلة الإيجابي.
+      } else {
+        vatCollected += (l.credit - l.debit);
+      }
     }
     // النقد في الدرج = الصندوق (1111) فقط. لا البنك (1112) ولا البطاقات (1114).
     if (code === '1111' || acc.semanticRole === 'CASH') {
@@ -238,11 +252,68 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
     }
   }
 
+  // تفصيل البطاقات والمنصات والخصومات والمرتجعات من فواتير اليوم (notes.payments
+  // و notes.platform تحتفظ بالتفصيل التشغيلي الذي لا يظهر في JE المُجمَّع على 1114).
+  // نطابّق الفاتورة على يوم العمل + الفرع.
+  const cardBreakdown = { mada: 0, visa: 0, mastercard: 0, other: 0 };
+  const platformSales = {};       // { platformName: { count, gross, commission, net } }
+  let cashFromInvoices = 0;       // تحقّق: يجب أن يُطابق expectedCashDelta تقريباً
+  let bankFromInvoices = 0;
+  const todayInvoices = [];
+  for (const inv of (salesInvoices || [])) {
+    if (!inv || inv.status === 'CANCELLED' || inv.status === 'DRAFT') continue;
+    if (toBusinessDayDate(inv.date, hours) !== dayDate) continue;
+    // فلترة الفرع: projectName على الفاتورة يجب أن يطابق فرع اليوم.
+    if (branchName && (inv.projectName || '') !== branchName) continue;
+    todayInvoices.push(inv);
+    // الخصومات من الفاتورة.
+    const disc = Number(inv.discountAmount || 0);
+    if (disc > 0) discounts += disc;
+    // التفصيل من notes.
+    let notesObj = {};
+    try { notesObj = inv.notes ? JSON.parse(inv.notes) : {}; } catch { notesObj = {}; }
+    const payments = Array.isArray(notesObj.payments) ? notesObj.payments : [];
+    for (const p of payments) {
+      const amt = Number(p.amount || 0);
+      const m = String(p.method || '').toUpperCase();
+      if (m === 'CASH' || m === 'C') { cashFromInvoices += amt; }
+      else if (m === 'CARD_MADA' || m === 'MADA') { cardBreakdown.mada += amt; }
+      else if (m === 'CARD_VISA' || m === 'VISA') { cardBreakdown.visa += amt; }
+      else if (m === 'CARD_MC' || m === 'MASTERCARD' || m === 'MC') { cardBreakdown.mastercard += amt; }
+      else if (m === 'CARD_OTHER' || m === 'CARD') { cardBreakdown.other += amt; }
+      else if (m === 'BANK' || m === 'BANK_TRANSFER') { bankFromInvoices += amt; }
+    }
+    // بيع المنصات.
+    if (notesObj.isPlatformSale || inv.isPlatformSale) {
+      const pname = notesObj?.platform?.platformName || inv.platformName || 'منصة غير محددة';
+      const commission = Number(notesObj?.platform?.platformCommission || inv.platformCommission || 0);
+      if (!platformSales[pname]) platformSales[pname] = { count: 0, gross: 0, commission: 0, net: 0 };
+      platformSales[pname].count += 1;
+      platformSales[pname].gross += Number(inv.totalAmount || 0);
+      platformSales[pname].commission += commission;
+      platformSales[pname].net += Number(inv.totalAmount || 0) - commission;
+    }
+  }
+
+  // تفصيل المرتجعات من salesReturns.
+  for (const sr of (salesReturns || [])) {
+    if (!sr) continue;
+    if (toBusinessDayDate(sr.date || sr.createdAt, hours) !== dayDate) continue;
+    if (branchName && (sr.branchName || sr.costCenter || '') !== branchName) continue;
+    returnsList.push({
+      returnNo: sr.returnNo || sr.code || '',
+      originalInvoiceNo: sr.originalInvoiceNo || '',
+      amount: Number(sr.totalAmount || 0),
+      type: sr.returnType || 'FULL',
+    });
+  }
+
   const openingCash = Number(open.openingCash) || 0;
   // النقد المتوقع في الدرج = الافتتاحي + تحصيلات الصندوق فقط (لا البطاقات/البنك).
   const expectedCash = +(openingCash + expectedCashDelta).toFixed(2);
   const variance = +(Number(closingCash) - expectedCash).toFixed(2);
-  const zReportNo = `Z-${dayDate.replace(/-/g, '')}-${String(open.dayDate ? 1 : 1).padStart(3, '0')}`;
+  // رقم Z-Report: نُولّده من dayDate + تتابع يومي (إن وُجدت تقارير سابقة لليوم).
+  const zReportNo = await generateZReportNo(branchId, dayDate);
 
   try {
     return await base44.entities.BusinessDay.update(open.id, {
@@ -255,20 +326,62 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
       cashVariance: variance,
       zReportNo,
       totals: {
-        salesCount: dayLines.length ? new Set(dayLines.map(l => l.entryNo).filter(Boolean)).size : 0,
+        salesCount: todayInvoices.length,
         grossSales: +grossSales.toFixed(2),
         netSales: +(grossSales - vatCollected).toFixed(2),
         vatCollected: +vatCollected.toFixed(2),
         discounts: +discounts.toFixed(2),
-        // تفصيل التحصيلات حسب النوع — النقد فقط هو ما يدخل الدرّج الفعلي.
+        // النقد في الدرّج (للإقفال) — الصندوق فقط.
         cashCollected: +expectedCashDelta.toFixed(2),
         cardCollected: +cardSettlementsDelta.toFixed(2),
         bankCollected: +bankDelta.toFixed(2),
-        byPaymentMethod,
+        // ─── تفصيل Z-Report حسب طلب المستخدم ───────────────────────────
+        // تفصيل التحصيل النقدي.
+        paymentBreakdown: {
+          cash: +cashFromInvoices.toFixed(2),
+          bank: +bankFromInvoices.toFixed(2),
+          cards: {
+            mada: +cardBreakdown.mada.toFixed(2),
+            visa: +cardBreakdown.visa.toFixed(2),
+            mastercard: +cardBreakdown.mastercard.toFixed(2),
+            other: +cardBreakdown.other.toFixed(2),
+            total: +(cardBreakdown.mada + cardBreakdown.visa + cardBreakdown.mastercard + cardBreakdown.other).toFixed(2),
+          },
+        },
+        // بيع المنصات بالتفصيل: هنقرستيشن / كيتا / جاهز / ...
+        platforms: Object.fromEntries(
+          Object.entries(platformSales).map(([k, v]) => [k, {
+            count: v.count,
+            gross: +v.gross.toFixed(2),
+            commission: +v.commission.toFixed(2),
+            net: +v.net.toFixed(2),
+          }])
+        ),
+        // الخصومات الممنوحة خلال اليوم.
+        totalDiscounts: +discounts.toFixed(2),
+        // المرتجعات.
+        returns: {
+          count: returnsList.length,
+          total: +grossReturns.toFixed(2),
+          details: returnsList,
+        },
       },
     });
   } catch (e) {
     console.warn('closeBusinessDay failed:', e);
     throw e;
+  }
+}
+
+// يُولّد رقم Z-Report فريداً لليوم: Z-YYYYMMDD-NNN حيث NNN تتابع يومي.
+// نبحث عن عدد الأيام المقفلة لنفس الفرع ونفس dayDate لإحتساب التتابع.
+async function generateZReportNo(branchId, dayDate) {
+  try {
+    const all = await base44.entities.BusinessDay.filter({ branchId }, '-dayDate', 50);
+    const sameDay = (all || []).filter(d => d.dayDate === dayDate && d.status === 'CLOSED');
+    const seq = String(sameDay.length + 1).padStart(3, '0');
+    return `Z-${dayDate.replace(/-/g, '')}-${seq}`;
+  } catch {
+    return `Z-${dayDate.replace(/-/g, '')}-001`;
   }
 }
