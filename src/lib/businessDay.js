@@ -99,15 +99,17 @@ export function currentBusinessDay(hours = DEFAULT_BUSINESS_HOURS) {
  */
 export async function openBusinessDay({ branchId, branchName, user, openingCash = 0, hours }) {
   if (!branchId) return null;
-  // اجلب حدود الفرع إن لم تُمرَّر صراحةً (احترام إعداد dayStartHour/dayEndHour).
-  const branchHours = hours || await getBranchHours(branchId);
-  const dayDate = currentBusinessDay(branchHours);
   try {
-    // هل يوجد يوم مفتوح لهذا الفرع في هذا التاريخ؟
+    // هل يوجد يوم OPEN لهذا الفرع بالفعل؟ نُرجعه بدل إنشاء يوم جديد.
+    // (لا نعتمد على dayDate المحسوب — أي يوم OPEN هو اليوم النشط.)
     const existing = await base44.entities.BusinessDay.filter({
-      branchId, dayDate, status: 'OPEN',
-    }, '-openedAt', 5);
+      branchId, status: 'OPEN',
+    }, '-dayDate', 5);
     if (existing && existing.length > 0) return existing[0];
+
+    // اجلب حدود الفرع إن لم تُمرَّر صراحةً (احترام إعداد dayStartHour/dayEndHour).
+    const branchHours = hours || await getBranchHours(branchId);
+    const dayDate = currentBusinessDay(branchHours);
     // أنشئ يوماً جديداً.
     return await base44.entities.BusinessDay.create({
       branchId,
@@ -127,16 +129,20 @@ export async function openBusinessDay({ branchId, branchName, user, openingCash 
 
 /**
  * يُرجع يوم العمل المفتوح حالياً لفرع (أو null).
+ *
+ * منطق البحث المتين: نبحث عن آخر يوم مفتوح للفرع (status=OPEN) مرتّباً تنازلياً
+ * بالتاريخ. لا نعتمد على dayDate المحسوب محلياً فقط (قد يختلف بين اللحظات بسبب
+ * الفروق الزمنية)، بل نأخذ آخر يوم OPEN — فهو "اليوم النشط" فعلياً. هذا يمنع
+ * اختفاء اليوم المفتوح بعد إنشاء فاتورة (كان يحدث لأن dayDate يُعاد حسابه وقد
+ * يختلف عمّا خُزِّن عند الفتح).
  */
 export async function getOpenBusinessDay(branchId, hours) {
   if (!branchId) return null;
-  // اجلب حدود الفرع إن لم تُمرَّر صراحةً.
-  const branchHours = hours || await getBranchHours(branchId);
-  const dayDate = currentBusinessDay(branchHours);
   try {
+    // ابحث عن أي يوم OPEN للفرع (مرتّب بالأحدث). هذا أصلب من مطابقة dayDate.
     const rows = await base44.entities.BusinessDay.filter({
-      branchId, dayDate, status: 'OPEN',
-    }, '-openedAt', 5);
+      branchId, status: 'OPEN',
+    }, '-dayDate', 5);
     return (rows && rows[0]) || null;
   } catch {
     return null;

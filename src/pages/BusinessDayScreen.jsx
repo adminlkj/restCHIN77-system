@@ -54,6 +54,15 @@ export default function BusinessDayScreen() {
   };
   useEffect(() => { load(); }, [activeProjectId]);
 
+  // إعادة التحميل عند العودة للنافذة + تحديث دوري — ليعكس الحالة الفعلية بعد أي
+  // عملية بيع من POS (تحصيلات اليوم تتغيّر، واليوم المفتوح يجب أن يبقى ظاهراً).
+  useEffect(() => {
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    const tid = setInterval(() => load(), 30000);
+    return () => { window.removeEventListener('focus', onFocus); clearInterval(tid); };
+  }, [activeProjectId]);
+
   if (!activeProjectId) {
     return (
       <ModuleLayout title={t('يوم العمل', 'Business Day', lang)} subtitle={t('اختر فرعاً أولاً', 'Select a branch first', lang)}>

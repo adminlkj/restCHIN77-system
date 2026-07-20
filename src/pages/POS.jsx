@@ -842,18 +842,22 @@ export default function POS() {
     }
 
     // ─── التحقق من يوم العمل المفتوح للفرع ─────────────────────────────
-    // مطعّم بلا يوم عمل مفتوح = لا يمكن ربط المبيعات بوردية. نُنبّه الكاشير بفتحه
-    // أولاً من شاشة يوم العمل. (لا نمنع البيع قسراً لتفادي إرباك الكاشير في الذروة،
-    // لكن التنبيه واضح ويُسجَّل في سجل التدقيق للمتابعة.)
+    // مطعّم بلا يوم عمل مفتوح = لا يمكن ربط المبيعات بوردية. نمنع البيع صراحةً
+    // حتى يفتح الكاشير يوم العمل. هذا يمنع التناقض (رسالتان متعارضتان في آن واحد).
     if (activeProjectId) {
       try {
         const openDay = await getOpenBusinessDay(activeProjectId, DEFAULT_BUSINESS_HOURS);
         if (!openDay) {
-          toast.warning(
-            t('لا يوجد يوم عمل مفتوح لهذا الفرع — افتحه من شاشة يوم العمل قبل البيع', 'No open business day for this branch — open it from the Business Day screen before selling', lang)
+          toast.error(
+            t('لا يوجد يوم عمل مفتوح لهذا الفرع — افتحه من شاشة يوم العمل أولاً', 'No open business day for this branch — open it from the Business Day screen first', lang)
           );
+          return; // منع صريح — لا نكمل لإنشاء الفاتورة
         }
-      } catch { /* الفحص غير معطّل — نواصل */ }
+      } catch (e) {
+        // فشل الشبكة: لا نسمح بالبيع دون تأكّد (الأمان قبل الراحة).
+        toast.error(t('تعذّر التحقق من يوم العمل — تحقق من الاتصال', 'Could not verify business day — check connection', lang));
+        return;
+      }
     }
 
     // ─── التحقق من حد ائتمان العميل المسجّل ────────────────────────────
