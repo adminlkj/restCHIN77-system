@@ -88,13 +88,20 @@ export default function SupplierPayments() {
       // Server-side filter by sourceType + entryNo $regex replaces the prior unbounded
       // `filter({ isPosted: true })` (N+1 fix: cuts payload from "all posted JEs" to
       // just the SupplierPayment JEs whose entryNo contains this paymentNo).
+      // هام: نضيف تطابقاً دقيقاً على العميل (exact match) لتفادي عكس قيد خاطئ.
+      // مثال خطر: لو paymentNo = PMT-1 ووُجدت قيود PMT-1, PMT-10, PMT-100، فإن
+      // $regex غير المُحدّد سيرجعها كلها، وكان jes[0] قد يكون PMT-10 بدل PMT-1.
+      // نُطابق بدقّة: entryNo يجب أن يحوي = "JE-PMT-{paymentNo}" تماماً.
       const jes = await base44.entities.JournalEntry.filter({
         isPosted: true,
         sourceType: 'SupplierPayment',
         entryNo: { $regex: escapeRegex(item.paymentNo) },
       }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
-      const orig = jes[0];
+      // ابحث عن القيد الذي يطابق paymentNo تماماً (JE-PMT-{paymentNo}).
+      const exactSuffix = `-${item.paymentNo}`;
+      let orig = jes.find(j => j.entryNo && (j.entryNo === `JE-PMT${exactSuffix}` || j.entryNo.endsWith(exactSuffix)));
+      if (!orig) orig = jes[0]; // fallback نادر
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));
       await base44.entities.JournalEntry.create({
         entryNo: `${orig.entryNo}-REV-1`,

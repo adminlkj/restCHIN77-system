@@ -91,7 +91,10 @@ export default function ClientPayments() {
         entryNo: { $regex: escapeRegex(item.paymentNo) },
       }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط', 'No linked entry', lang));
-      const orig = jes[0];
+      // مطابقة دقيقة لتفادي عكس قيد خاطئ (PMT-1 قد يُطابق PMT-10 عبر $regex).
+      const exactSuffix = `-${item.paymentNo}`;
+      let orig = jes.find(j => j.entryNo && j.entryNo.endsWith(exactSuffix));
+      if (!orig) orig = jes[0];
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));
       await base44.entities.JournalEntry.create({
         entryNo: `${orig.entryNo}-REV-1`,

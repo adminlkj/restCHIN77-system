@@ -125,7 +125,10 @@ export default function SalesInvoices() {
         entryNo: { $regex: escapeRegex(item.invoiceNo) },
       }, '-date', 50);
       if (jes.length === 0) throw new Error(t('لا يوجد قيد مرتبط بهذا الإيصال', 'No linked journal entry found', lang));
-      const orig = jes[0];
+      // مطابقة دقيقة لتفادي عكس قيد خاطئ (INV-1 قد يُطابق INV-10 عبر $regex).
+      const exactSuffix = `-${item.invoiceNo}`;
+      let orig = jes.find(j => j.entryNo && j.entryNo.endsWith(exactSuffix));
+      if (!orig) orig = jes[0];
       const revNo = `${orig.entryNo}-REV-1`;
       const revLines = (orig.lines || []).map(l => ({ ...l, debit: l.credit || 0, credit: l.debit || 0 }));
       await base44.entities.JournalEntry.create({
