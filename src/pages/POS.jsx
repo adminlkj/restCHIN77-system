@@ -4,6 +4,7 @@ import {
   CreditCard, Banknote, Clock, UtensilsCrossed, LogOut,
   ShoppingCart, XCircle, Truck, ShieldCheck,
   CupSoda, Cake, Soup, FolderPlus, ArrowRight, ArrowLeft,
+  ClipboardList,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import {
   saveDraftToTable, getTableDraft, clearTableDraft,
 } from '@/lib/tables';
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+import DailyReportDialog from '@/components/shared/DailyReportDialog';
 import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
 import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
 import { canAccessBranch } from '@/lib/permissions';
@@ -140,6 +142,7 @@ export default function POS() {
   // خصم على مستوى الفاتورة (يدوي): { type: 'AMOUNT' | 'PERCENT', value: number }
   const [manualDiscount, setManualDiscount] = useState({ type: 'AMOUNT', value: '' });
   const [printReceipt, setPrintReceipt] = useState(null); // invoice object
+  const [dailyReportOpen, setDailyReportOpen] = useState(false); // تقرير اليوم من POS
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [activeTable, setActiveTable] = useState(() => readActiveTable());
 
@@ -1143,6 +1146,14 @@ export default function POS() {
 
         <div className="flex-1" />
 
+        {/* تقرير اليوم — يفتح نافذة بالملخص الكامل (نقد/بطاقات/منصات/خصومات/مرتجعات)
+            قابل للطباعة والإرسال عبر واتساب. هذا يلبّي احتياج الكاشير لمعرفة
+            وحصيلة الوردية دون مغادرة شاشة POS. */}
+        <Button variant="outline" size="sm" onClick={() => setDailyReportOpen(true)} className="h-7 gap-1 text-xs text-blue-700 border-blue-200 hover:bg-blue-50">
+          <ClipboardList className="size-3.5" />
+          {t('تقرير اليوم', 'Daily Report', lang)}
+        </Button>
+
         <Button variant="outline" size="sm" onClick={exitToTables} className="h-7 gap-1 text-xs">
           <LogOut className="size-3.5" />
           {t('خروج', 'Exit', lang)}
@@ -1788,6 +1799,9 @@ export default function POS() {
         }}
         invoice={printReceipt}
       />
+
+      {/* تقرير اليوم — ملخص تنفيذي قابل للطباعة والإرسال */}
+      <DailyReportDialog open={dailyReportOpen} onOpenChange={setDailyReportOpen} />
 
       {/* Feature 5: تأكيد الإلغاء بكلمة مرور مشرف */}
       <Dialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
