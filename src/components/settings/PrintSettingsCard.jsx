@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Upload, Loader2, Save, Eye, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,18 @@ export default function PrintSettingsCard() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [thermalPreviewOpen, setThermalPreviewOpen] = useState(false);
 
-  useEffect(() => { if (!loading) setForm(settings); }, [loading, settings]);
+  // مزامنة form مع settings عند التحميل الأول فقط.
+  // ملاحظة حرجة: لا نعتمد على settings في deps لأن useCompanySettings يُعيد كائناً
+  // جديداً كل render (مرجعه يتغير دائماً)، مما كان يُعاد ضبط form ويُلغي تغييرات
+  // المستخدم فور نقرها. نعتمد على loading و record.id فقط (قيم مستقرة).
+  const settingsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (loading || settingsLoadedRef.current) return;
+    if (record) {
+      setForm(settings);
+      settingsLoadedRef.current = true;
+    }
+  }, [loading, record, settings]);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
