@@ -23,7 +23,8 @@ export default function InventoryReports() {
     setLoading(true);
     try {
       const [it, mv, wh] = await Promise.all([
-        base44.entities.InventoryItem.list('code', 2000),
+        // تقرير المخزون يختص بأصناف المخزون (RAW) فقط — أصناف المنيو ليست مخزوناً.
+        base44.entities.InventoryItem.filter({ itemType: 'RAW' }, 'code', 2000),
         base44.entities.StockMovement.list('-date', 2000),
         base44.entities.Warehouse.list('code', 1000),
       ]);

@@ -61,7 +61,10 @@ export default function StockMovements() {
     try {
       const [mv, it, wh, pr, sup, emp, acc] = await Promise.all([
         base44.entities.StockMovement.list('-date', 500),
-        base44.entities.InventoryItem.list('code', 1000),
+        // فصل المنيو عن المخزون: الحركات المخزنية (صرف/جرد/عجز/استلام) تختص بأصناف
+        // المخزون (RAW) فقط. أصناف قائمة المنيو (MENU) ليست مخزوناً يُخصم منها عند
+        // البيع — هى أصناف قابلة للبيع بسعرها، والمخزون يُدار منفصلاً يدوياً.
+        base44.entities.InventoryItem.filter({ itemType: 'RAW' }, 'code', 1000),
         base44.entities.Warehouse.filter({ isActive: true }, 'code', 500),
         base44.entities.Project.list('-created_date', 500),
         base44.entities.Supplier.list('name', 500),

@@ -79,8 +79,9 @@ export default function PurchaseOrders() {
   useEffect(() => { load(); }, []);
 
   // أصناف المخزون المتاحة للاختيار في بنود أمر الشراء.
+  // أوامر الشراء تخصّ المخزون (RAW) فقط — لا نشتري "أصناف منيو"، نحن نبتكرها.
   useEffect(() => {
-    base44.entities.InventoryItem.filter({ isActive: true }).then(setBoqItems).catch(() => setBoqItems([]));
+    base44.entities.InventoryItem.filter({ isActive: true, itemType: 'RAW' }).then(setBoqItems).catch(() => setBoqItems([]));
   }, []);
 
   const buildDefaultForm = () => ({

@@ -331,9 +331,26 @@ export default function BusinessDayScreen() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><ReceiptIcon className="size-5" />{t('إقفال يوم العمل', 'Close Business Day', lang)}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">{t('النقد المتوقع في الدرج', 'Expected cash in drawer', lang)}</span><strong>{formatCurrency(expectedCash.total, lang)}</strong></div>
-              <p className="text-xs text-blue-700">{t('أدخل العدّاد الفعلي للنقد في الدرج فقط (لا يشمل البطاقات/البنك). سيتم حساب الفرق وإصدار Z-Report.', 'Enter the actual counted cash in the drawer only (excludes cards/bank). Variance will be computed and Z-Report issued.', lang)}</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('النقد الافتتاحي', 'Opening Cash', lang)}</span>
+                <strong>{formatCurrency(Number(today?.openingCash) || 0, lang)}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('تحصيلات نقد اليوم', 'Today Cash Sales', lang)}</span>
+                <strong className="text-emerald-700">{formatCurrency(expectedCash.cashCollected, lang)}</strong>
+              </div>
+              <div className="border-t pt-1.5 flex justify-between">
+                <span className="font-medium">{t('النقد المتوقع في الدرج', 'Expected cash in drawer', lang)}</span>
+                <strong className="text-blue-700">{formatCurrency(expectedCash.total, lang)}</strong>
+              </div>
+              {(expectedCash.cardCollected !== 0 || expectedCash.bankCollected !== 0) && (
+                <div className="text-[11px] text-muted-foreground flex justify-between pt-1 border-t">
+                  <span>{t('(البطاقات والبنك خارج الدرّج)', '(Cards & Bank outside drawer)', lang)}</span>
+                  <span>{formatCurrency(+(expectedCash.cardCollected + expectedCash.bankCollected).toFixed(2), lang)}</span>
+                </div>
+              )}
+              <p className="text-xs text-blue-700 mt-1">{t('أدخل العدّاد الفعلي للنقد في الدرج فقط (لا يشمل البطاقات/البنك). سيتم حساب الفرق وإصدار Z-Report.', 'Enter the actual counted cash in the drawer only (excludes cards/bank). Variance will be computed and Z-Report issued.', lang)}</p>
             </div>
             <div className="space-y-1.5">
               <Label>{t('النقد الفعلي المعدود', 'Counted cash', lang)} *</Label>

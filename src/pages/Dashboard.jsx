@@ -51,7 +51,8 @@ export default function Dashboard() {
     try {
       const [invoices, menuItems, branches, jes, accs] = await Promise.all([
         base44.entities.SalesInvoice.list('-created_date', 500).catch(() => []),
-        base44.entities.InventoryItem.filter({ isActive: true }).catch(() => []),
+        // عدّ أصناف القائمة (MENU) فقط — المخزون (RAW) يُعرض في شاشته الخاصة.
+        base44.entities.InventoryItem.filter({ isActive: true, itemType: 'MENU' }).catch(() => []),
         base44.entities.Project.filter({ status: 'ACTIVE' }).catch(() => []),
         base44.entities.JournalEntry.filter({ isPosted: true }, '-date', 2000).catch(() => []),
         base44.entities.ChartAccount.list('code', 1000).catch(() => []),
