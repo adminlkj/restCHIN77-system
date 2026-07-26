@@ -1313,9 +1313,9 @@ export default function POS() {
         </div>
 
         {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
-        <div className="w-[400px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
+        <div className="w-[360px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
           {/* رأس الإيصال: زبون + طاولة + نوع الطلب */}
-          <div className="shrink-0 px-3 py-2 border-b bg-slate-50 space-y-1.5">
+          <div className="shrink-0 px-2.5 py-1.5 border-b bg-slate-50 space-y-1">
             <div className="flex items-center gap-2">
               <Label className="text-xs text-muted-foreground whitespace-nowrap">
                 {t('الزبون', 'Customer', lang)}:
@@ -1541,9 +1541,9 @@ export default function POS() {
           </div>
 
           {/* الملخّص المالي */}
-          <div className="shrink-0 border-t bg-slate-50 p-3 space-y-2">
+          <div className="shrink-0 border-t bg-slate-50 p-2.5 space-y-1.5">
             {/* (1) المجموع قبل الخصومات */}
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">{t('المجموع قبل الخصومات', 'Gross before discounts', lang)}</span>
               <span className="font-medium">{formatCurrency(subtotal, lang)}</span>
             </div>
@@ -1594,19 +1594,19 @@ export default function POS() {
             ) : null}
             {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة) = بعد كل الخصومات */}
             {(customerDiscountAmount > 0 || manualDiscountAmount > 0) && (
-              <div className="flex items-center justify-between text-sm border-t pt-1">
+              <div className="flex items-center justify-between text-xs border-t pt-1">
                 <span className="text-muted-foreground">{t('صافي قبل الضريبة', 'Net before VAT', lang)}</span>
                 <span className="font-medium">{formatCurrency(totals.taxableAmount, lang)}</span>
               </div>
             )}
             {/* Feature 2: بند رسوم التوصيل */}
             {isDelivery && effectiveDeliveryFee > 0 && (
-              <div className="flex items-center justify-between text-sm text-blue-700">
+              <div className="flex items-center justify-between text-xs text-blue-700">
                 <span>{t('رسوم توصيل', 'Delivery Fee', lang)}</span>
                 <span>+{formatCurrency(effectiveDeliveryFee, lang)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">{t('ضريبة القيمة المضافة (15%)', 'VAT (15%)', lang)}</span>
               <span className="font-medium">{formatCurrency(vat, lang)}</span>
             </div>
@@ -1617,7 +1617,7 @@ export default function POS() {
                 <span>{formatCurrency(platformCommission, lang)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between text-base font-bold border-t pt-2">
+            <div className="flex items-center justify-between text-sm font-bold border-t pt-1.5">
               <span>{t('الإجمالي', 'Total', lang)}</span>
               <span className="text-emerald-700">{formatCurrency(total, lang)}</span>
             </div>
@@ -1700,31 +1700,31 @@ export default function POS() {
             {!isPlatformSale && (
             <>
             {/* الدفع نقداً — مع إدخال المبلغ */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <Input
                 type="number" min="0" step="0.01"
                 value={cashReceived}
                 onChange={e => setCashReceived(e.target.value)}
                 placeholder={t('المبلغ المستلم', 'Amount received', lang)}
-                className="h-9"
+                className="h-8 text-xs"
               />
               <Button
                 onClick={() => addPayment('CASH')}
-                className="h-9 bg-emerald-600 hover:bg-emerald-700 gap-1"
+                className="h-8 bg-emerald-600 hover:bg-emerald-700 gap-1 text-xs"
               >
-                <Banknote className="size-4" /> {t('نقداً', 'Cash', lang)}
+                <Banknote className="size-3.5" /> {t('نقداً', 'Cash', lang)}
               </Button>
             </div>
 
             {/* الدفع بالبطاقات — مدى / فيزا / ماستركارد / أخرى */}
-            <div className="text-[10px] font-semibold text-muted-foreground pt-1">
+            <div className="text-[10px] font-semibold text-muted-foreground pt-0.5">
               {t('الدفع بالبطاقة', 'Card Payment', lang)}
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-1">
               {[
                 { key: 'CARD_MADA',  ar: 'مدى',       en: 'Mada',       cls: 'border-green-300 text-green-700 hover:bg-green-50' },
                 { key: 'CARD_VISA',  ar: 'فيزا',      en: 'Visa',       cls: 'border-blue-300 text-blue-700 hover:bg-blue-50' },
-                { key: 'CARD_MC',    ar: 'ماستركارد', en: 'Mastercard', cls: 'border-orange-300 text-orange-700 hover:bg-orange-50' },
+                { key: 'CARD_MC',    ar: 'ماستر',     en: 'MC',         cls: 'border-orange-300 text-orange-700 hover:bg-orange-50' },
                 { key: 'CARD_OTHER', ar: 'أخرى',      en: 'Other',      cls: 'border-slate-300 text-slate-700 hover:bg-slate-50' },
               ].map(card => (
                 <Button
@@ -1735,9 +1735,9 @@ export default function POS() {
                     if (remaining > 0) addPayment(card.key, remaining);
                     else toast.error(t('لا يوجد مبلغ متبقٍ', 'No remaining amount', lang));
                   }}
-                  className={`h-9 gap-1 text-xs ${card.cls}`}
+                  className={`h-8 gap-0.5 text-[11px] ${card.cls}`}
                 >
-                  <CreditCard className="size-3.5" /> {lang === 'ar' ? card.ar : card.en}
+                  <CreditCard className="size-3" /> {lang === 'ar' ? card.ar : card.en}
                 </Button>
               ))}
             </div>
@@ -1745,39 +1745,39 @@ export default function POS() {
             )}
 
             {/* أزرار الإجراءات */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
               <Button
                 onClick={printOrder}
                 variant="outline"
-                className="h-10 gap-1.5"
+                className="h-8 gap-1 text-xs"
                 disabled={!cart.length}
               >
-                <Printer className="size-4" />
+                <Printer className="size-3.5" />
                 {t('طباعة الطلب', 'Print Order', lang)}
               </Button>
               <Button
                 onClick={handlePrintReceipt}
-                className="h-10 gap-1.5 bg-amber-600 hover:bg-amber-700"
+                className="h-8 gap-1 text-xs bg-amber-600 hover:bg-amber-700"
                 disabled={saving || !cart.length || !isFullyPaid}
               >
-                <ReceiptIcon className="size-4" />
+                <ReceiptIcon className="size-3.5" />
                 {saving ? t('جاري الحفظ...', 'Saving...', lang) : t('طباعة الإيصال', 'Print Receipt', lang)}
               </Button>
               <Button
                 onClick={holdInvoice}
                 variant="outline"
-                className="h-9 gap-1.5 text-xs"
+                className="h-8 gap-1 text-xs"
                 disabled={!cart.length}
               >
-                <Pause className="size-3.5" />
+                <Pause className="size-3" />
                 {t('تعليق', 'Hold', lang)}
               </Button>
               <Button
                 onClick={openCancelDialog}
                 variant="outline"
-                className="h-9 gap-1.5 text-xs text-destructive hover:text-destructive"
+                className="h-8 gap-1 text-xs text-destructive hover:text-destructive"
               >
-                <XCircle className="size-3.5" />
+                <XCircle className="size-3" />
                 {t('إلغاء', 'Cancel', lang)}
               </Button>
             </div>

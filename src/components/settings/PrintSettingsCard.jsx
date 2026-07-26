@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/components/ui/use-toast';
@@ -212,9 +213,9 @@ export default function PrintSettingsCard() {
               ].map(ps => (
                 <button
                   key={ps.key}
+                  type="button"
                   onClick={() => {
                     set('thermalPaperSize', ps.key);
-                    // عند تغيير مقاس الورق، نضبط العرض تلقائياً ليناسبه.
                     set('thermalReceiptWidth', ps.key === '58mm' ? 200 : 272);
                   }}
                   className={`flex-1 rounded-lg border-2 px-3 py-2 text-xs transition-colors ${(form.thermalPaperSize || '80mm') === ps.key ? 'border-amber-500 bg-amber-100 text-amber-800 font-semibold' : 'border-border hover:bg-accent'}`}
@@ -226,65 +227,82 @@ export default function PrintSettingsCard() {
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
-            {/* حدّة/سماكة الخط */}
+            {/* سماكة الخط — shadcn Select */}
             <Field label={t('سماكة الخط', 'Font Weight', lang)}>
-              <select
-                value={form.thermalFontWeight ?? 700}
-                onChange={e => set('thermalFontWeight', Number(e.target.value))}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              <Select
+                value={String(form.thermalFontWeight ?? 700)}
+                onValueChange={(v) => set('thermalFontWeight', Number(v))}
               >
-                <option value={400}>{t('عادي (400)', 'Normal (400)', lang)}</option>
-                <option value={600}>{t('شبه غامق (600)', 'Semi-bold (600)', lang)}</option>
-                <option value={700}>{t('غامق (700) — موصى به', 'Bold (700) — recommended', lang)}</option>
-                <option value={800}>{t('غامق جداً (800)', 'Extra bold (800)', lang)}</option>
-                <option value={900}>{t('أسود (900)', 'Black (900)', lang)}</option>
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="400">{t('عادي (400)', 'Normal (400)', lang)}</SelectItem>
+                  <SelectItem value="600">{t('شبه غامق (600)', 'Semi-bold (600)', lang)}</SelectItem>
+                  <SelectItem value="700">{t('غامق (700) — موصى به', 'Bold (700) — recommended', lang)}</SelectItem>
+                  <SelectItem value="800">{t('غامق جداً (800)', 'Extra bold (800)', lang)}</SelectItem>
+                  <SelectItem value="900">{t('أسود (900)', 'Black (900)', lang)}</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
 
-            {/* حجم الخط */}
+            {/* حجم الخط — أزرار خيارات سريعة +عرض القيمة */}
             <Field label={t('حجم الخط', 'Font Size', lang)}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={9}
-                  max={16}
-                  step={1}
-                  value={form.thermalFontSize ?? 12}
-                  onChange={e => set('thermalFontSize', Number(e.target.value))}
-                  className="flex-1"
-                />
-                <span className="text-sm font-mono w-10 text-center bg-muted rounded px-1 py-0.5">{form.thermalFontSize ?? 12}px</span>
+              <div className="flex items-center gap-1">
+                {[10, 11, 12, 13, 14, 15].map(sz => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => set('thermalFontSize', sz)}
+                    className={`h-9 flex-1 rounded-md border text-xs font-mono transition-colors ${(form.thermalFontSize ?? 12) === sz ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
+                  >
+                    {sz}
+                  </button>
+                ))}
               </div>
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {/* عرض الإيصال */}
-            <Field label={t('عرض الإيصال (px)', 'Receipt Width (px)', lang)}>
-              <Input
-                type="number"
-                min={150}
-                max={320}
-                step={1}
-                value={form.thermalReceiptWidth ?? 272}
-                onChange={e => set('thermalReceiptWidth', Number(e.target.value))}
-              />
-              <p className="text-[10px] text-muted-foreground">{t('80mm≈272، 58mm≈200', '80mm≈272, 58mm≈200', lang)}</p>
+            {/* عرض الإيصال — أزرار خيارات سريعة */}
+            <Field label={t('عرض الإيصال', 'Receipt Width', lang)}>
+              <div className="flex items-center gap-1">
+                {[
+                  { w: 200, label: '58mm' },
+                  { w: 240, label: '240' },
+                  { w: 272, label: '80mm' },
+                  { w: 300, label: '300' },
+                ].map(opt => (
+                  <button
+                    key={opt.w}
+                    type="button"
+                    onClick={() => set('thermalReceiptWidth', opt.w)}
+                    className={`h-9 flex-1 rounded-md border text-xs transition-colors ${(form.thermalReceiptWidth ?? 272) === opt.w ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">{t('القيمة الحالية: ', 'Current: ', lang)}{form.thermalReceiptWidth ?? 272}px</p>
             </Field>
 
-            {/* تباعد الأسطر */}
+            {/* تباعد الأسطر — shadcn Select */}
             <Field label={t('تباعد الأسطر', 'Line Height', lang)}>
-              <select
-                value={form.thermalLineHeight ?? 1.5}
-                onChange={e => set('thermalLineHeight', Number(e.target.value))}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              <Select
+                value={String(form.thermalLineHeight ?? 1.5)}
+                onValueChange={(v) => set('thermalLineHeight', Number(v))}
               >
-                <option value={1.2}>{t('مضغوط (1.2)', 'Compact (1.2)', lang)}</option>
-                <option value={1.35}>{t('مدمج (1.35)', 'Tight (1.35)', lang)}</option>
-                <option value={1.5}>{t('عادي (1.5) — موصى به', 'Normal (1.5) — recommended', lang)}</option>
-                <option value={1.7}>{t('مريح (1.7)', 'Relaxed (1.7)', lang)}</option>
-                <option value={2}>{t('واسع (2.0)', 'Wide (2.0)', lang)}</option>
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1.2">{t('مضغوط (1.2)', 'Compact (1.2)', lang)}</SelectItem>
+                  <SelectItem value="1.35">{t('مدمج (1.35)', 'Tight (1.35)', lang)}</SelectItem>
+                  <SelectItem value="1.5">{t('عادي (1.5) — موصى به', 'Normal (1.5) — recommended', lang)}</SelectItem>
+                  <SelectItem value="1.7">{t('مريح (1.7)', 'Relaxed (1.7)', lang)}</SelectItem>
+                  <SelectItem value="2">{t('واسع (2.0)', 'Wide (2.0)', lang)}</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </div>
 
