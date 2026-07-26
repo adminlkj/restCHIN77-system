@@ -21,8 +21,18 @@ export default function BiLabel({ ar, en, align = 'start', bold = false, size = 
 
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.15, textAlign }}>
-      <span dir={primaryDir} style={{ fontSize: size, fontWeight: bold ? 800 : 700 }}>{primary}</span>
-      <span dir={secondaryDir} style={{ fontSize: Math.max(size - 2, 7), color: '#777', fontWeight: 600 }}>{secondary}</span>
+      {/* وزن الخط الأساسي: يأتي من إعدادات الإيصال الحراري عبر CSS variable،
+          أو 700 كقيمة احتياطية. bold يجعله أغمق (800). */}
+      <span dir={primaryDir} style={{
+        fontSize: size,
+        fontWeight: bold ? 800 : 'var(--receipt-font-weight, 700)',
+      }}>{primary}</span>
+      {/* السطر الثانوي: وزنه ولونه يتبعان وضع توفير الحبر من الإعدادات. */}
+      <span dir={secondaryDir} style={{
+        fontSize: Math.max(size - 2, 7),
+        color: 'var(--receipt-secondary-color, #000)',
+        fontWeight: 'var(--receipt-secondary-weight, 600)',
+      }}>{secondary}</span>
     </span>
   );
 }

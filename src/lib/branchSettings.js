@@ -128,6 +128,15 @@ export async function resolveReceiptSettings(branchId, companySettings = {}) {
     thermalLogoAlign: branch.thermalLogoAlign || 'CENTER',
     thermalLogoMarginBottom: Number(branch.thermalLogoMarginBottom) || 10,
     thermalLogoFit: branch.thermalLogoFit || 'CONTAIN',
+    // ─── إعدادات طباعة الإيصال الحراري (تتحكم بالخط والعرض) ───
+    // الأولوية للفرع إن ضبطها، وإلا لإعدادات الشركة، وإلا للقيمة الافتراضية.
+    // هذه الإعدادات يقرأها ThermalReceiptDocument ويُطبّقها فعلياً.
+    thermalFontWeight: Number(branch.thermalFontWeight) || Number(companySettings.thermalFontWeight) || 700,
+    thermalFontSize: Number(branch.thermalFontSize) || Number(companySettings.thermalFontSize) || 12,
+    thermalReceiptWidth: Number(branch.thermalReceiptWidth) || Number(companySettings.thermalReceiptWidth) || 272,
+    thermalPaperSize: branch.thermalPaperSize || companySettings.thermalPaperSize || '80mm',
+    thermalLineHeight: Number(branch.thermalLineHeight) || Number(companySettings.thermalLineHeight) || 1.5,
+    thermalInkSaving: branch.thermalInkSaving !== undefined ? branch.thermalInkSaving : (companySettings.thermalInkSaving !== undefined ? companySettings.thermalInkSaving : false),
   };
 }
 

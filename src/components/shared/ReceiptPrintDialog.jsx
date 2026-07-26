@@ -77,15 +77,30 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
     const content = printRef.current?.innerHTML;
     if (!content) return;
     const rtl = lang === 'ar';
-    const w = window.open('', '_blank', 'width=400,height=760');
+    // ─── إعدادات الطباعة من الإعدادات (يتحكم بها المستخدم) ───
+    const paperSize = settings.thermalPaperSize || '80mm';
+    const recWidth = Number(settings.thermalReceiptWidth) || 272;
+    const fontW = Number(settings.thermalFontWeight) || 700;
+    const fontS = Number(settings.thermalFontSize) || 12;
+    const lineH = Number(settings.thermalLineHeight) || 1.5;
+    const inkSaving = settings.thermalInkSaving === true;
+    // عرض الورق الحقيقي + المنطقة القابلة للطباعة (ناقص الهوامش 4mm كل طرف).
+    const paperMm = paperSize === '58mm' ? 58 : 80;
+    const printableMm = paperMm - 4;
+    // عرض نافذة المعاينة مناسب لمقاس الورق.
+    const winW = paperSize === '58mm' ? 320 : 400;
+    const w = window.open('', '_blank', `width=${winW},height=760`);
     if (!w) return;
+    // في وضع توفير الحبر: العناصر الثانوية بلون أفتح لاستهلاك حبر أقل.
+    const secondaryColor = inkSaving ? '#555' : '#000';
+    const secondaryWeight = inkSaving ? 400 : Math.max(fontW - 100, 400);
     w.document.write(`
       <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
         <head>
           <meta charset="utf-8" />
           <title>${invoice.invoiceNo || 'Receipt'}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
             @font-face { font-family:'saudi_riyal'; src:url('https://cdn.jsdelivr.net/gh/emran-alhaddad/Saudi-Riyal-Font@1.1.1/fonts/regular/saudi_riyal.woff2') format('woff2'); unicode-range:U+20C1; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #fff; }
@@ -94,22 +109,31 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
               color: #000;
               direction: ${rtl ? 'rtl' : 'ltr'};
               /* خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة. */
-              font-weight: 700;
+              font-weight: ${fontW};
+              font-size: ${fontS}px;
+              line-height: ${lineH};
             }
-            /* عرض ثابت للإيصال = المنطقة القابلة للطباعة على ورق 80mm
-               (الورق 80mm، الهوامش 4mm كل طرف = 72mm محتوى ≈ 272px).
+            /* متغيّرات CSS لتوحيد إعدادات الخط على كل الأبناء. */
+            :root {
+              --receipt-font-weight: ${fontW};
+              --receipt-font-size: ${fontS}px;
+              --receipt-secondary-weight: ${secondaryWeight};
+              --receipt-secondary-color: ${secondaryColor};
+            }
+            /* عرض ثابت للإيصال = المنطقة القابلة للطباعة على الورق.
                هذا يمنع المساحات الفارغة في الوسط. */
-            .receipt-wrap { width: 272px; margin: 0 auto; padding: 0; }
+            .receipt-wrap { width: ${recWidth}px; margin: 0 auto; padding: 0; }
             img { max-width: 100%; }
-            @page { size: 80mm auto; margin: 2mm; }
+            @page { size: ${paperSize} auto; margin: 2mm; }
             @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
-              html, body { width: 80mm; margin: 0; padding: 0; }
-              .receipt-wrap { width: 72mm; padding: 0; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: ${fontW}; }
+              html, body { width: ${paperSize}; margin: 0; padding: 0; }
+              .receipt-wrap { width: ${printableMm}mm; padding: 0; }
               .no-print { display: none !important; }
               /* تأكّد طباعة كل المحتوى دون قطع. */
               * { overflow: visible !important; }
-              /* الطابعات الحرارية القديمة لا تُجيد التدرّجات الرمادية — كل النص أسود غامق. */
+              /* الطابعات الحرارية القديمة لا تُجيد التدرّجات الرمادية — كل النص أسود غامق
+                 إلا في وضع توفير الحبر. */
               .receipt-wrap, .receipt-wrap * { color: #000 !important; }
             }
             @media screen {
@@ -145,7 +169,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
         </div>
 
         <div className="overflow-auto max-h-[80vh] bg-slate-100 p-4 flex justify-center">
-          <div className="bg-white shadow-md" style={{ width: '272px', padding: '8px' }}>
+          <div className="bg-white shadow-md" style={{ width: `${Number(settings.thermalReceiptWidth) || 272}px`, padding: '8px' }}>
             <ReceiptErrorBoundary fallbackText={t('تعذّر عرض الإيصال', 'Could not render receipt', lang)}>
               <ThermalReceiptDocument invoice={invoice} settings={settings} client={client} lang={lang} innerRef={printRef} />
             </ReceiptErrorBoundary>

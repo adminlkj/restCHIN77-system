@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Upload, Loader2, Save, Eye } from 'lucide-react';
+import { FileText, Upload, Loader2, Save, Eye, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { t } from '@/lib/utils-binaa';
 import { useCompanySettings, DEFAULT_COMPANY_SETTINGS, invalidateCompanySettingsCache } from '@/hooks/useCompanySettings';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import InvoiceDocument from '@/components/shared/InvoiceDocument';
+import ThermalReceiptDocument from '@/components/shared/ThermalReceiptDocument';
 
 const TEMPLATES = [
   { key: 'MODERN', ar: 'عصري', en: 'Modern' },
@@ -35,6 +36,29 @@ const SAMPLE_INVOICE = {
   paidAmount: 50,
 };
 
+// إيصال حراري تجريبي لمعاينة إعدادات الطباعة الحرارية مباشرةً.
+const SAMPLE_THERMAL = {
+  invoiceNo: 'INV-2026-0001',
+  date: new Date().toISOString(),
+  saleType: 'DINE_IN',
+  clientName: 'زبون نقدي',
+  cashier: 'الكاشير',
+  tableNo: 'طاولة 1',
+  subtotal: 100,
+  vatAmount: 15,
+  vatRate: 0.15,
+  totalAmount: 115,
+  paidAmount: 115,
+  notes: JSON.stringify({
+    payments: [{ method: 'CASH', amount: 115 }],
+    cashReceived: 115,
+    items: [
+      { description: 'برجر لحم', descriptionEn: 'Beef Burger', qty: 2, unitPrice: 40, total: 80 },
+      { description: 'بيبسي', descriptionEn: 'Pepsi', qty: 1, unitPrice: 20, total: 20 },
+    ],
+  }),
+};
+
 const Field = ({ label, children }) => (
   <div className="space-y-1.5">
     <Label className="text-xs">{label}</Label>
@@ -50,6 +74,7 @@ export default function PrintSettingsCard() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [thermalPreviewOpen, setThermalPreviewOpen] = useState(false);
 
   useEffect(() => { if (!loading) setForm(settings); }, [loading, settings]);
 
@@ -168,14 +193,122 @@ export default function PrintSettingsCard() {
           <Switch checked={!!form.showQr} onCheckedChange={v => set('showQr', v)} />
         </div>
 
+        {/* ─── إعدادات طباعة الإيصال الحراري ─── */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-amber-200">
+            <FileText className="size-4 text-amber-600" />
+            <span className="text-sm font-bold text-amber-800">{t('إعدادات الإيصال الحراري', 'Thermal Receipt Settings', lang)}</span>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            {t('تتحكم بمظهر الإيصال على طابعات الحرارية. تُطبَّق فوراً عند الطباعة.', 'Controls receipt appearance on thermal printers. Applied immediately when printing.', lang)}
+          </p>
+
+          {/* مقاس الورق */}
+          <Field label={t('مقاس الورق', 'Paper Size', lang)}>
+            <div className="flex gap-2">
+              {[
+                { key: '80mm', ar: '80mm (قياسي)', en: '80mm (Standard)' },
+                { key: '58mm', ar: '58mm (صغير)', en: '58mm (Small)' },
+              ].map(ps => (
+                <button
+                  key={ps.key}
+                  onClick={() => {
+                    set('thermalPaperSize', ps.key);
+                    // عند تغيير مقاس الورق، نضبط العرض تلقائياً ليناسبه.
+                    set('thermalReceiptWidth', ps.key === '58mm' ? 200 : 272);
+                  }}
+                  className={`flex-1 rounded-lg border-2 px-3 py-2 text-xs transition-colors ${(form.thermalPaperSize || '80mm') === ps.key ? 'border-amber-500 bg-amber-100 text-amber-800 font-semibold' : 'border-border hover:bg-accent'}`}
+                >
+                  {lang === 'ar' ? ps.ar : ps.en}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* حدّة/سماكة الخط */}
+            <Field label={t('سماكة الخط', 'Font Weight', lang)}>
+              <select
+                value={form.thermalFontWeight ?? 700}
+                onChange={e => set('thermalFontWeight', Number(e.target.value))}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value={400}>{t('عادي (400)', 'Normal (400)', lang)}</option>
+                <option value={600}>{t('شبه غامق (600)', 'Semi-bold (600)', lang)}</option>
+                <option value={700}>{t('غامق (700) — موصى به', 'Bold (700) — recommended', lang)}</option>
+                <option value={800}>{t('غامق جداً (800)', 'Extra bold (800)', lang)}</option>
+                <option value={900}>{t('أسود (900)', 'Black (900)', lang)}</option>
+              </select>
+            </Field>
+
+            {/* حجم الخط */}
+            <Field label={t('حجم الخط', 'Font Size', lang)}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={9}
+                  max={16}
+                  step={1}
+                  value={form.thermalFontSize ?? 12}
+                  onChange={e => set('thermalFontSize', Number(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="text-sm font-mono w-10 text-center bg-muted rounded px-1 py-0.5">{form.thermalFontSize ?? 12}px</span>
+              </div>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* عرض الإيصال */}
+            <Field label={t('عرض الإيصال (px)', 'Receipt Width (px)', lang)}>
+              <Input
+                type="number"
+                min={150}
+                max={320}
+                step={1}
+                value={form.thermalReceiptWidth ?? 272}
+                onChange={e => set('thermalReceiptWidth', Number(e.target.value))}
+              />
+              <p className="text-[10px] text-muted-foreground">{t('80mm≈272، 58mm≈200', '80mm≈272, 58mm≈200', lang)}</p>
+            </Field>
+
+            {/* تباعد الأسطر */}
+            <Field label={t('تباعد الأسطر', 'Line Height', lang)}>
+              <select
+                value={form.thermalLineHeight ?? 1.5}
+                onChange={e => set('thermalLineHeight', Number(e.target.value))}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value={1.2}>{t('مضغوط (1.2)', 'Compact (1.2)', lang)}</option>
+                <option value={1.35}>{t('مدمج (1.35)', 'Tight (1.35)', lang)}</option>
+                <option value={1.5}>{t('عادي (1.5) — موصى به', 'Normal (1.5) — recommended', lang)}</option>
+                <option value={1.7}>{t('مريح (1.7)', 'Relaxed (1.7)', lang)}</option>
+                <option value={2}>{t('واسع (2.0)', 'Wide (2.0)', lang)}</option>
+              </select>
+            </Field>
+          </div>
+
+          {/* توفير الحبر */}
+          <div className="flex items-center justify-between rounded-lg border bg-white p-3">
+            <div>
+              <div className="text-sm font-medium">{t('وضع توفير الحبر', 'Ink-Saving Mode', lang)}</div>
+              <div className="text-xs text-muted-foreground">{t('يُخفّف كثافة العناصر الثانوية (الترجمة الإنجليزية)', 'Lightens secondary elements (English translations)', lang)}</div>
+            </div>
+            <Switch checked={!!form.thermalInkSaving} onCheckedChange={v => set('thermalInkSaving', v)} />
+          </div>
+        </div>
+
         {/* الإجراءات */}
-        <div className="flex items-center gap-2 pt-2 border-t">
+        <div className="flex items-center gap-2 pt-2 border-t flex-wrap">
           <Button onClick={save} disabled={saving} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             {t('حفظ الإعدادات', 'Save Settings', lang)}
           </Button>
           <Button variant="outline" onClick={() => setPreviewOpen(true)} className="gap-1.5">
-            <Eye className="size-4" />{t('معاينة القالب', 'Preview Template', lang)}
+            <Eye className="size-4" />{t('معاينة الفاتورة', 'Preview Invoice', lang)}
+          </Button>
+          <Button variant="outline" onClick={() => setThermalPreviewOpen(true)} className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50">
+            <Receipt className="size-4" />{t('معاينة الإيصال الحراري', 'Preview Thermal Receipt', lang)}
           </Button>
         </div>
       </CardContent>
@@ -185,6 +318,21 @@ export default function PrintSettingsCard() {
           <div className="bg-white mx-auto max-w-2xl p-8 rounded shadow-sm">
             <InvoiceDocument invoice={SAMPLE_INVOICE} settings={form} lang={lang} />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* معاينة الإيصال الحراري — تطبّق الإعدادات الحالية مباشرةً (live preview) */}
+      <Dialog open={thermalPreviewOpen} onOpenChange={setThermalPreviewOpen}>
+        <DialogContent className="max-w-[420px] max-h-[92vh] p-4 overflow-auto bg-slate-100">
+          <div className="text-center mb-3">
+            <span className="text-sm font-semibold text-amber-700">{t('معاينة مباشرة بإعداداتك الحالية', 'Live preview with current settings', lang)}</span>
+          </div>
+          <div className="bg-white shadow-md mx-auto" style={{ width: `${Number(form.thermalReceiptWidth) || 272}px`, padding: '8px' }}>
+            <ThermalReceiptDocument invoice={SAMPLE_THERMAL} settings={form} lang={lang} />
+          </div>
+          <p className="text-xs text-center text-muted-foreground mt-3">
+            {t('غيّر الإعدادات أعلاه ثم أعد فتح المعاينة لرؤية التأثير. احفظ لتطبيقها على كل الإيصالات.', 'Change settings above then reopen preview to see effect. Save to apply to all receipts.', lang)}
+          </p>
         </DialogContent>
       </Dialog>
     </Card>

@@ -49,6 +49,23 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
   const primary = settings.primaryColor || '#d97706';
   const accent = settings.accentColor || '#1f2d3d';
 
+  // ─── إعدادات طباعة الإيصال الحراري (يتحكم بها المستخدم من الإعدادات) ───
+  // قيم موحّدة مع fallback للقيم الافتراضية حتى تعمل الشاشة قبل أي إعداد.
+  // thermalFontWeight: حدّة/سماكة الخط (400=عادي، 700=غامق، 800=أسود)
+  // thermalFontSize: حجم الخط الأساسي (px)
+  // thermalReceiptWidth: عرض الإيصال (px)
+  // thermalLineHeight: تباعد الأسطر
+  // thermalInkSaving: توفير الحبر — يُخفّف كثافة العناصر الثانوية
+  const fontW = Number(settings.thermalFontWeight) || 700;
+  const fontS = Number(settings.thermalFontSize) || 12;
+  const recW = Number(settings.thermalReceiptWidth) || 272;
+  const lineH = Number(settings.thermalLineHeight) || 1.5;
+  const inkSaving = settings.thermalInkSaving === true;
+  // في وضع توفير الحبر: العناصر الثانوية (الترجمة الإنجليزية، التفاصيل الفرعية)
+  // تُكتب بخط أرفع ولون أفتح قليلاً لتقليل استهلاك الحبر.
+  const secondaryFontW = inkSaving ? 400 : Math.max(fontW - 100, 400);
+  const secondaryColor = inkSaving ? '#555' : '#000';
+
   const subtotal = invoice.subtotal != null
     ? Number(invoice.subtotal)
     : Math.max(0, (Number(invoice.totalAmount) || 0) - (Number(invoice.vatAmount) || 0) - (Number(invoice.deliveryFee) || 0) + (Number(invoice.discountAmount) || 0));
@@ -158,17 +175,24 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
         background: '#fff',
         color: '#000',
         fontFamily: "'Cairo', 'Tahoma', sans-serif",
+        // ─── إعدادات يتحكم بها المستخدم من شاشة الإعدادات ───
         // خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة.
-        fontWeight: 700,
-        fontSize: 12,
-        lineHeight: 1.5,
+        fontWeight: fontW,
+        fontSize: fontS,
+        lineHeight: lineH,
         width: '100%',
-        maxWidth: '272px',
+        maxWidth: `${recW}px`,
         margin: '0 auto',
         padding: '4px 2px',
         direction: dir,
         textAlign: align,
+        // نمرّر الإعدادات كـ CSS variables ليستخدمها الأبناء (BiLabel وغيرها).
+        '--receipt-font-weight': fontW,
+        '--receipt-font-size': `${fontS}px`,
+        '--receipt-secondary-weight': secondaryFontW,
+        '--receipt-secondary-color': secondaryColor,
       }}
+      data-thermal-settings={JSON.stringify({ fontW, fontS, recW, lineH, inkSaving })}
     >
       {/* ═══════════════════════════════════════════════════════════════
           ترويسة الإيصال الحراري — نمط احترافي متّبع في أنظمة نقاط البيع
