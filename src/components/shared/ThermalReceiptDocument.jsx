@@ -147,7 +147,7 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
     </span>
   );
 
-  const divider = '─'.repeat(32);
+  const divider = '─'.repeat(34);
   const lightDivider = '·'.repeat(40);
 
   return (
@@ -157,13 +157,15 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
       style={{
         background: '#fff',
         color: '#000',
-        fontFamily: "'Cairo', 'Tahoma', monospace",
-        fontSize: 11,
-        lineHeight: 1.45,
+        fontFamily: "'Cairo', 'Tahoma', sans-serif",
+        // خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة.
+        fontWeight: 700,
+        fontSize: 12,
+        lineHeight: 1.5,
         width: '100%',
-        maxWidth: '280px',
+        maxWidth: '272px',
         margin: '0 auto',
-        padding: '6px 8px',
+        padding: '4px 2px',
         direction: dir,
         textAlign: align,
       }}

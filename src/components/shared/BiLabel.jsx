@@ -21,8 +21,8 @@ export default function BiLabel({ ar, en, align = 'start', bold = false, size = 
 
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.15, textAlign }}>
-      <span dir={primaryDir} style={{ fontSize: size, fontWeight: bold ? 700 : 'inherit' }}>{primary}</span>
-      <span dir={secondaryDir} style={{ fontSize: Math.max(size - 2, 7), color: '#777', fontWeight: 400 }}>{secondary}</span>
+      <span dir={primaryDir} style={{ fontSize: size, fontWeight: bold ? 800 : 700 }}>{primary}</span>
+      <span dir={secondaryDir} style={{ fontSize: Math.max(size - 2, 7), color: '#777', fontWeight: 600 }}>{secondary}</span>
     </span>
   );
 }

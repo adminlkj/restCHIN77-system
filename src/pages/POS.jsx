@@ -675,7 +675,7 @@ export default function POS() {
       const secondaryName = rtl ? c.nameEn : (c.nameEn ? c.name : '');
       const nameCell = `
         <div dir="${rtl ? 'rtl' : 'ltr'}" style="font-weight:700;">${primaryName}</div>
-        ${secondaryName ? `<div dir="${rtl ? 'ltr' : 'rtl'}" style="font-size:11px; color:#777; font-weight:400;">${secondaryName}</div>` : ''}
+        ${secondaryName ? `<div dir="${rtl ? 'ltr' : 'rtl'}" style="font-size:11px; color:#000; font-weight:600;">${secondaryName}</div>` : ''}
       `;
       return `
       <tr>
@@ -689,19 +689,23 @@ export default function POS() {
       <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
         <head><meta charset="utf-8"><title>${t('طلب المطبخ', 'Kitchen Order', lang)}</title>
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap');
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           html, body { margin:0; padding:0; background:#fff; }
-          body { font-family:'Cairo','Tahoma',sans-serif; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; }
-          .receipt-wrap { width:80mm; margin:0 auto; padding:2mm; }
+          body { font-family:'Cairo','Tahoma',sans-serif; color:#000; direction:${rtl ? 'rtl' : 'ltr'}; font-weight:700; }
+          .receipt-wrap { width:272px; margin:0 auto; padding:0; }
           .h { text-align:center; font-size:18px; font-weight:800; }
-          .sub { text-align:center; font-size:11px; color:#555; margin-bottom:2px; }
+          .sub { text-align:center; font-size:11px; color:#000; margin-bottom:2px; }
           .orderno { text-align:center; font-size:13px; margin-bottom:6px; }
           table { width:100%; border-collapse:collapse; font-size:13px; }
           th { background:#000; color:#fff; padding:6px; font-size:12px; }
-          .meta { font-size:11px; color:#555; margin:4px 0 8px; }
+          .meta { font-size:11px; color:#000; margin:4px 0 8px; }
           @page { size: 80mm auto; margin: 2mm; }
-          @media print { .no-print { display:none !important; } }
+          @media print {
+            .no-print { display:none !important; }
+            * { overflow: visible !important; color:#000 !important; }
+            .receipt-wrap, .receipt-wrap * { color:#000 !important; }
+          }
           @media screen { body { background:#f1f5f9; padding:16px; } }
         </style></head>
         <body>
@@ -718,7 +722,7 @@ export default function POS() {
               <tbody>${itemsHtml}</tbody>
             </table>
           </div>
-          <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
+          <script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>
         </body>
       </html>
     `);

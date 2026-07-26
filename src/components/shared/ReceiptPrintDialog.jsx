@@ -77,7 +77,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
     const content = printRef.current?.innerHTML;
     if (!content) return;
     const rtl = lang === 'ar';
-    const w = window.open('', '_blank', 'width=380,height=620');
+    const w = window.open('', '_blank', 'width=400,height=760');
     if (!w) return;
     w.document.write(`
       <html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}">
@@ -85,17 +85,32 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
           <meta charset="utf-8" />
           <title>${invoice.invoiceNo || 'Receipt'}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap');
             @font-face { font-family:'saudi_riyal'; src:url('https://cdn.jsdelivr.net/gh/emran-alhaddad/Saudi-Riyal-Font@1.1.1/fonts/regular/saudi_riyal.woff2') format('woff2'); unicode-range:U+20C1; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #fff; }
-            body { font-family: 'saudi_riyal', 'Cairo', 'Tahoma', sans-serif; color: #000; direction: ${rtl ? 'rtl' : 'ltr'}; }
-            .receipt-wrap { width: 80mm; margin: 0 auto; padding: 2mm; }
+            body {
+              font-family: 'saudi_riyal', 'Cairo', 'Tahoma', sans-serif;
+              color: #000;
+              direction: ${rtl ? 'rtl' : 'ltr'};
+              /* خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة. */
+              font-weight: 700;
+            }
+            /* عرض ثابت للإيصال = المنطقة القابلة للطباعة على ورق 80mm
+               (الورق 80mm، الهوامش 4mm كل طرف = 72mm محتوى ≈ 272px).
+               هذا يمنع المساحات الفارغة في الوسط. */
+            .receipt-wrap { width: 272px; margin: 0 auto; padding: 0; }
             img { max-width: 100%; }
             @page { size: 80mm auto; margin: 2mm; }
             @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
+              html, body { width: 80mm; margin: 0; padding: 0; }
+              .receipt-wrap { width: 72mm; padding: 0; }
               .no-print { display: none !important; }
+              /* تأكّد طباعة كل المحتوى دون قطع. */
+              * { overflow: visible !important; }
+              /* الطابعات الحرارية القديمة لا تُجيد التدرّجات الرمادية — كل النص أسود غامق. */
+              .receipt-wrap, .receipt-wrap * { color: #000 !important; }
             }
             @media screen {
               body { background: #f1f5f9; padding: 16px; }
@@ -104,7 +119,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
         </head>
         <body>
           <div class="receipt-wrap">${content}</div>
-          <script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script>
+          <script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>
         </body>
       </html>
     `);
@@ -130,7 +145,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
         </div>
 
         <div className="overflow-auto max-h-[80vh] bg-slate-100 p-4 flex justify-center">
-          <div className="bg-white shadow-md" style={{ width: '300px', padding: '8px' }}>
+          <div className="bg-white shadow-md" style={{ width: '272px', padding: '8px' }}>
             <ReceiptErrorBoundary fallbackText={t('تعذّر عرض الإيصال', 'Could not render receipt', lang)}>
               <ThermalReceiptDocument invoice={invoice} settings={settings} client={client} lang={lang} innerRef={printRef} />
             </ReceiptErrorBoundary>
