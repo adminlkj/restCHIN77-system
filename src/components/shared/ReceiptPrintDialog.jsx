@@ -79,10 +79,10 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
     const rtl = lang === 'ar';
     // ─── إعدادات الطباعة من الإعدادات (يتحكم بها المستخدم) ───
     const paperSize = settings.thermalPaperSize || '80mm';
-    const recWidth = Number(settings.thermalReceiptWidth) || 240;
+    const recWidth = Number(settings.thermalReceiptWidth) || 220;
     const fontW = Number(settings.thermalFontWeight) || 700;
     const fontS = Number(settings.thermalFontSize) || 10;
-    const lineH = Number(settings.thermalLineHeight) || 1.35;
+    const lineH = Number(settings.thermalLineHeight) || 1.4;
     const inkSaving = settings.thermalInkSaving === true;
     // عرض الورق الحقيقي + المنطقة القابلة للطباعة (ناقص الهوامش 4mm كل طرف).
     const paperMm = paperSize === '58mm' ? 58 : 80;
@@ -100,12 +100,12 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
           <meta charset="utf-8" />
           <title>${invoice.invoiceNo || 'Receipt'}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
             @font-face { font-family:'saudi_riyal'; src:url('https://cdn.jsdelivr.net/gh/emran-alhaddad/Saudi-Riyal-Font@1.1.1/fonts/regular/saudi_riyal.woff2') format('woff2'); unicode-range:U+20C1; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #fff; }
             body {
-              font-family: 'saudi_riyal', 'Tahoma', 'Cairo', sans-serif;
+              font-family: 'saudi_riyal', 'Cairo', 'Tahoma', sans-serif;
               color: #000;
               direction: ${rtl ? 'rtl' : 'ltr'};
               font-weight: ${fontW};

@@ -29,15 +29,13 @@ export const DEFAULT_COMPANY_SETTINGS = {
   receiptFooterMessage: '',
   showQr: true,
   // ─── إعدادات طباعة الإيصال الحراري (تتحكم بمظهر الإيصال على الطابعات) ───
-  // هذه الإعدادات يتحكم بها المستخدم من شاشة الإعدادات، وتُطبَّق فعلياً على
-  // الإيصال الحراري عبر ThermalReceiptDocument و ReceiptPrintDialog.
-  // القيم الافتراضية مُحكمة لتناسب كل الطابعات الحرارية القديمة والجديدة.
-  thermalFontWeight: 700,        // وزن الخط: غامق ليظهر بوضوح على الطابعات القديمة
-  thermalFontSize: 10,           // حجم الخط الأساسي (px) — صغير يناسب العرض الضيق
-  thermalReceiptWidth: 240,      // عرض الإيصال (px) — 240 لورق 80mm، 180 لورق 58mm
-  thermalPaperSize: '80mm',      // مقاس الورق: '80mm' أو '58mm'
-  thermalLineHeight: 1.35,       // تباعد الأسطر — مضغوط لإيصال مُحكم
-  thermalInkSaving: false,       // توفير الحبر: يُخفّف كثافة بعض العناصر الثانوية
+  // القيم الافتراضية: عرض ضيق + خط Cairo + ثنائي اللغة.
+  thermalFontWeight: 700,        // وزن الخط: غامق ليظهر بوضوح
+  thermalFontSize: 10,           // حجم الخط الأساسي (px)
+  thermalReceiptWidth: 220,      // عرض الإيصال (px) — 220 لورق 80mm، 165 لورق 58mm
+  thermalPaperSize: '80mm',      // مقاس الورق
+  thermalLineHeight: 1.4,        // تباعد الأسطر
+  thermalInkSaving: false,       // توفير الحبر
 };
 
 // ═══════════════════════════════════════════════════════════════════════
