@@ -1,22 +1,25 @@
 import React from 'react';
 import { formatNumber, formatDate, RIYAL_SYMBOL } from '@/lib/utils-binaa';
 import { buildZatcaQrPayload, zatcaQrImageUrl } from '@/lib/zatcaQr';
-import BiLabel from '@/components/shared/BiLabel';
 
 // ═══════════════════════════════════════════════════════════════════════
-// مستند إيصال حراري بعرض 80mm لطابعات الإيصالات الحرارية.
-// يعيد استخدام محرك ZATCA QR الموجود (zatcaQr.js) دون أي تعديل عليه.
-// innerRef يُمرّر إلى العنصر الجذر لالتقاط HTML عند الطباعة.
+// مستند إيصال حراري مُحكم — مُصمّم للعمل على كل الطابعات الحرارية
+// (القديمة والجديدة، 58mm و 80mm).
+//
+// مبادئ التصميم:
+//  1. عرض ضيق + خط صغير = طباعة سريعة وواضحة.
+//  2. كل صف تسمية + قيمة بـ gap صغير ثابت (لا space-between يُترك فراغ).
+//  3. محاذاة موحدة: الترويسة والتذييل بالوسط، التفاصيل بمحاذاة start.
+//  4. خط monospace للأرقام ليصطفّ عمودياً بدقة على الطابعة.
+//  5. فاصل نصي واحد (لا إطارات/خلفيات تستهلك الحبر).
 // ═══════════════════════════════════════════════════════════════════════
 
 const _TYPE_LABEL = {
-  CONSTRUCTION: { ar: 'صالة',      en: 'Dine-in' },
-  SERVICE:      { ar: 'توصيل',    en: 'Delivery' },
-  RENTAL:       { ar: 'حجز',      en: 'Reservation' },
+  CONSTRUCTION: { ar: 'صالة', en: 'Dine-in' },
+  SERVICE: { ar: 'توصيل', en: 'Delivery' },
+  RENTAL: { ar: 'حجز', en: 'Reservation' },
 };
 
-// يبني قائمة عناصر الإيصال. المصدر الأساسي invoice.lineItems، ثم notes.items
-// (سجل الخادم يُخزّن البنود داخل notes)، وإلا نُنشئ بنداً واحداً.
 function resolveLineItems(invoice, notesObj, lang) {
   if (Array.isArray(invoice.lineItems) && invoice.lineItems.length) return invoice.lineItems;
   if (Array.isArray(notesObj?.items) && notesObj.items.length) return notesObj.items;
@@ -31,92 +34,57 @@ function resolveLineItems(invoice, notesObj, lang) {
 
 export default function ThermalReceiptDocument({ invoice, settings: settingsProp, client, lang = 'ar', innerRef }) {
   if (!invoice) return null;
-
-  // تأمين ضد settings فارغة (أثناء تحميل إعدادات الشركة/الفرع) — القراءة المباشرة
-  // من undefined كانت ترمي خطأً متكرراً عند فتح معاينة الطباعة.
   const settings = settingsProp || {};
-
-  // الإيصال ثنائي اللغة مع الأولوية للغة النظام النشطة — الاتجاه يتبع lang.
   const rtl = lang === 'ar';
   const dir = rtl ? 'rtl' : 'ltr';
-  const align = rtl ? 'right' : 'left';
 
   const c = client || {};
-  const customerName = invoice.clientName || c.nameAr || c.name || 'زبون نقدي';
-  const customerNameEn = c.name && c.name !== (c.nameAr || '') ? c.name : '';
-  const customerVat = invoice.clientVatNumber || c.taxNumber;
+  const customerName = invoice.clientName || c.nameAr || c.name || (rtl ? 'زبون نقدي' : 'Cash Customer');
 
-  const primary = settings.primaryColor || '#d97706';
-  const accent = settings.accentColor || '#1f2d3d';
-
-  // ─── إعدادات طباعة الإيصال الحراري (يتحكم بها المستخدم من الإعدادات) ───
-  // قيم موحّدة مع fallback للقيم الافتراضية حتى تعمل الشاشة قبل أي إعداد.
-  // thermalFontWeight: حدّة/سماكة الخط (400=عادي، 700=غامق، 800=أسود)
-  // thermalFontSize: حجم الخط الأساسي (px)
-  // thermalReceiptWidth: عرض الإيصال (px)
-  // thermalLineHeight: تباعد الأسطر
-  // thermalInkSaving: توفير الحبر — يُخفّف كثافة العناصر الثانوية
+  // ─── إعدادات الطباعة (يتحكم بها المستخدم من شاشة الإعدادات) ───
+  // قيم افتراضية مُحكمة تناسب كل الطابعات الحرارية.
   const fontW = Number(settings.thermalFontWeight) || 700;
-  const fontS = Number(settings.thermalFontSize) || 12;
-  const recW = Number(settings.thermalReceiptWidth) || 272;
-  const lineH = Number(settings.thermalLineHeight) || 1.5;
+  const fontS = Number(settings.thermalFontSize) || 10;
+  const recW = Number(settings.thermalReceiptWidth) || 240;
+  const lineH = Number(settings.thermalLineHeight) || 1.35;
   const inkSaving = settings.thermalInkSaving === true;
-  // في وضع توفير الحبر: العناصر الثانوية (الترجمة الإنجليزية، التفاصيل الفرعية)
-  // تُكتب بخط أرفع ولون أفتح قليلاً لتقليل استهلاك الحبر.
+  const secondaryColor = inkSaving ? '#666' : '#000';
   const secondaryFontW = inkSaving ? 400 : Math.max(fontW - 100, 400);
-  const secondaryColor = inkSaving ? '#555' : '#000';
 
   const subtotal = invoice.subtotal != null
     ? Number(invoice.subtotal)
     : Math.max(0, (Number(invoice.totalAmount) || 0) - (Number(invoice.vatAmount) || 0) - (Number(invoice.deliveryFee) || 0) + (Number(invoice.discountAmount) || 0));
-  const discountPercentage = invoice.discountPercentage || 0;
-  // خصومات تفصيلية (من notes إن وُجدت)
   let notesObj = {};
   try {
     notesObj = typeof invoice.notes === 'string' && invoice.notes.trim().startsWith('{')
       ? JSON.parse(invoice.notes)
       : (typeof invoice.notes === 'object' && invoice.notes ? invoice.notes : {});
   } catch { notesObj = {}; }
-  const _itemDiscountsTotal = Number(notesObj.itemDiscountsTotal || invoice.itemDiscountsTotal || 0);
   const customerDiscountAmount = Number(notesObj.customerDiscountAmount || invoice.customerDiscountAmount || 0);
   const manualDiscountAmount = Number(notesObj.manualDiscount?.amount || invoice.manualDiscountAmount || 0);
   const discountAmount = invoice.discountAmount || (customerDiscountAmount + manualDiscountAmount);
+  const discountPercentage = invoice.discountPercentage || 0;
   const deliveryFee = invoice.deliveryFee || Number(notesObj.deliveryFee) || 0;
-  // صافي قبل الضريبة = الإجمالي (GROSS) ناقص كل الخصومات = الوعاء الخاضع للضريبة.
   const netBeforeVat = Math.max(0, subtotal - discountAmount);
   const vat = invoice.vatAmount || 0;
   const total = invoice.totalAmount || 0;
   const paid = invoice.paidAmount || 0;
   const balance = total - paid;
-  // النقد المستلم من الزبون (قد يزيد عن الإجمالي — الباقي للزبون)
   const cashReceived = Number(notesObj.cashReceived) || 0;
   const change = cashReceived > total ? cashReceived - total : (paid > total ? paid - total : 0);
   const items = resolveLineItems(invoice, notesObj, lang);
 
-  // نوع البيع (شارة واضحة في الإيصال)
   const saleType = notesObj.saleType || invoice.saleType || '';
-  const SALE_TYPE_LABELS = {
-    DINE_IN: { ar: 'صالة', en: 'Dine-in' },
-    TAKEAWAY: { ar: 'استلام', en: 'Takeaway' },
-    DIRECT_DELIVERY: { ar: 'توصيل مباشر', en: 'Direct Delivery' },
-    PLATFORM: { ar: 'منصة', en: 'Platform' },
-    CREDIT: { ar: 'آجل', en: 'Credit' },
-  };
-  const _saleTypeLabel = SALE_TYPE_LABELS[saleType] || null;
-
-  // بيانات المنصة (لطلبات التوصيل)
   const platformName = invoice.platformName || notesObj.platform?.platformName || '';
-  const _platformCommission = invoice.platformCommission || notesObj.platform?.platformCommission || 0;
 
-  // طرق الدفع المطبّقة (من notes.payments)
   const PAYMENT_LABELS = {
-    CASH:       { ar: 'نقداً',     en: 'Cash' },
-    CARD_MADA:  { ar: 'مدى',       en: 'Mada' },
-    CARD_VISA:  { ar: 'فيزا',      en: 'Visa' },
-    CARD_MC:    { ar: 'ماستركارد', en: 'Mastercard' },
+    CASH: { ar: 'نقداً', en: 'Cash' },
+    CARD_MADA: { ar: 'مدى', en: 'Mada' },
+    CARD_VISA: { ar: 'فيزا', en: 'Visa' },
+    CARD_MC: { ar: 'ماستركارد', en: 'Mastercard' },
     CARD_OTHER: { ar: 'بطاقة أخرى', en: 'Other Card' },
-    BANK:       { ar: 'تحويل بنكي', en: 'Bank Transfer' },
-    CREDIT:     { ar: 'آجل',       en: 'Credit' },
+    BANK: { ar: 'تحويل بنكي', en: 'Bank Transfer' },
+    CREDIT: { ar: 'آجل', en: 'Credit' },
   };
   let appliedPayments = [];
   const rawPayments = Array.isArray(notesObj.payments) ? notesObj.payments : (Array.isArray(invoice.payments) ? invoice.payments : []);
@@ -127,7 +95,7 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
   }
   appliedPayments = Object.entries(mergedPayments).map(([method, amount]) => ({ method, amount: +amount.toFixed(2) }));
 
-  // تاريخ ووقت الإيصال
+  // التاريخ والوقت بصيغة مختصرة.
   const dateTime = invoice.date
     ? (() => {
         try {
@@ -144,8 +112,9 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
         return formatDate(invoice.date, lang);
       })()
     : formatDate(new Date().toISOString(), lang);
+  const dateOnly = dateTime.split(' ')[0] || '';
+  const timeOnly = dateTime.split(' ')[1] || '';
 
-  // QR رمز ZATCA — إعادة استخدام الدوال الموجودة دون أي تعديل.
   const qrPayload = settings.showQr !== false && settings.vatNumber
     ? buildZatcaQrPayload({
         sellerName: settings.companyName,
@@ -156,16 +125,47 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
       })
     : null;
 
-  // عرض المبلغ برمز الريال
+  // عرض المبلغ برمز الريال — خط monospace للأرقام ليصطفّ عمودياً.
   const Money = ({ value }) => (
-    <span dir="ltr" style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+    <span dir="ltr" style={{ whiteSpace: 'nowrap', fontFamily: "'Tahoma', monospace", fontVariantNumeric: 'tabular-nums' }}>
       {formatNumber(value)}
-      <span style={{ fontFamily: "'saudi_riyal'", fontSize: '1em', margin: '0 1px' }}>{RIYAL_SYMBOL}</span>
+      <span style={{ fontFamily: "'saudi_riyal'", margin: '0 1px' }}>{RIYAL_SYMBOL}</span>
     </span>
   );
 
-  const divider = '─'.repeat(34);
-  const lightDivider = '·'.repeat(40);
+  // صف تفاصيل: تسمية + قيمة بـ gap صغير ثابت (لا space-between).
+  // التسمية تأخذ عرضاً ثابتاً، والقيمة تليها مباشرة.
+  const Row = ({ label, labelEn, children, strong }) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', padding: '0' }}>
+      <span style={{ flexShrink: 0, fontWeight: strong ? fontW : 'inherit', color: '#000' }}>
+        {rtl ? label : (labelEn || label)}
+        {!rtl && labelEn ? '' : ''}
+      </span>
+      <span style={{ flex: 1, borderBottom: '1px dotted #ccc', marginBottom: '2px', minWidth: '8px' }} />
+      <span dir="ltr" style={{ textAlign: 'end', fontWeight: strong ? fontW : 'inherit', flexShrink: 0 }}>
+        {children}
+      </span>
+    </div>
+  );
+
+  // صف ثنائي اللغة مختصر: العربية فقط (الإنجليزية اختيارية أصغر تحتها).
+  const BiRow = ({ arLabel, enLabel, value, valueEn }) => (
+    <div style={{ padding: '0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+        <span style={{ flexShrink: 0 }}>
+          {rtl ? arLabel : (enLabel || arLabel)}
+        </span>
+        <span style={{ flex: 1, borderBottom: '1px dotted #ccc', marginBottom: '2px', minWidth: '8px' }} />
+        <span dir="ltr" style={{ textAlign: 'end', flexShrink: 0 }}>
+          {value}
+        </span>
+      </div>
+    </div>
+  );
+
+  // فاصل نصي بسيط — أحرف متّصلة تناسب عرض الإيصال.
+  const dividerChars = Math.floor(recW / 7);
+  const divider = '─'.repeat(dividerChars);
 
   return (
     <div
@@ -174,414 +174,214 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
       style={{
         background: '#fff',
         color: '#000',
-        fontFamily: "'Cairo', 'Tahoma', sans-serif",
-        // ─── إعدادات يتحكم بها المستخدم من شاشة الإعدادات ───
-        // خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة.
+        fontFamily: "'Tahoma', 'Cairo', sans-serif",
         fontWeight: fontW,
         fontSize: fontS,
         lineHeight: lineH,
-        width: '100%',
+        width: `${recW}px`,
         maxWidth: `${recW}px`,
         margin: '0 auto',
-        padding: '4px 2px',
+        padding: '2px',
         direction: dir,
-        textAlign: align,
-        // نمرّر الإعدادات كـ CSS variables ليستخدمها الأبناء (BiLabel وغيرها).
-        '--receipt-font-weight': fontW,
-        '--receipt-font-size': `${fontS}px`,
-        '--receipt-secondary-weight': secondaryFontW,
-        '--receipt-secondary-color': secondaryColor,
       }}
       data-thermal-settings={JSON.stringify({ fontW, fontS, recW, lineH, inkSaving })}
     >
-      {/* ═══════════════════════════════════════════════════════════════
-          ترويسة الإيصال الحراري — نمط احترافي متّبع في أنظمة نقاط البيع
-          (Oracle Simphony / Toast / Square / Lightspeed):
-
-            [LOGO]              ← منفرد في الأعلى، وسط/يمين/يسار حسب الإعداد
-            اسم الشركة (عربي)   ← وسط
-            اسم الشركة (إنجليزي) ← وسط
-            السجل التجاري        ← وسط
-            الرقم الضريبي        ← وسط
-            ──────────────
-            اسم الفرع            ← وسط
-            العنوان              ← وسط
-            هاتف / هاتف2         ← وسط
-          ═══════════════════════════════════════════════════════════════ */}
-
-      {/* ─── (1) الشعار: مستقل عن شعار الفاتورة A4 ─── */}
+      {/* ═══ الترويسة — كلها بالوسط، خط أكبر قليلاً ═══ */}
       {(() => {
-        // مصدر الشعار: BRANCH=شعار الفرع العام، CUSTOM=شعار مخصص للإيصال
         const enabled = settings.thermalLogoEnabled !== false;
         if (!enabled) return null;
         const source = settings.thermalLogoSource || 'BRANCH';
-        const logoUrl = source === 'CUSTOM'
-          ? (settings.thermalLogoUrl || '')
-          : (settings.logoUrl || ''); // شعار الفرع العام
+        const logoUrl = source === 'CUSTOM' ? (settings.thermalLogoUrl || '') : (settings.logoUrl || '');
         if (!logoUrl) return null;
-
-        // الأبعاد: تحكم كامل حسب نوع الطابعة (58mm/80mm)
-        const width = Math.min(Number(settings.thermalLogoWidth) || 180, 220);  // حد أقصى 220
-        const height = Math.min(Number(settings.thermalLogoHeight) || 90, 120); // حد أقصى 120
-        const marginBottom = Number(settings.thermalLogoMarginBottom) || 10;
-        const align = (settings.thermalLogoAlign || 'CENTER').toLowerCase();
-        const fit = (settings.thermalLogoFit || 'CONTAIN').toLowerCase();
-
-        // objectFit: ORIGINAL → لا نحدّد width/height قسراً
-        const imgStyle = fit === 'original'
-          ? { maxWidth: `${width}px`, maxHeight: `${height}px` }
-          : { width: `${width}px`, height: `${height}px`, objectFit: fit };
-
+        const lw = Math.min(Number(settings.thermalLogoWidth) || 140, recW - 10);
+        const lh = Math.min(Number(settings.thermalLogoHeight) || 70, 100);
         return (
-          <div style={{ textAlign: align, marginBottom, marginTop: 2 }}>
-            <img
-              src={logoUrl}
-              alt="logo"
-              style={{ ...imgStyle, display: align === 'center' ? 'inline-block' : 'block', margin: align === 'center' ? '0 auto' : (align === 'right' ? '0 0 0 auto' : '0 auto 0 0') }}
-            />
+          <div style={{ textAlign: 'center', marginBottom: '2px' }}>
+            <img src={logoUrl} alt="logo" style={{ maxWidth: `${lw}px`, maxHeight: `${lh}px`, display: 'inline-block' }} />
           </div>
         );
       })()}
 
-      {/* ─── (2) اسم الشركة (عربي) ─── */}
-      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, color: accent, marginTop: 2 }}>
-        {settings.companyName || 'مطعمنا'}
+      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: fontS + 2, marginBottom: '1px' }}>
+        {settings.companyName || ''}
       </div>
-
-      {/* ─── (3) اسم الشركة (إنجليزي) — يظهر دائماً إن توفّر ─── */}
       {settings.companyNameEn ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#555', marginBottom: 2 }}>{settings.companyNameEn}</div>
+        <div dir="ltr" style={{ textAlign: 'center', fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW, marginBottom: '1px' }}>
+          {settings.companyNameEn}
+        </div>
       ) : null}
-
-      {/* ─── (4) السجل التجاري ─── */}
       {settings.crNumber ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
-          {'السجل التجاري / CR'}: <span dir="ltr">{settings.crNumber}</span>
+        <div style={{ textAlign: 'center', fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW }}>
+          {rtl ? 'س.تجاري' : 'CR'}: <span dir="ltr">{settings.crNumber}</span>
         </div>
       ) : null}
-
-      {/* ─── (5) الرقم الضريبي ─── */}
       {settings.vatNumber ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
-          {'الرقم الضريبي / VAT'}: <span dir="ltr">{settings.vatNumber}</span>
+        <div style={{ textAlign: 'center', fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW, marginBottom: '1px' }}>
+          {rtl ? 'رقم ضريبي' : 'VAT'}: <span dir="ltr">{settings.vatNumber}</span>
         </div>
       ) : null}
 
-      {/* ─── فاصل بين بيانات الشركة وبيانات الفرع ─── */}
-      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0 2px' }}>{divider}</div>
+      <div style={{ textAlign: 'center', color: '#000', fontSize: fontS - 2, margin: '2px 0' }}>{divider}</div>
 
-      {/* ─── (6) اسم الفرع ─── */}
+      {/* ═══ بيانات الفرع — بالوسط ═══ */}
       {settings.branchName ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: primary, fontWeight: 700, marginTop: 2 }}>
-          {settings.branchName}{settings.branchNameEn ? ` — ${settings.branchNameEn}` : ''}
+        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: fontS, marginBottom: '1px' }}>
+          {settings.branchName}{settings.branchNameEn ? ` · ${settings.branchNameEn}` : ''}
         </div>
       ) : null}
-
-      {/* ─── (7) عنوان الفرع (المدينة + العنوان التفصيلي) ─── */}
-      {settings.city || settings.address ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555', maxWidth: '95%', margin: '1px auto' }}>
-          {[
-            settings.city,
-            settings.address && settings.address !== settings.city ? settings.address : '',
-          ].filter(Boolean).join(' - ')}
+      {(settings.city || settings.address) ? (
+        <div style={{ textAlign: 'center', fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW }}>
+          {[settings.city, settings.address && settings.address !== settings.city ? settings.address : ''].filter(Boolean).join(' - ')}
         </div>
       ) : null}
-
-      {/* ─── (8) هاتف الفرع (هاتف + هاتف2) ─── */}
       {settings.phone ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#555' }}>
-          {'هاتف / Tel'}: <span dir="ltr">{settings.phone}</span>
-          {settings.phone2 ? ` · ${settings.phone2}` : ''}
+        <div style={{ textAlign: 'center', fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW, marginBottom: '1px' }}>
+          <span dir="ltr">{settings.phone}{settings.phone2 ? ` · ${settings.phone2}` : ''}</span>
         </div>
       ) : null}
 
-      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0' }}>{divider}</div>
+      <div style={{ textAlign: 'center', color: '#000', fontSize: fontS - 2, margin: '2px 0' }}>{divider}</div>
 
-      {/* ─── بيانات الإيصال ─── */}
-      <div style={{ fontSize: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <BiLabel ar="إيصال رقم" en="Receipt No." bold />
-          <span dir="ltr" style={{ fontWeight: 700 }}>{invoice.invoiceNo || '—'}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <BiLabel ar="التاريخ" en="Date" />
-          <span dir="ltr">{dateTime.split(' ')[0]}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <BiLabel ar="الوقت" en="Time" />
-          <span dir="ltr">{dateTime.split(' ')[1] || ''}</span>
-        </div>
-        {/* نوع الطلب — يصف العملية (صالة/استلام/توصيل) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <BiLabel ar="نوع الطلب" en="Order Type" />
+      {/* ═══ تفاصيل الإيصال — صفوف مُحكمة بفاصل منقّط ═══ */}
+      <div style={{ fontSize: fontS - 1 }}>
+        <Row label={rtl ? 'الإيصال' : 'Receipt'}>{invoice.invoiceNo || '—'}</Row>
+        <Row label={rtl ? 'التاريخ' : 'Date'}>{dateOnly}</Row>
+        <Row label={rtl ? 'الوقت' : 'Time'}>{timeOnly}</Row>
+        <Row label={rtl ? 'النوع' : 'Type'}>
           {(() => {
             const ot = saleType === 'PLATFORM' || saleType === 'DIRECT_DELIVERY'
-              ? { ar: 'توصيل', en: 'Delivery' }
+              ? (rtl ? 'توصيل' : 'Delivery')
               : saleType === 'TAKEAWAY'
-                ? { ar: 'استلام', en: 'Takeaway' }
-                : { ar: 'صالة', en: 'Dine-in' };
-            return <BiLabel ar={ot.ar} en={ot.en} align="end" bold />;
+                ? (rtl ? 'استلام' : 'Takeaway')
+                : (rtl ? 'صالة' : 'Dine-in');
+            return ot;
           })()}
-        </div>
-        {/* منصة التوصيل — قناة البيع (منفصلة عن العميل) */}
-        {platformName && (saleType === 'PLATFORM' || saleType === 'DIRECT_DELIVERY') ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <BiLabel ar="منصة التوصيل" en="Delivery Platform" />
-            <span style={{ fontWeight: 600, textAlign: 'left' }}>{platformName}</span>
-          </div>
-        ) : null}
-        {/* الزبون — العميل النهائي (ليس المنصة) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <BiLabel ar="الزبون" en="Customer" />
-          <span style={{ fontWeight: 600, textAlign: 'left' }}>
-            {(() => {
-              const isAr = lang === 'ar';
-              const primaryName = isAr ? customerName : (customerNameEn || customerName);
-              const secondaryName = isAr ? customerNameEn : (customerNameEn ? customerName : '');
-              return (
-                <>
-                  <span dir={isAr ? 'rtl' : 'ltr'}>{primaryName}</span>
-                  {secondaryName ? <span dir={isAr ? 'ltr' : 'rtl'} style={{ display: 'block', fontSize: 8, color: '#777', fontWeight: 400 }}>{secondaryName}</span> : null}
-                </>
-              );
-            })()}
-          </span>
-        </div>
-        {customerVat ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <BiLabel ar="الرقم الضريبي للزبون" en="Customer VAT" />
-            <span dir="ltr">{customerVat}</span>
-          </div>
-        ) : null}
-        {invoice.cashier ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <BiLabel ar="الكاشير" en="Cashier" />
-            <span style={{ textAlign: 'left' }}>{invoice.cashier}</span>
-          </div>
-        ) : null}
-        {/* رقم الطاولة — فقط للصالة، مخفي للمنصات */}
-        {saleType !== 'PLATFORM' && saleType !== 'DIRECT_DELIVERY' && invoice.tableNo ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <BiLabel ar="الطاولة" en="Table" />
-            <span dir="ltr">{invoice.tableNo}</span>
-          </div>
-        ) : null}
+        </Row>
+        <Row label={rtl ? 'الزبون' : 'Customer'}>{customerName}</Row>
+        {invoice.cashier ? <Row label={rtl ? 'الكاشير' : 'Cashier'}>{invoice.cashier}</Row> : null}
+        {saleType !== 'PLATFORM' && saleType !== 'DIRECT_DELIVERY' && invoice.tableNo
+          ? <Row label={rtl ? 'الطاولة' : 'Table'}>{invoice.tableNo}</Row> : null}
+        {platformName && (saleType === 'PLATFORM' || saleType === 'DIRECT_DELIVERY')
+          ? <Row label={rtl ? 'المنصة' : 'Platform'}>{platformName}</Row> : null}
       </div>
 
-      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0' }}>{divider}</div>
+      <div style={{ textAlign: 'center', color: '#000', fontSize: fontS - 2, margin: '2px 0' }}>{divider}</div>
 
-      {/* ─── عناوين الأعمدة — اللغة النشطة بالأعلى والثانوية أصغر بالأسفل ─── */}
-      {(() => {
-        const H = ({ ar, en }) => (
-          <>
-            {rtl ? ar : en}
-            <br/><span dir={rtl ? 'ltr' : 'rtl'} style={{ color: '#777', fontSize: 7 }}>{rtl ? en : ar}</span>
-          </>
-        );
-        return (
-          <div style={{ display: 'flex', fontWeight: 700, fontSize: 9, borderBottom: '1px dashed #ccc', paddingBottom: 2, lineHeight: 1.1 }}>
-            <span style={{ flex: '0 0 24px', textAlign: 'center' }}>#</span>
-            <span style={{ flex: 1, textAlign: align }}><H ar="الصنف" en="Item" /></span>
-            <span style={{ flex: '0 0 30px', textAlign: 'center' }}><H ar="كمية" en="Qty" /></span>
-            <span style={{ flex: '0 0 68px', textAlign: 'end' }}><H ar="السعر" en="Price" /></span>
-            <span style={{ flex: '0 0 72px', textAlign: 'end' }}><H ar="الإجمالي" en="Total" /></span>
-          </div>
-        );
-      })()}
-
-      {/* ─── بنود الطلب ─── */}
+      {/* ═══ بنود الطلب — جدول مُحكم بدون فراغات ═══ */}
       <div>
+        <div style={{ display: 'flex', fontWeight: 800, fontSize: fontS - 2, borderBottom: '1px solid #000', paddingBottom: '1px', marginBottom: '1px' }}>
+          <span style={{ width: '18px', textAlign: 'center' }}>#</span>
+          <span style={{ flex: 1, textAlign: rtl ? 'right' : 'left' }}>{rtl ? 'الصنف' : 'Item'}</span>
+          <span style={{ width: '24px', textAlign: 'center' }}>{rtl ? 'كمية' : 'Qty'}</span>
+          <span style={{ width: '52px', textAlign: 'end' }}>{rtl ? 'الإجمالي' : 'Total'}</span>
+        </div>
         {items.map((it, i) => (
-          <div key={i} style={{ display: 'flex', fontSize: 10, padding: '2px 0', borderBottom: '1px dotted #eee', alignItems: 'flex-start' }}>
-            <span style={{ flex: '0 0 24px', textAlign: 'center', color: '#666' }}>{i + 1}</span>
-            <span style={{ flex: 1, textAlign: align, wordBreak: 'break-word' }}>
-              {/* الاسم الأساسي = اللغة النشطة (أوضح بالأعلى)، والثانوي أصغر بالأسفل */}
-              {(() => {
-                const isAr = lang === 'ar';
-                const primaryName = isAr ? it.description : (it.descriptionEn || it.description);
-                const secondaryName = isAr ? it.descriptionEn : (it.descriptionEn ? it.description : '');
-                return (
-                  <>
-                    <span dir={isAr ? 'rtl' : 'ltr'}>{primaryName}</span>
-                    {secondaryName ? <span dir={isAr ? 'ltr' : 'rtl'} style={{ display: 'block', fontSize: 8, color: '#888' }}>{secondaryName}</span> : null}
-                  </>
-                );
-              })()}
+          <div key={i} style={{ display: 'flex', fontSize: fontS - 1, padding: '1px 0', alignItems: 'flex-start' }}>
+            <span style={{ width: '18px', textAlign: 'center', color: secondaryColor }}>{i + 1}</span>
+            <span style={{ flex: 1, textAlign: rtl ? 'right' : 'left', wordBreak: 'break-word', paddingInlineEnd: '4px' }}>
+              {rtl ? (it.description || it.name) : (it.descriptionEn || it.description || it.name)}
+              {it.qty > 1 ? (
+                <span dir="ltr" style={{ fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW }}>
+                  {' '}×{it.qty}{' '}@<Money value={it.unitPrice} />
+                </span>
+              ) : null}
             </span>
-            <span style={{ flex: '0 0 30px', textAlign: 'center' }}>{it.qty ?? 1}</span>
-            <span style={{ flex: '0 0 68px', textAlign: 'end' }} dir="ltr"><Money value={it.unitPrice} /></span>
-            <span style={{ flex: '0 0 72px', textAlign: 'end', fontWeight: 600 }} dir="ltr"><Money value={it.total} /></span>
+            <span style={{ width: '52px', textAlign: 'end' }} dir="ltr">
+              <Money value={it.total} />
+            </span>
           </div>
         ))}
       </div>
 
-      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '4px 0' }}>{divider}</div>
+      <div style={{ textAlign: 'center', color: '#000', fontSize: fontS - 2, margin: '2px 0' }}>{divider}</div>
 
-      {/* ─── ملخّص الإجماليات ─── */}
-      <div style={{ fontSize: 11 }}>
-        {/* (1) المجموع الفرعي (قبل الخصومات) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
-          <BiLabel ar="المجموع الفرعي" en="Subtotal" />
-          <span dir="ltr"><Money value={subtotal} /></span>
-        </div>
-        {/* (أُزيل خصم الأصناف — القاعدة 4: الخصم على الفاتورة لا على الأصناف) */}
-        {/* (2) خصم العميل — تلقائي من بطاقة العميل */}
+      {/* ═══ الإجماليات — صفوف مُحكمة ═══ */}
+      <div style={{ fontSize: fontS - 1 }}>
+        <Row label={rtl ? 'المجموع' : 'Subtotal'}><Money value={subtotal} /></Row>
         {customerDiscountAmount > 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', color: '#dc2626' }}>
-            <BiLabel ar={`خصم العميل (${Math.round(discountPercentage)}%)`} en={`Customer Discount (${Math.round(discountPercentage)}%)`} />
-            <span dir="ltr">-<Money value={customerDiscountAmount} /></span>
-          </div>
+          <Row label={rtl ? `خصم (${Math.round(discountPercentage)}%)` : `Disc (${Math.round(discountPercentage)}%)`}>
+            <span style={{ color: '#000' }}>-<Money value={customerDiscountAmount} /></span>
+          </Row>
         ) : null}
-        {/* (3) خصم المنصة — للفواتير المنصة فقط (القواعد 3 + 6) */}
         {manualDiscountAmount > 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', color: '#dc2626' }}>
-            <BiLabel ar="خصم المنصة" en="Platform Discount" />
-            <span dir="ltr">-<Money value={manualDiscountAmount} /></span>
-          </div>
+          <Row label={rtl ? 'خصم إضافي' : 'Extra Disc'}>
+            <span style={{ color: '#000' }}>-<Money value={manualDiscountAmount} /></span>
+          </Row>
         ) : null}
-        {/* صافي قبل الضريبة (القاعدة الخاضعة للضريبة) */}
         {(customerDiscountAmount > 0 || manualDiscountAmount > 0) ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontWeight: 600, borderTop: '1px dotted #ddd', paddingTop: 2 }}>
-            <BiLabel ar="صافي قبل الضريبة" en="Net before VAT" bold />
-            <span dir="ltr"><Money value={netBeforeVat} /></span>
-          </div>
+          <Row label={rtl ? 'صافي' : 'Net'}><Money value={netBeforeVat} /></Row>
         ) : null}
         {deliveryFee > 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
-            <BiLabel ar="رسوم التوصيل" en="Delivery Fee" />
-            <span dir="ltr"><Money value={deliveryFee} /></span>
+          <Row label={rtl ? 'توصيل' : 'Delivery'}><Money value={deliveryFee} /></Row>
+        ) : null}
+        <Row label={`${rtl ? 'ضريبة' : 'VAT'} ${invoice.vatRate ? Math.round(invoice.vatRate * 100) : 15}%`}>
+          <Money value={vat} />
+        </Row>
+        <div style={{ display: 'flex', fontWeight: 800, fontSize: fontS + 1, borderTop: '1px solid #000', marginTop: '1px', paddingTop: '1px' }}>
+          <span style={{ flex: 1 }}>{rtl ? 'الإجمالي' : 'TOTAL'}</span>
+          <span dir="ltr" style={{ textAlign: 'end' }}><Money value={total} /></span>
+        </div>
+      </div>
+
+      {/* ═══ طرق السداد — مُحكمة ═══ */}
+      <div style={{ marginTop: '2px', fontSize: fontS - 1 }}>
+        {appliedPayments.length > 0 ? (
+          <>
+            {appliedPayments.map((p, i) => {
+              const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
+              return (
+                <Row key={i} label={rtl ? label.ar : label.en}><Money value={p.amount} /></Row>
+              );
+            })}
+            <Row label={rtl ? 'المدفوع' : 'Paid'} strong><Money value={cashReceived > 0 ? cashReceived : paid} /></Row>
+            {change > 0 ? (
+              <Row label={rtl ? 'الباقي' : 'Change'} strong><Money value={change} /></Row>
+            ) : null}
+          </>
+        ) : saleType === 'PLATFORM' ? (
+          <>
+            <Row label={rtl ? 'السداد' : 'Payment'}>{rtl ? 'آجل - منصة' : 'Credit - Platform'}</Row>
+            {balance > 0 ? (
+              <Row label={rtl ? 'مستحق' : 'Due'} strong><Money value={balance} /></Row>
+            ) : null}
+          </>
+        ) : balance > 0 ? (
+          <>
+            <Row label={rtl ? 'السداد' : 'Payment'}>{rtl ? 'آجل' : 'Credit'}</Row>
+            <Row label={rtl ? 'مستحق' : 'Due'} strong><Money value={balance} /></Row>
+          </>
+        ) : null}
+      </div>
+
+      {/* ═══ QR رمز ZATCA ═══ */}
+      {qrPayload ? (
+        <div style={{ textAlign: 'center', marginTop: '3px' }}>
+          <img src={zatcaQrImageUrl(qrPayload, 80)} alt="QR" style={{ width: 80, height: 80, display: 'inline-block' }} />
+        </div>
+      ) : null}
+
+      {/* ═══ التذييل — بالوسط ═══ */}
+      <div style={{ textAlign: 'center', marginTop: '2px' }}>
+        <div style={{ fontWeight: 700, fontSize: fontS - 1 }}>
+          {(settings.receiptFooterMessage)
+            ? settings.receiptFooterMessage.split('\n')[0]
+            : (rtl ? 'شكراً لزيارتكم' : 'Thank you for visiting')}
+        </div>
+        {!settings.receiptFooterMessage ? (
+          <div dir="ltr" style={{ fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW }}>
+            Thank you for visiting
           </div>
         ) : null}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0' }}>
-          <BiLabel ar={`ضريبة القيمة المضافة (${invoice.vatRate ? Math.round(invoice.vatRate * 100) : 15}%)`} en={`VAT (${invoice.vatRate ? Math.round(invoice.vatRate * 100) : 15}%)`} />
-          <span dir="ltr"><Money value={vat} /></span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', fontWeight: 800, fontSize: 13, borderTop: '1px dashed #999', marginTop: 2, color: primary }}>
-          <BiLabel ar="الإجمالي" en="Total" bold size={13} />
-          <span dir="ltr"><Money value={total} /></span>
-        </div>
-
-        {/* ─── طرق السداد / حالة السداد ─── */}
-        <div style={{ borderTop: '1px dotted #ccc', marginTop: 4, paddingTop: 4 }}>
-          {saleType === 'PLATFORM' ? (
-            /* بيع منصة: آجل على المنصة — لا نطبع العمولة للعميل */
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '1px 0', fontSize: 10, color: '#666' }}>
-                <BiLabel ar="طريقة السداد" en="Payment Method" size={9} />
-                <span style={{ textAlign: 'left' }}>
-                  <BiLabel ar="آجل" en="Credit" align="end" bold />
-                  {platformName ? <span style={{ display: 'block', fontSize: 8, color: '#777' }}>{platformName}</span> : null}
-                </span>
-              </div>
-              {balance > 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
-                  <BiLabel ar="المبلغ المستحق" en="Amount Due" bold />
-                  <span dir="ltr"><Money value={balance} /></span>
-                </div>
-              ) : null}
-            </>
-          ) : cashReceived > 0 ? (
-            /* بيع نقدي: المستلم + الباقي */
-            <>
-              <div style={{ fontSize: 9, color: '#666', marginBottom: 2, fontWeight: 700 }}>
-                طريقة السداد <span dir="ltr" style={{ color: '#999' }}>/ Payment Method</span>
-              </div>
-              {appliedPayments.map((p, i) => {
-                const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
-                return (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontSize: 10 }}>
-                    <BiLabel ar={label.ar} en={label.en} size={9} />
-                    <span dir="ltr"><Money value={p.amount} /></span>
-                  </div>
-                );
-              })}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontSize: 10, color: '#666' }}>
-                <BiLabel ar="المدفوع" en="Paid" size={9} />
-                <span dir="ltr"><Money value={cashReceived} /></span>
-              </div>
-              {change > 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontWeight: 700, color: '#1d4ed8' }}>
-                  <BiLabel ar="الباقي" en="Change" bold />
-                  <span dir="ltr"><Money value={change} /></span>
-                </div>
-              ) : null}
-            </>
-          ) : paid > 0 ? (
-            /* مدفوع جزئياً أو كلياً بدون cashReceived */
-            <>
-              <div style={{ fontSize: 9, color: '#666', marginBottom: 2, fontWeight: 700 }}>
-                طريقة السداد <span dir="ltr" style={{ color: '#999' }}>/ Payment Method</span>
-              </div>
-              {appliedPayments.map((p, i) => {
-                const label = PAYMENT_LABELS[p.method] || { ar: p.method, en: p.method };
-                return (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontSize: 10 }}>
-                    <BiLabel ar={label.ar} en={label.en} size={9} />
-                    <span dir="ltr"><Money value={p.amount} /></span>
-                  </div>
-                );
-              })}
-              {balance > 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
-                  <BiLabel ar="المبلغ المستحق" en="Amount Due" bold />
-                  <span dir="ltr"><Money value={balance} /></span>
-                </div>
-              ) : null}
-            </>
-          ) : balance > 0 ? (
-            /* آجل بدون منصة */
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '1px 0', fontSize: 10, color: '#666' }}>
-                <BiLabel ar="طريقة السداد" en="Payment Method" size={9} />
-                <BiLabel ar="آجل" en="Credit" align="end" bold />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1px 0', fontWeight: 700, color: '#b91c1c' }}>
-                <BiLabel ar="المبلغ المستحق" en="Amount Due" bold />
-                <span dir="ltr"><Money value={balance} /></span>
-              </div>
-            </>
-          ) : null}
-        </div>
+        {(settings.receiptFooterMessage
+          ? settings.receiptFooterMessage.split('\n')[1]
+          : (rtl ? 'نتمنى لكم وجبة شهية' : ''))
+          ? <div style={{ fontSize: fontS - 2, color: secondaryColor, fontWeight: secondaryFontW }}>
+              {(settings.receiptFooterMessage
+                ? settings.receiptFooterMessage.split('\n')[1]
+                : (rtl ? 'نتمنى لكم وجبة شهية' : ''))}
+            </div>
+          : null}
       </div>
-
-      {/* ─── QR رمز ZATCA ─── */}
-      {qrPayload ? (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 6 }}>
-          <img src={zatcaQrImageUrl(qrPayload, 100)} alt="ZATCA QR" style={{ width: 100, height: 100, display: 'block' }} />
-        </div>
-      ) : null}
-
-      <div style={{ textAlign: 'center', color: '#999', fontSize: 9, margin: '6px 0 2px' }}>{lightDivider}</div>
-
-      {/* ─── التذييل ─── */}
-      <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: accent }}>
-        {(settings.receiptFooterMessage)
-          ? settings.receiptFooterMessage.split('\n')[0]
-          : 'شكراً لزيارتكم'}
-      </div>
-      {!settings.receiptFooterMessage ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>Thank you for visiting</div>
-      ) : null}
-      {(settings.receiptFooterMessage
-        ? settings.receiptFooterMessage.split('\n')[1]
-        : 'نتمنى لكم وجبة شهية')
-        ? <div style={{ textAlign: 'center', fontSize: 9, color: '#666' }}>
-            {(settings.receiptFooterMessage
-              ? settings.receiptFooterMessage.split('\n')[1]
-              : 'نتمنى لكم وجبة شهية / We hope you enjoyed your meal')}
-          </div>
-        : null}
-      {settings.phone ? (
-        <div style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>
-          {'للاستفسارات / Inquiries'}: <span dir="ltr">{settings.phone}</span>
-        </div>
-      ) : null}
-      {settings.email ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888' }}>{settings.email}</div>
-      ) : null}
-      {settings.website ? (
-        <div dir="ltr" style={{ textAlign: 'center', fontSize: 9, color: '#888', marginTop: 2 }}>{settings.website}</div>
-      ) : null}
     </div>
   );
 }

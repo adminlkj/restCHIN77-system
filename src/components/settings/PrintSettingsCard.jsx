@@ -227,7 +227,7 @@ export default function PrintSettingsCard() {
                   type="button"
                   onClick={() => {
                     set('thermalPaperSize', ps.key);
-                    set('thermalReceiptWidth', ps.key === '58mm' ? 200 : 272);
+                    set('thermalReceiptWidth', ps.key === '58mm' ? 180 : 240);
                   }}
                   className={`flex-1 rounded-lg border-2 px-3 py-2 text-xs transition-colors ${(form.thermalPaperSize || '80mm') === ps.key ? 'border-amber-500 bg-amber-100 text-amber-800 font-semibold' : 'border-border hover:bg-accent'}`}
                 >
@@ -260,12 +260,12 @@ export default function PrintSettingsCard() {
             {/* حجم الخط — أزرار خيارات سريعة +عرض القيمة */}
             <Field label={t('حجم الخط', 'Font Size', lang)}>
               <div className="flex items-center gap-1">
-                {[10, 11, 12, 13, 14, 15].map(sz => (
+                {[9, 10, 11, 12, 13, 14].map(sz => (
                   <button
                     key={sz}
                     type="button"
                     onClick={() => set('thermalFontSize', sz)}
-                    className={`h-9 flex-1 rounded-md border text-xs font-mono transition-colors ${(form.thermalFontSize ?? 12) === sz ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
+                    className={`h-9 flex-1 rounded-md border text-xs font-mono transition-colors ${(form.thermalFontSize ?? 10) === sz ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
                   >
                     {sz}
                   </button>
@@ -279,28 +279,28 @@ export default function PrintSettingsCard() {
             <Field label={t('عرض الإيصال', 'Receipt Width', lang)}>
               <div className="flex items-center gap-1">
                 {[
-                  { w: 200, label: '58mm' },
-                  { w: 240, label: '240' },
-                  { w: 272, label: '80mm' },
-                  { w: 300, label: '300' },
+                  { w: 180, label: '58mm' },
+                  { w: 220, label: '220' },
+                  { w: 240, label: '80mm' },
+                  { w: 280, label: '280' },
                 ].map(opt => (
                   <button
                     key={opt.w}
                     type="button"
                     onClick={() => set('thermalReceiptWidth', opt.w)}
-                    className={`h-9 flex-1 rounded-md border text-xs transition-colors ${(form.thermalReceiptWidth ?? 272) === opt.w ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
+                    className={`h-9 flex-1 rounded-md border text-xs transition-colors ${(form.thermalReceiptWidth ?? 240) === opt.w ? 'border-amber-500 bg-amber-100 text-amber-800 font-bold' : 'border-border hover:bg-accent'}`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground">{t('القيمة الحالية: ', 'Current: ', lang)}{form.thermalReceiptWidth ?? 272}px</p>
+              <p className="text-[10px] text-muted-foreground">{t('القيمة الحالية: ', 'Current: ', lang)}{form.thermalReceiptWidth ?? 240}px</p>
             </Field>
 
             {/* تباعد الأسطر — shadcn Select */}
             <Field label={t('تباعد الأسطر', 'Line Height', lang)}>
               <Select
-                value={String(form.thermalLineHeight ?? 1.5)}
+                value={String(form.thermalLineHeight ?? 1.35)}
                 onValueChange={(v) => set('thermalLineHeight', Number(v))}
               >
                 <SelectTrigger className="w-full">
@@ -308,8 +308,8 @@ export default function PrintSettingsCard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1.2">{t('مضغوط (1.2)', 'Compact (1.2)', lang)}</SelectItem>
-                  <SelectItem value="1.35">{t('مدمج (1.35)', 'Tight (1.35)', lang)}</SelectItem>
-                  <SelectItem value="1.5">{t('عادي (1.5) — موصى به', 'Normal (1.5) — recommended', lang)}</SelectItem>
+                  <SelectItem value="1.35">{t('مدمج (1.35) — موصى به', 'Tight (1.35) — recommended', lang)}</SelectItem>
+                  <SelectItem value="1.5">{t('عادي (1.5)', 'Normal (1.5)', lang)}</SelectItem>
                   <SelectItem value="1.7">{t('مريح (1.7)', 'Relaxed (1.7)', lang)}</SelectItem>
                   <SelectItem value="2">{t('واسع (2.0)', 'Wide (2.0)', lang)}</SelectItem>
                 </SelectContent>

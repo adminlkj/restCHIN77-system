@@ -79,10 +79,10 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
     const rtl = lang === 'ar';
     // ─── إعدادات الطباعة من الإعدادات (يتحكم بها المستخدم) ───
     const paperSize = settings.thermalPaperSize || '80mm';
-    const recWidth = Number(settings.thermalReceiptWidth) || 272;
+    const recWidth = Number(settings.thermalReceiptWidth) || 240;
     const fontW = Number(settings.thermalFontWeight) || 700;
-    const fontS = Number(settings.thermalFontSize) || 12;
-    const lineH = Number(settings.thermalLineHeight) || 1.5;
+    const fontS = Number(settings.thermalFontSize) || 10;
+    const lineH = Number(settings.thermalLineHeight) || 1.35;
     const inkSaving = settings.thermalInkSaving === true;
     // عرض الورق الحقيقي + المنطقة القابلة للطباعة (ناقص الهوامش 4mm كل طرف).
     const paperMm = paperSize === '58mm' ? 58 : 80;
@@ -100,15 +100,14 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
           <meta charset="utf-8" />
           <title>${invoice.invoiceNo || 'Receipt'}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap');
             @font-face { font-family:'saudi_riyal'; src:url('https://cdn.jsdelivr.net/gh/emran-alhaddad/Saudi-Riyal-Font@1.1.1/fonts/regular/saudi_riyal.woff2') format('woff2'); unicode-range:U+20C1; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             html, body { margin: 0; padding: 0; background: #fff; }
             body {
-              font-family: 'saudi_riyal', 'Cairo', 'Tahoma', sans-serif;
+              font-family: 'saudi_riyal', 'Tahoma', 'Cairo', sans-serif;
               color: #000;
               direction: ${rtl ? 'rtl' : 'ltr'};
-              /* خط غامق افتراضياً ليظهر بوضوح على الطابعات الحرارية القديمة. */
               font-weight: ${fontW};
               font-size: ${fontS}px;
               line-height: ${lineH};
@@ -169,7 +168,7 @@ export default function ReceiptPrintDialog({ open, onOpenChange, invoice }) {
         </div>
 
         <div className="overflow-auto max-h-[80vh] bg-slate-100 p-4 flex justify-center">
-          <div className="bg-white shadow-md" style={{ width: `${Number(settings.thermalReceiptWidth) || 272}px`, padding: '8px' }}>
+          <div className="bg-white shadow-md" style={{ width: `${Number(settings.thermalReceiptWidth) || 240}px`, padding: '8px' }}>
             <ReceiptErrorBoundary fallbackText={t('تعذّر عرض الإيصال', 'Could not render receipt', lang)}>
               <ThermalReceiptDocument invoice={invoice} settings={settings} client={client} lang={lang} innerRef={printRef} />
             </ReceiptErrorBoundary>
