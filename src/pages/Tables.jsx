@@ -49,14 +49,13 @@ const FILTERS = [
 
 // خريطة عدد الطاولات في كل صف ↔ كلاسات Tailwind.
 const GRID_BY_PER_ROW = {
-  3: 'grid-cols-2 sm:grid-cols-3',
-  4: 'grid-cols-2 sm:grid-cols-4',
-  5: 'grid-cols-2 sm:grid-cols-5',
-  6: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6',
-  8: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-8',
+  6: 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6',
+  8: 'grid-cols-4 sm:grid-cols-6 lg:grid-cols-8',
+  10: 'grid-cols-5 sm:grid-cols-6 lg:grid-cols-10',
+  12: 'grid-cols-6 sm:grid-cols-8 lg:grid-cols-12',
 };
 
-const PER_ROW_OPTIONS = [3, 4, 5, 6, 8];
+const PER_ROW_OPTIONS = [6, 8, 10, 12];
 
 export default function Tables() {
   const { lang, activeProjectId, activeProjectName, setActiveItem } = useStore();
@@ -502,71 +501,63 @@ export default function Tables() {
             return (
               <Card
                 key={table.id}
-                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
+                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md aspect-square ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
                 onClick={() => canOpenPOS && openPOS(table)}
               >
-                {/* شريط الحالة العلوي الرفيع — لون يميّز الحالة بسرعة */}
-                <div className={`h-1 w-full ${status.barColor || status.color.split(' ')[0]}`} />
-                {/* جسم الطاولة المدمج — مستطيل صغير */}
-                <div className="p-2 space-y-0.5">
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="text-sm font-bold text-foreground truncate flex-1 leading-tight">{table.name}</div>
-                    {/* قائمة الإجراءات — أيقونة صغيرة بدل التذييل الكامل */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="size-6 shrink-0 -me-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="size-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onClick={() => openEdit(table)} className="gap-2 text-xs">
-                          <Pencil className="size-3.5" /> {t('تعديل', 'Edit', lang)}
-                        </DropdownMenuItem>
-                        {(isReserved || isOccupied || isDraft) && (
-                          <DropdownMenuItem onClick={() => handleAction(table, 'free')} className="gap-2 text-xs">
-                            <Play className="size-3.5" /> {t('تحرير الطاولة', 'Free Table', lang)}
-                          </DropdownMenuItem>
-                        )}
-                        {isCleaning && (
-                          <DropdownMenuItem onClick={() => handleAction(table, 'cleaning-done')} className="gap-2 text-xs">
-                            <Sparkles className="size-3.5" /> {t('تنظيف جاهز', 'Cleaning Done', lang)}
-                          </DropdownMenuItem>
-                        )}
-                        {(table.status === 'AVAILABLE' || isOccupied) && (
-                          <DropdownMenuItem onClick={() => handleAction(table, 'reserve')} className="gap-2 text-xs">
-                            <Clock className="size-3.5" /> {t('حجز', 'Reserve', lang)}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={() => handleAction(table, 'delete')}
-                          className="gap-2 text-xs text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="size-3.5" /> {t('حذف', 'Delete', lang)}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                {/* جسم الطاولة البسيط — رقم كبير فقط في وسط مربع ملوّن */}
+                <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-50'}`}>
+                  {/* رقم الطاولة — كبير وواضح */}
+                  <div className="text-2xl font-black text-foreground leading-none">{table.name.replace(/[^\d]/g,'') || table.name}</div>
+                  {/* شارة الحالة الصغيرة في الأسفل */}
+                  <div className={`mt-1 text-[9px] font-bold ${status.textColor || 'text-muted-foreground'}`}>
+                    {lang === 'ar' ? status.ar : status.en}
                   </div>
-                  {/* سطر المعلومات: الحالة + المقاعد + الإجراء */}
-                  <div className="flex items-center justify-between gap-1 text-[10px]">
-                    <span className={`inline-flex items-center gap-0.5 font-semibold truncate ${status.textColor || 'text-muted-foreground'}`}>
-                      {lang === 'ar' ? status.ar : status.en}
-                    </span>
-                    <span className="inline-flex items-center gap-0.5 text-muted-foreground shrink-0">
-                      <Users className="size-2.5" />
-                      {table.seats}
-                    </span>
-                  </div>
-                  {/* شارة المسودة المدمجة */}
+                  {/* شارة المسودة إن وُجدت */}
                   {isDraft && draftItemsCount > 0 && (
-                    <div className="inline-flex items-center gap-0.5 rounded bg-red-50 px-1 py-0.5 text-[9px] font-semibold text-red-700 border border-red-200">
-                      <FileEdit className="size-2" />
-                      {draftItemsCount} {t('صنف', 'items', lang)}
+                    <div className="absolute top-1 end-1 rounded-full bg-red-500 text-white text-[9px] font-bold size-4 flex items-center justify-center">
+                      {draftItemsCount}
                     </div>
                   )}
+                </div>
+                {/* قائمة الإجراءات — تظهر عند المرور بالماوس */}
+                <div className="absolute top-0 start-0 opacity-0 hover:opacity-100 transition-opacity">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost" size="icon"
+                        className="size-5 bg-white/80 backdrop-blur-sm rounded-full"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreVertical className="size-2.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-40">
+                      <DropdownMenuItem onClick={() => openEdit(table)} className="gap-2 text-xs">
+                        <Pencil className="size-3.5" /> {t('تعديل', 'Edit', lang)}
+                      </DropdownMenuItem>
+                      {(isReserved || isOccupied || isDraft) && (
+                        <DropdownMenuItem onClick={() => handleAction(table, 'free')} className="gap-2 text-xs">
+                          <Play className="size-3.5" /> {t('تحرير', 'Free', lang)}
+                        </DropdownMenuItem>
+                      )}
+                      {isCleaning && (
+                        <DropdownMenuItem onClick={() => handleAction(table, 'cleaning-done')} className="gap-2 text-xs">
+                          <Sparkles className="size-3.5" /> {t('تنظيف جاهز', 'Cleaning', lang)}
+                        </DropdownMenuItem>
+                      )}
+                      {(table.status === 'AVAILABLE' || isOccupied) && (
+                        <DropdownMenuItem onClick={() => handleAction(table, 'reserve')} className="gap-2 text-xs">
+                          <Clock className="size-3.5" /> {t('حجز', 'Reserve', lang)}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => handleAction(table, 'delete')}
+                        className="gap-2 text-xs text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" /> {t('حذف', 'Delete', lang)}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </Card>
             );

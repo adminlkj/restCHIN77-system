@@ -112,9 +112,10 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
 
   // عرض المبلغ برمز الريال.
   const Money = ({ value }) => (
-    <span dir="ltr" style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+    <span dir="ltr" style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', display: 'inline-flex', alignItems: 'baseline' }}>
+      {/* رمز العملة على اليسار (قبل الرقم) ليظهر بشكل صحيح في الطباعة. */}
+      <span style={{ fontFamily: "'saudi_riyal'", marginInlineEnd: '1px' }}>{RIYAL_SYMBOL}</span>
       {formatNumber(value)}
-      <span style={{ fontFamily: "'saudi_riyal'", margin: '0 1px' }}>{RIYAL_SYMBOL}</span>
     </span>
   );
 
@@ -273,15 +274,17 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
             <Bi ar="الإجمالي" en="Total" sep="" />
           </span>
         </div>
-        {/* البنود */}
+        {/* البنود — أعمدة متناسقة مع الترويسة */}
         {items.map((it, i) => {
           const nameAr = it.description || it.name || '';
           const nameEn = it.descriptionEn || it.description || it.name || '';
           return (
             <div key={i} style={{ padding: '1px 0', borderBottom: '1px dotted #eee' }}>
-              {/* سطر 1: رقم + اسم الصنف */}
+              {/* صف واحد بكل الأعمدة المتناسقة مع الترويسة */}
               <div style={{ display: 'flex', alignItems: 'flex-start', fontSize: fontS - 1 }}>
+                {/* عمود # */}
                 <span style={{ width: '16px', textAlign: 'center', color: lightColor }}>{i + 1}</span>
+                {/* عمود الصنف */}
                 <span style={{ flex: 1, textAlign: rtl ? 'right' : 'left', paddingInlineEnd: '4px' }}>
                   <span dir={rtl ? 'rtl' : 'ltr'}>{rtl ? nameAr : nameEn}</span>
                   {nameEn && nameEn !== nameAr ? (
@@ -290,14 +293,18 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
                     </span>
                   ) : null}
                 </span>
-                <span style={{ width: '70px', textAlign: 'end' }} dir="ltr">
+                {/* عمود الكمية — يظهر دائماً في مكانه */}
+                <span style={{ width: '22px', textAlign: 'center', fontWeight: 700 }}>{it.qty ?? 1}</span>
+                {/* عمود الإجمالي */}
+                <span style={{ width: '48px', textAlign: 'end' }} dir="ltr">
                   <Money value={it.total} />
                 </span>
               </div>
-              {/* سطر 2 (إن كانت كمية > 1): الكمية × السعر */}
+              {/* سعر الوحدة يظهر تحته فقط إن كانت كمية > 1 (معلومة إضافية) */}
               {it.qty > 1 && (
-                <div style={{ display: 'flex', fontSize: fontS - 2, color: lightColor, fontWeight: 600, paddingInlineStart: '20px' }}>
-                  <span dir="ltr">{it.qty} × <Money value={it.unitPrice} /></span>
+                <div style={{ display: 'flex', fontSize: fontS - 2, color: lightColor, fontWeight: 600 }}>
+                  <span style={{ width: '16px' }}>{''}</span>
+                  <span style={{ flex: 1, paddingInlineEnd: '4px' }} dir="ltr">@ <Money value={it.unitPrice} /></span>
                 </div>
               )}
             </div>

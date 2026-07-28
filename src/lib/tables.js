@@ -16,11 +16,11 @@
 const STORAGE_KEY = 'restaurant-tables';
 
 export const TABLE_STATUS = {
-  AVAILABLE: { ar: 'متاحة', en: 'Available', color: 'bg-emerald-100 text-emerald-700 border-emerald-300', barColor: 'bg-emerald-500', textColor: 'text-emerald-700' },
-  OCCUPIED: { ar: 'مشغولة', en: 'Occupied', color: 'bg-rose-100 text-rose-700 border-rose-300', barColor: 'bg-rose-500', textColor: 'text-rose-700' },
-  RESERVED: { ar: 'محجوزة', en: 'Reserved', color: 'bg-amber-100 text-amber-700 border-amber-300', barColor: 'bg-amber-500', textColor: 'text-amber-700' },
-  CLEANING: { ar: 'تنظيف', en: 'Cleaning', color: 'bg-slate-100 text-slate-700 border-slate-300', barColor: 'bg-slate-400', textColor: 'text-slate-600' },
-  DRAFT: { ar: 'مسودة', en: 'Draft', color: 'bg-red-100 text-red-700 border-red-400', barColor: 'bg-red-500', textColor: 'text-red-700' },
+  AVAILABLE: { ar: 'متاحة', en: 'Available', color: 'bg-emerald-100 text-emerald-700 border-emerald-300', barColor: 'bg-emerald-500', textColor: 'text-emerald-700', bgColor: 'bg-emerald-50' },
+  OCCUPIED: { ar: 'مشغولة', en: 'Occupied', color: 'bg-rose-100 text-rose-700 border-rose-300', barColor: 'bg-rose-500', textColor: 'text-rose-700', bgColor: 'bg-rose-50' },
+  RESERVED: { ar: 'محجوزة', en: 'Reserved', color: 'bg-amber-100 text-amber-700 border-amber-300', barColor: 'bg-amber-500', textColor: 'text-amber-700', bgColor: 'bg-amber-50' },
+  CLEANING: { ar: 'تنظيف', en: 'Cleaning', color: 'bg-slate-100 text-slate-700 border-slate-300', barColor: 'bg-slate-400', textColor: 'text-slate-600', bgColor: 'bg-slate-100' },
+  DRAFT: { ar: 'مسودة', en: 'Draft', color: 'bg-red-100 text-red-700 border-red-400', barColor: 'bg-red-500', textColor: 'text-red-700', bgColor: 'bg-red-50' },
 };
 
 // قراءة كل الطاولات من localStorage.
