@@ -379,8 +379,62 @@ export default function POS() {
     }
   };
 
+  // حذف صنف من السلة — يتطلب كلمة مرور مشرف (ما لم يكن المستخدم مالكاً).
+  // نفتح نافذة التحقق نفسها المستخدمة في إلغاء الفاتورة، لكن نُمرّر معرّف الصنف
+  // ليتم حذفه فقط بعد نجاح التحقق.
+  const [pendingRemoveItem, setPendingRemoveItem] = useState(null);
   const removeItem = (itemId) => {
-    setCart(prev => prev.filter(c => c.itemId !== itemId));
+    // المالك لا يحتاج كلمة مرور.
+    if (isOwner) {
+      setCart(prev => prev.filter(c => c.itemId !== itemId));
+      return;
+    }
+    // غير المالك: افتح نافذة كلمة مرور المشرف.
+    setPendingRemoveItem(itemId);
+    setCancelPassword('');
+    setCancelAttempts(0);
+    setCancelError('');
+    setConfirmCancelOpen(true);
+  };
+
+  // التحقق من كلمة مرور المشرف لحذف صنف (منفصل عن إلغاء الفاتورة).
+  const submitRemoveItemPassword = async () => {
+    if (isOwner) {
+      if (pendingRemoveItem) {
+        setCart(prev => prev.filter(c => c.itemId !== pendingRemoveItem));
+      }
+      setPendingRemoveItem(null);
+      setConfirmCancelOpen(false);
+      return;
+    }
+    if (!cancelPassword) {
+      setCancelError(t('أدخل كلمة مرور المشرف', 'Enter supervisor password', lang));
+      return;
+    }
+    try {
+      const result = await base44.functions.invoke('posVerifySupervisor', { password: cancelPassword });
+      if (result?.data?.ok === true) {
+        if (pendingRemoveItem) {
+          setCart(prev => prev.filter(c => c.itemId !== pendingRemoveItem));
+        }
+        setPendingRemoveItem(null);
+        setConfirmCancelOpen(false);
+        toast.success(t('تم حذف الصنف', 'Item removed', lang));
+        return;
+      }
+    } catch (e) {
+      toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
+      return;
+    }
+    // كلمة مرور خاطئة.
+    const nextAttempts = cancelAttempts + 1;
+    setCancelError(t('كلمة مرور خاطئة', 'Wrong password', lang));
+    setCancelAttempts(nextAttempts);
+    if (nextAttempts >= MAX_CANCEL_ATTEMPTS) {
+      setConfirmCancelOpen(false);
+      setPendingRemoveItem(null);
+      toast.error(t('تجاوزت المحاولات المسموحة', 'Max attempts exceeded', lang));
+    }
   };
 
   const clearCart = () => {
@@ -796,6 +850,10 @@ export default function POS() {
   };
 
   const submitCancelPassword = async () => {
+    // إن كانت النافذة مفتوحة لحذف صنف، وجّه للدالة المخصصة.
+    if (pendingRemoveItem) {
+      return submitRemoveItemPassword();
+    }
     // المالك لا يحتاج كلمة مرور (يتحقق الخادم من ذلك أيضاً، لكن نتجاوز سريعاً محلياً).
     if (isOwner) {
       await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: activeProjectId, name: branchLabel }, true);
@@ -1098,7 +1156,31 @@ export default function POS() {
       { approvedOk, paidAmount: invoice.paidAmount, isPlatformSale }
     ).catch(() => {});
 
-    // فتح معاينة الإيصال الحراري.
+    // فتح معاينة الإيصال الحراري — فقط بعد نجاح الترحيل الكامل.
+    // القاعدة الصارمة: نجاح الترحيل شرط إلزامي لفتح نافذة الطباعة.
+    // لو فشل الإنشاء أو الاعتماد (ترحيل القيد)، لا نفتح المعاينة إطلاقاً.
+    if (!backendOk || !approvedOk) {
+      // فشل الترحيل: لا فاتورة مرحّلة، لا طباعة.
+      if (!backendOk) {
+        toast.error(e?.message || t('فشل حفظ الإيصال — لم تُرحّل أي بيانات', 'Receipt save failed — no data posted', lang));
+      } else {
+        // الإنشاء نجح لكن الاعتماد فشل: الفاتورة DRAFT بلا قيد. نمسحها ونُنبّه.
+        const reason = approveErrorMsg ? ` — ${approveErrorMsg}` : '';
+        toast.error(
+          t('فشل ترحيل القيد المحاسبي — أُلغيت الفاتورة', 'Accounting entry posting failed — invoice voided', lang) + reason
+        );
+        // حذف الفاتورة DRAFT الخالية من القيد لتفادي البيانات اليتيمة.
+        if (saved?.id) {
+          try { await base44.entities.SalesInvoice.delete(saved.id); } catch { /* قد تكون محذوفة */ }
+        }
+      }
+      // إعادة الزر لحالته القابلة للاستخدام.
+      setSaving(false);
+      clearCart();
+      return;
+    }
+
+    // الترحيل نجح بالكامل (إنشاء + اعتماد + قيد متوازن). الآن نفتح المعاينة.
     // سجل الخادم (saved) لا يحتوي على lineItems/الخصومات التفصيلية (تُخزّن ضمن notes)،
     // لذا ندمج الحقول المحلية فوقه حتى يظهر كل الأصناف والخصم في الإيصال المطبوع.
     setPrintReceipt({
@@ -1106,19 +1188,7 @@ export default function POS() {
       ...invoice,
       id: saved?.id || invoice.id,
     });
-
-    if (!backendOk) {
-      toast.warning(t('تعذر الحفظ على الخادم — معاينة فقط', 'Could not save to server — preview only', lang));
-    } else if (!approvedOk) {
-      // الفاتورة أُنشئت DRAFT لكن الاعتماد (ترحيل القيد + PAID/APPROVED) فشل.
-      // تنبيه واضح مع ذكر السبب (إن وُجد) ليتمكّن المستخدم/الدعم من التشخيص.
-      const reason = approveErrorMsg ? ` — ${approveErrorMsg}` : '';
-      toast.warning(
-        t('حُفظ الإيصال كمسودة لكن فشل الاعتماد — اعتمده يدوياً من شاشة الإيصالات', 'Receipt saved as draft but approval failed — approve it manually from Receipts', lang) + reason
-      );
-    } else {
-      toast.success(t('تم حفظ الإيصال وطباعته', 'Receipt saved and printed', lang));
-    }
+    toast.success(t('تم ترحيل الفاتورة وفتح الطباعة', 'Invoice posted and print opened', lang));
 
     // تنظيف
     clearCart();
@@ -1808,12 +1878,14 @@ export default function POS() {
       <DailyReportDialog open={dailyReportOpen} onOpenChange={setDailyReportOpen} />
 
       {/* Feature 5: تأكيد الإلغاء بكلمة مرور مشرف */}
-      <Dialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+      <Dialog open={confirmCancelOpen} onOpenChange={(o) => { setConfirmCancelOpen(o); if (!o) setPendingRemoveItem(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="size-5 text-amber-600" />
-              {t('تأكيد الإلغاء — يتطلب صلاحية مشرف', 'Confirm Cancel — Supervisor Required', lang)}
+              {pendingRemoveItem
+                ? t('حذف صنف — يتطلب صلاحية مشرف', 'Remove Item — Supervisor Required', lang)
+                : t('تأكيد الإلغاء — يتطلب صلاحية مشرف', 'Confirm Cancel — Supervisor Required', lang)}
             </DialogTitle>
           </DialogHeader>
 
@@ -1823,21 +1895,17 @@ export default function POS() {
                 {t('المالك — لا يحتاج كلمة مرور', 'Owner — no password required', lang)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {t(
-                  'سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟',
-                  'The cart will be cleared and the table freed. Are you sure?',
-                  lang
-                )}
+                {pendingRemoveItem
+                  ? t('سيتم حذف الصنف من السلة. هل أنت متأكد؟', 'The item will be removed from cart. Are you sure?', lang)
+                  : t('سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟', 'The cart will be cleared and the table freed. Are you sure?', lang)}
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
-                {t(
-                  'سيتم إفراغ السلة وتحرير الطاولة. يتطلب هذا الإجراء صلاحية مشرف.',
-                  'The cart will be cleared and the table freed. This action requires supervisor authority.',
-                  lang
-                )}
+                {pendingRemoveItem
+                  ? t('سيتم حذف الصنف من السلة. يتطلب هذا الإجراء صلاحية مشرف.', 'The item will be removed from cart. This action requires supervisor authority.', lang)
+                  : t('سيتم إفراغ السلة وتحرير الطاولة. يتطلب هذا الإجراء صلاحية مشرف.', 'The cart will be cleared and the table freed. This action requires supervisor authority.', lang)}
               </p>
               <Label className="text-xs font-semibold">{t('كلمة مرور المشرف', 'Supervisor Password', lang)}</Label>
               <Input
@@ -1863,12 +1931,14 @@ export default function POS() {
           )}
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmCancelOpen(false)}>
+            <Button variant="outline" onClick={() => { setConfirmCancelOpen(false); setPendingRemoveItem(null); }}>
               {t('تراجع', 'Back', lang)}
             </Button>
             <Button variant="destructive" onClick={submitCancelPassword}>
               <XCircle className="size-4" />
-              {t('تأكيد الإلغاء', 'Confirm Cancel', lang)}
+              {pendingRemoveItem
+                ? t('تأكيد الحذف', 'Confirm Remove', lang)
+                : t('تأكيد الإلغاء', 'Confirm Cancel', lang)}
             </Button>
           </DialogFooter>
         </DialogContent>
