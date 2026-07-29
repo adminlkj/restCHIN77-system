@@ -96,7 +96,9 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS allowed_modules jsonb NOT NULL DEFAULT '[]'::jsonb,
       ADD COLUMN IF NOT EXISTS module_permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
-      ADD COLUMN IF NOT EXISTS token_version integer NOT NULL DEFAULT 0;
+      ADD COLUMN IF NOT EXISTS token_version integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS allowed_branches jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS home_branch_id text;
   `);
 
   await pool.query(`

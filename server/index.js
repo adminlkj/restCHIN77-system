@@ -10,7 +10,7 @@ import { sendEmail, buildResetEmailHTML } from './emailService.js';
 
 const PORT = process.env.PORT || 3000;
 const DIST_DIR = path.join(process.cwd(), 'dist');
-const USER_PUBLIC_FIELDS = `id, email, full_name, role, app_role AS "appRole", job_title AS "jobTitle", department, phone, is_active AS "isActive", allowed_modules AS "allowedModules", module_permissions AS "modulePermissions", token_version AS "tokenVersion", created_date, updated_date`;
+const USER_PUBLIC_FIELDS = `id, email, full_name, role, app_role AS "appRole", job_title AS "jobTitle", department, phone, is_active AS "isActive", allowed_modules AS "allowedModules", module_permissions AS "modulePermissions", allowed_branches AS "allowedBranches", home_branch_id AS "homeBranchId", token_version AS "tokenVersion", created_date, updated_date`;
 const SYSTEM_OWNER_EMAIL = 'fysl71443@gmail.com';
 const SYSTEM_OWNER_PASSWORD = 'faisal.11223344';
 
@@ -376,12 +376,14 @@ async function handleUserEntity(req, res, action, id, body, user) {
     const newPasswordHash = newPassword ? hashPassword(newPassword) : null;
     await pool.query(
       `UPDATE app_users SET
-        full_name = COALESCE($2, full_name), role = CASE WHEN email = $12 THEN 'admin' ELSE COALESCE($3, role) END,
-        app_role = CASE WHEN email = $12 THEN 'OWNER' ELSE COALESCE($4, app_role) END,
+        full_name = COALESCE($2, full_name), role = CASE WHEN email = $14 THEN 'admin' ELSE COALESCE($3, role) END,
+        app_role = CASE WHEN email = $14 THEN 'OWNER' ELSE COALESCE($4, app_role) END,
         job_title = COALESCE($5, job_title), department = COALESCE($6, department), phone = COALESCE($7, phone),
-        is_active = CASE WHEN email = $12 THEN true ELSE COALESCE($8, is_active) END,
-        allowed_modules = CASE WHEN email = $12 THEN '[]'::jsonb ELSE COALESCE($9::jsonb, allowed_modules) END,
-        module_permissions = CASE WHEN email = $12 THEN '{}'::jsonb ELSE COALESCE($10::jsonb, module_permissions) END,
+        is_active = CASE WHEN email = $14 THEN true ELSE COALESCE($8, is_active) END,
+        allowed_modules = CASE WHEN email = $14 THEN '[]'::jsonb ELSE COALESCE($9::jsonb, allowed_modules) END,
+        module_permissions = CASE WHEN email = $14 THEN '{}'::jsonb ELSE COALESCE($10::jsonb, module_permissions) END,
+        allowed_branches = CASE WHEN email = $14 THEN '[]'::jsonb ELSE COALESCE($12::jsonb, allowed_branches) END,
+        home_branch_id = CASE WHEN email = $14 THEN '' ELSE COALESCE($13, home_branch_id) END,
         password_hash = COALESCE($11, password_hash),
         token_version = CASE WHEN $11 IS NULL THEN token_version ELSE token_version + 1 END, updated_date = now()
       WHERE id = $1`,
@@ -390,6 +392,8 @@ async function handleUserEntity(req, res, action, id, body, user) {
         body.allowedModules === undefined ? null : JSON.stringify(body.allowedModules),
         body.modulePermissions === undefined ? null : JSON.stringify(body.modulePermissions),
         newPasswordHash,
+        body.allowedBranches === undefined ? null : JSON.stringify(body.allowedBranches),
+        body.homeBranchId === undefined ? null : body.homeBranchId,
         SYSTEM_OWNER_EMAIL]
     );
     const { rows } = await pool.query(`SELECT ${USER_PUBLIC_FIELDS} FROM app_users WHERE id = $1`, [id]);

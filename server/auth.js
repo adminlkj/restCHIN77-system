@@ -55,7 +55,8 @@ export async function getUserFromRequest(req) {
   const { rows } = await pool.query(`
     SELECT id, email, full_name, role, app_role AS "appRole", job_title AS "jobTitle",
       department, phone, is_active AS "isActive", allowed_modules AS "allowedModules",
-      module_permissions AS "modulePermissions", token_version AS "tokenVersion", created_date, updated_date
+      module_permissions AS "modulePermissions", allowed_branches AS "allowedBranches",
+      home_branch_id AS "homeBranchId", token_version AS "tokenVersion", created_date, updated_date
     FROM app_users WHERE id = $1
   `, [decoded.sub]);
   if (rows[0]?.isActive === false) return null;
