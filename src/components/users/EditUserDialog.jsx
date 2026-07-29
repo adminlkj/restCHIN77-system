@@ -121,7 +121,8 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
         modulePermissions: useCustom && !isOwner ? cleanedActions : {},
         // صلاحيات الفروع: المالك/الأدمن لا يحتاج (يصل لكل الفروع). لغيرهم نطبّق التقييد.
         allowedBranches: (isOwner || isProtected) ? [] : allowedBranchIds,
-        homeBranchId: (isOwner || isProtected) ? '' : homeBranchId,
+        // __none__ يعني "بدون فرع رئيسي" — نُحوّله لسلسلة فارغة في التخزين.
+        homeBranchId: (isOwner || isProtected) ? '' : (homeBranchId === '__none__' ? '' : homeBranchId),
       };
       const updatedUser = await base44.entities.User.update(user.id, payload);
       toast({ title: form.password ? t('تم حفظ التغييرات وتغيير كلمة المرور', 'Changes saved and password updated', lang) : t('تم حفظ التغييرات', 'Changes saved', lang), variant: 'success' });
@@ -256,7 +257,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onSaved, lang
                 <Select value={homeBranchId} onValueChange={setHomeBranchId}>
                   <SelectTrigger className="h-9"><SelectValue placeholder={t('بدون', 'None', lang)} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t('بدون', 'None', lang)}</SelectItem>
+                    <SelectItem value="__none__">{t('بدون', 'None', lang)}</SelectItem>
                     {branches.filter(b => allowedBranchIds.includes(b.id)).map(b => (
                       <SelectItem key={b.id} value={b.id}>{b.name || b.code || b.id}</SelectItem>
                     ))}
