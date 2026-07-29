@@ -408,6 +408,36 @@ async function handleUserEntity(req, res, action, id, body, user) {
   return sendJson(res, { error: 'Not found' }, 404);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// حذف شامل للمعاملات (admin only) — يحذف كل بيانات التشغيل مع الإبقاء على:
+// المستخدمين، الفروع، الدليل المحاسبي، أصناف المنيو، الإعدادات، السنوات المالية.
+// يُستخدم لإعادة ضبط النظام لحالة نظيفة قبل الإنتاج.
+// ═══════════════════════════════════════════════════════════════════════
+async function handlePurgeTransactions(req, res) {
+  const user = await requireUser(req);
+  if (user.role !== 'admin') return sendJson(res, { error: 'Forbidden' }, 403);
+  const TRANSACTION_ENTITIES = [
+    'SalesInvoice', 'SalesReturn', 'ClientPayment', 'PurchaseReturn',
+    'JournalEntry', 'SupplierInvoice', 'SupplierPayment', 'PurchaseOrder',
+    'PurchaseRequest', 'GoodsReceipt', 'Expense', 'PayrollRun', 'PayrollSheet',
+    'AttendanceRecord', 'EmployeeAdvance', 'BusinessDay', 'StockMovement',
+    'Table', 'Client', 'Supplier', 'AuditLog',
+  ];
+  const results = {};
+  for (const entityName of TRANSACTION_ENTITIES) {
+    try {
+      const { rowCount } = await pool.query(
+        'DELETE FROM entity_records WHERE entity_name = $1',
+        [entityName]
+      );
+      results[entityName] = rowCount || 0;
+    } catch (e) {
+      results[entityName] = `error: ${e.message}`;
+    }
+  }
+  return sendJson(res, { success: true, deleted: results });
+}
+
 async function handleEntity(req, res, parts) {
   const user = await requireUser(req);
   const entityName = parts[3];
@@ -535,6 +565,8 @@ async function handleApi(req, res) {
   try {
     if (route.startsWith('/api/auth/')) return await handleAuth(req, res, route);
     if (route.startsWith('/api/users/')) return await handleUsers(req, res, route);
+    // حذف شامل للمعاملات (admin only) — لإعادة ضبط النظام قبل الإنتاج.
+    if (route === '/api/admin/purge-transactions' && req.method === 'POST') return await handlePurgeTransactions(req, res);
     // مسارات POS الأمنية: تُلتقط هنا (قبل /api/functions/* العام) لأنها دوال مخصّصة
     // تتعامل مع كلمات مرور/هاشات على الخادم، وليست عمليات Base44 قياسية.
     if ((route === '/api/functions/posVerifySupervisor' || route === '/api/functions/setSupervisorPassword') && req.method === 'POST') {
