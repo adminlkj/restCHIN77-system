@@ -506,10 +506,10 @@ export default function Tables() {
               >
                 {/* جسم الطاولة البسيط — رقم كبير فقط في وسط مربع ملوّن */}
                 <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-50'}`}>
-                  {/* رقم الطاولة — كبير وواضح. نُظهر الأرقام فقط من الاسم،
-                      وإن لم يوجد رقم نُظهر الاسم كما هو. */}
+                  {/* رقم/اسم الطاولة — كبير وواضح. نُظهر الأرقام إن وُجدت،
+                      وإلا الاسم كاملاً، وإلا علامة افتراضية. */}
                   <div className="text-2xl font-black text-foreground leading-none">
-                    {(table.name || '').replace(/[^\d]/g, '') || table.name || '?'}
+                    {(table.name || '').trim() || '—'}
                   </div>
                   {/* شارة الحالة الصغيرة في الأسفل */}
                   <div className={`mt-1 text-[9px] font-bold ${status.textColor || 'text-muted-foreground'}`}>

@@ -20,7 +20,7 @@ export const TABLE_STATUS = {
   OCCUPIED: { ar: 'مشغولة', en: 'Occupied', color: 'bg-rose-100 text-rose-700 border-rose-300', barColor: 'bg-rose-500', textColor: 'text-rose-700', bgColor: 'bg-rose-50' },
   RESERVED: { ar: 'محجوزة', en: 'Reserved', color: 'bg-amber-100 text-amber-700 border-amber-300', barColor: 'bg-amber-500', textColor: 'text-amber-700', bgColor: 'bg-amber-50' },
   CLEANING: { ar: 'تنظيف', en: 'Cleaning', color: 'bg-slate-100 text-slate-700 border-slate-300', barColor: 'bg-slate-400', textColor: 'text-slate-600', bgColor: 'bg-slate-100' },
-  DRAFT: { ar: 'مسودة', en: 'Draft', color: 'bg-red-100 text-red-700 border-red-400', barColor: 'bg-red-500', textColor: 'text-red-700', bgColor: 'bg-red-50' },
+  DRAFT: { ar: 'مسودة', en: 'Draft', color: 'bg-orange-100 text-orange-700 border-orange-400', barColor: 'bg-orange-500', textColor: 'text-orange-700', bgColor: 'bg-orange-100' },
 };
 
 // قراءة كل الطاولات من localStorage.
@@ -275,11 +275,11 @@ export async function loadBranchTablesFromDB(branchId) {
   if (!branchId) return [];
   try {
     const rows = await base44.entities.Table.filter({ branchId }, 'sortOrder', 500);
-    return (rows || []).map(r => ({
+    const tables = (rows || []).map(r => ({
       id: r.tableId || r.id,
       dbId: r.id,
       branchId: r.branchId,
-      name: r.name,
+      name: r.name || '',
       seats: r.seats,
       status: r.status,
       sortOrder: r.sortOrder,
@@ -291,6 +291,27 @@ export async function loadBranchTablesFromDB(branchId) {
       // هل الطاولة مفتوحة حالياً على جهاز آخر؟ (قفل نشط من مستخدم مختلف)
       isLockedByOther: Boolean(r.lockedBy) && isLockActive(r.lockedAt),
     }));
+    // ─── مزامنة الطاولات المحملة مع localStorage ───
+    // هذا ضروري: POS و saveDraftToTable يعتمدان على localStorage لحفظ المسودات.
+    // لو لم نكتب الطاولات هنا، سيجد saveDraftToTable localStorage فارغاً ويفشل.
+    const all = readAll();
+    for (const t of tables) {
+      if (!all[t.id]) {
+        // طاولة جديدة من DB غير موجودة محلياً — أضفها.
+        all[t.id] = t;
+      } else {
+        // طاولة موجودة محلياً — حدّث اسمها وحالتها من DB (المصدر الموحّد).
+        all[t.id] = {
+          ...all[t.id],
+          name: t.name || all[t.id].name || '',
+          status: t.status,
+          draft: t.draft,
+          dbId: t.dbId,
+        };
+      }
+    }
+    writeAll(all);
+    return tables;
   } catch (e) {
     console.warn('loadBranchTablesFromDB failed (using local only):', e);
     return [];
