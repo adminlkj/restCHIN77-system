@@ -25,6 +25,8 @@ export default function JournalEntries() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterPosted, setFilterPosted] = useState('ALL');
+  // بحث مستقل لكل حقل حساب في القيد (يُخزَّن مؤقتاً عند فتح القائمة).
+  const [accountSearch, setAccountSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -317,17 +319,16 @@ export default function JournalEntries() {
                           {accounts.length > 0 ? (
                             <Select value={line.accountCode} onValueChange={v => pickAccount(idx, v)}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={t('اختر الحساب', 'Select account', lang)} /></SelectTrigger>
-                              <SelectContent>
+                              <SelectContent
+                                onOpenChange={() => setAccountSearch('')}
+                              >
                                 {/* بحث داخل قائمة الحسابات برقم الحساب أو اسمه */}
-                                <div className="p-2 sticky top-0 bg-background z-10 border-b">
+                                <div className="p-2 sticky top-0 bg-background z-10 border-b" onClick={(e) => e.stopPropagation()}>
                                   <Input
                                     type="text"
                                     placeholder={t('بحث بالرقم أو الاسم…', 'Search by code or name…', lang)}
-                                    value={line._search || ''}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      updateLine(idx, '_search', e.target.value);
-                                    }}
+                                    value={accountSearch}
+                                    onChange={(e) => setAccountSearch(e.target.value)}
                                     onKeyDown={(e) => e.stopPropagation()}
                                     className="h-7 text-xs"
                                     autoFocus
@@ -335,7 +336,7 @@ export default function JournalEntries() {
                                 </div>
                                 {accounts
                                   .filter(a => {
-                                    const q = (line._search || '').toLowerCase().trim();
+                                    const q = accountSearch.toLowerCase().trim();
                                     if (!q) return true;
                                     return a.code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
                                   })
