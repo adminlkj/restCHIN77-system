@@ -515,13 +515,13 @@ export default function Tables() {
                     </div>
                   )}
                 </div>
-                {/* قائمة الإجراءات — تظهر عند المرور بالماوس */}
-                <div className="absolute top-0 start-0 opacity-0 hover:opacity-100 transition-opacity">
+                {/* قائمة الإجراءات — ظاهرة دائماً في الزاوية */}
+                <div className="absolute top-0.5 start-0.5 z-10">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost" size="icon"
-                        className="size-5 bg-white/80 backdrop-blur-sm rounded-full"
+                        className="size-5 bg-white/70 backdrop-blur-sm rounded-full hover:bg-white"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="size-2.5" />
