@@ -25,7 +25,7 @@ import {
   TABLE_STATUS, getBranchTables, getBranchTableStats,
   addTable, updateTable, deleteTable,
   freeTable, reserveTable, setTableAvailable, clearTableDraft,
-  lockTableDB, loadBranchTablesFromDB,
+  lockTableDB, loadBranchTablesFromDB, deleteTableDB,
 } from '@/lib/tables';
 import { useAuth } from '@/lib/AuthContext';
 import { canAccessBranch } from '@/lib/permissions';
@@ -242,26 +242,37 @@ export default function Tables() {
     }
   };
 
-  const remove = () => {
+  const remove = async () => {
     try {
+      const all = JSON.parse(localStorage.getItem('restaurant-tables') || '{}');
+      const t = all[deleteId];
+      if (t && t.branchId) await deleteTableDB(t.branchId, deleteId).catch(() => {});
       deleteTable(deleteId);
       toast.success(t('تم حذف الطاولة', 'Table deleted', lang));
       setConfirmOpen(false);
-      load();
+      setDeleteId(null);
+      await load();
     } catch (e) {
       toast.error(e?.message || t('فشل الحفظ', 'Delete failed', lang));
     }
   };
 
   // حذف جماعي: حذف كل الطاولات المُحدّدة دفعة واحدة.
-  const bulkDelete = () => {
+  const bulkDelete = async () => {
     if (selectedForDelete.length === 0) return;
+    setLoading(true);
     for (const id of selectedForDelete) {
-      try { deleteTable(id); } catch { /* تجاهل */ }
+      try {
+        // اقرأ branchId قبل الحذف (نحتاجه لحذف الـ DB).
+        const all = JSON.parse(localStorage.getItem('restaurant-tables') || '{}');
+        const t = all[id];
+        if (t && t.branchId) await deleteTableDB(t.branchId, id).catch(() => {});
+        deleteTable(id);
+      } catch { /* تجاهل */ }
     }
     toast.success(t(`تم حذف ${selectedForDelete.length} طاولة`, `Deleted ${selectedForDelete.length} tables`, lang));
     setSelectedForDelete([]);
-    load();
+    await load();
   };
 
   // حفظ عدد الطاولات في كل صف في إعدادات الفرع.
