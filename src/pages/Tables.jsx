@@ -41,10 +41,7 @@ import { toast } from 'sonner';
 const FILTERS = [
   { key: 'ALL',        ar: 'الكل',       en: 'All' },
   { key: 'AVAILABLE',  ar: 'متاحة',      en: 'Available' },
-  { key: 'OCCUPIED',   ar: 'مشغولة',     en: 'Occupied' },
-  { key: 'DRAFT',      ar: 'مسودة',      en: 'Draft' },
-  { key: 'RESERVED',   ar: 'محجوزة',     en: 'Reserved' },
-  { key: 'CLEANING',   ar: 'تنظيف',      en: 'Cleaning' },
+  { key: 'DRAFT',      ar: 'مشغولة',     en: 'Occupied' },
 ];
 
 // خريطة عدد الطاولات في كل صف ↔ كلاسات Tailwind.
@@ -143,20 +140,19 @@ export default function Tables() {
     return () => clearInterval(tid);
   }, [load]);
 
-  // الإحصائيات تُحسب من قائمة الطاولات المعروضة (tables المدموجة DB+محلي)،
-  // لا من getBranchTableStats المنفصل (الذي كان يقرأ المحلي فقط فيخالف العرض).
+  // الإحصائيات تُحسب من قائمة الطاولات المعروضة.
+  // النظام يدعم حالتين فقط: متاحة (فارغة/منتهية) ومشغولة (مسودة = بها أصناف).
   const stats = useMemo(() => ({
     total: tables.length,
     available: tables.filter(t => t.status === 'AVAILABLE').length,
-    occupied: tables.filter(t => t.status === 'OCCUPIED').length,
-    reserved: tables.filter(t => t.status === 'RESERVED').length,
-    cleaning: tables.filter(t => t.status === 'CLEANING').length,
-    draft: tables.filter(t => t.status === 'DRAFT').length,
+    occupied: tables.filter(t => t.status === 'DRAFT' || t.status === 'OCCUPIED').length,
   }), [tables]);
 
   const filtered = useMemo(() => {
     if (filter === 'ALL') return tables;
-    return tables.filter(t => t.status === filter);
+    if (filter === 'AVAILABLE') return tables.filter(t => t.status === 'AVAILABLE');
+    if (filter === 'DRAFT') return tables.filter(t => t.status === 'DRAFT' || t.status === 'OCCUPIED');
+    return tables;
   }, [tables, filter]);
 
   const gridClass = GRID_BY_PER_ROW[tablesPerRow] || GRID_BY_PER_ROW[6];
@@ -420,17 +416,14 @@ export default function Tables() {
             <span className="font-bold text-foreground ms-1">{stats.total}</span>
           </span>
           {[
-            { k: 'AVAILABLE', n: stats.available, label: t('متاحة', 'Available', lang) },
-            { k: 'OCCUPIED',  n: stats.occupied,  label: t('مشغولة', 'Occupied', lang) },
-            { k: 'DRAFT',     n: stats.draft,     label: t('مسودة', 'Draft', lang) },
-            { k: 'RESERVED',  n: stats.reserved,  label: t('محجوزة', 'Reserved', lang) },
-            { k: 'CLEANING',  n: stats.cleaning,  label: t('تنظيف', 'Cleaning', lang) },
+            { k: 'AVAILABLE', n: stats.available, label: t('متاحة', 'Available', lang), color: 'bg-emerald-500 text-white' },
+            { k: 'DRAFT', n: stats.occupied, label: t('مشغولة', 'Occupied', lang), color: 'bg-red-600 text-white' },
           ].map(s => (
             <span
               key={s.k}
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${TABLE_STATUS[s.k].color}`}
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${s.color}`}
             >
-              {s.label}: <span className="font-bold">{s.n}</span>
+              {s.label}: <span>{s.n}</span>
             </span>
           ))}
         </div>
@@ -501,14 +494,14 @@ export default function Tables() {
             return (
               <Card
                 key={table.id}
-                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md aspect-square ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
+                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
+                style={{ aspectRatio: '1.6 / 1' }}
                 onClick={() => canOpenPOS && openPOS(table)}
               >
-                {/* جسم الطاولة البسيط — رقم كبير فقط في وسط مربع ملوّن */}
-                <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-50'}`}>
-                  {/* رقم/اسم الطاولة — كبير وواضح. نُظهر الأرقام إن وُجدت،
-                      وإلا الاسم كاملاً، وإلا علامة افتراضية. */}
-                  <div className="text-2xl font-black text-foreground leading-none">
+                {/* جسم الطاولة البسيط — رقم كبير فقط في وسط مستطيل ملوّن */}
+                <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-100'}`}>
+                  {/* رقم/اسم الطاولة — كبير وواضح */}
+                  <div className={`text-xl font-black leading-none ${status.textColor === 'text-white' ? 'text-white' : 'text-white'}`}>
                     {(table.name || '').trim() || '—'}
                   </div>
                   {/* شارة الحالة الصغيرة في الأسفل */}

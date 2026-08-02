@@ -16,11 +16,13 @@
 const STORAGE_KEY = 'restaurant-tables';
 
 export const TABLE_STATUS = {
-  AVAILABLE: { ar: 'متاحة', en: 'Available', color: 'bg-emerald-100 text-emerald-700 border-emerald-300', barColor: 'bg-emerald-500', textColor: 'text-emerald-700', bgColor: 'bg-emerald-50' },
-  OCCUPIED: { ar: 'مشغولة', en: 'Occupied', color: 'bg-rose-100 text-rose-700 border-rose-300', barColor: 'bg-rose-500', textColor: 'text-rose-700', bgColor: 'bg-rose-50' },
+  AVAILABLE: { ar: 'متاحة', en: 'Available', color: 'bg-emerald-100 text-emerald-700 border-emerald-300', barColor: 'bg-emerald-500', textColor: 'text-emerald-700', bgColor: 'bg-emerald-500' },
+  DRAFT: { ar: 'مشغولة', en: 'Occupied', color: 'bg-red-100 text-red-700 border-red-400', barColor: 'bg-red-500', textColor: 'text-white', bgColor: 'bg-red-600' },
+  // الحالات التالية مُستبقاة للتوافق الخلفي لكن لن تُستخدم في الواجهة.
+  // النظام يدعم حالتين فقط: متاحة (خضراء غامقة) ومشغولة (حمراء غامقة = مسودة).
+  OCCUPIED: { ar: 'مشغولة', en: 'Occupied', color: 'bg-red-100 text-red-700 border-red-300', barColor: 'bg-red-500', textColor: 'text-white', bgColor: 'bg-red-600' },
   RESERVED: { ar: 'محجوزة', en: 'Reserved', color: 'bg-amber-100 text-amber-700 border-amber-300', barColor: 'bg-amber-500', textColor: 'text-amber-700', bgColor: 'bg-amber-50' },
   CLEANING: { ar: 'تنظيف', en: 'Cleaning', color: 'bg-slate-100 text-slate-700 border-slate-300', barColor: 'bg-slate-400', textColor: 'text-slate-600', bgColor: 'bg-slate-100' },
-  DRAFT: { ar: 'مسودة', en: 'Draft', color: 'bg-orange-100 text-orange-700 border-orange-400', barColor: 'bg-orange-500', textColor: 'text-orange-700', bgColor: 'bg-orange-100' },
 };
 
 // قراءة كل الطاولات من localStorage.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Pencil, Trash2, RefreshCw, CheckCircle, XCircle, Undo2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, RefreshCw, CheckCircle, XCircle, Undo2, Send } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -112,11 +112,20 @@ export default function JournalEntries() {
   // القيود المرحّلة لا يُلغى ترحيلها ولا تُعدّل — يُسمح فقط بترحيل المسودة.
   const togglePost = async (item) => {
     if (item.isPosted) return;
+    // التحقق من التوازن قبل الترحيل.
+    const td = Number(item.totalDebit) || 0;
+    const tc = Number(item.totalCredit) || 0;
+    if (Math.abs(td - tc) >= 0.01) {
+      toast.error(t('لا يمكن ترحيل قيد غير متوازن', 'Cannot post an unbalanced entry', lang));
+      return;
+    }
     try {
       await base44.entities.JournalEntry.update(item.id, { isPosted: true });
-      toast.success(t('تم الترحيل', 'Posted', lang));
+      toast.success(t('تم الترحيل بنجاح', 'Posted successfully', lang));
       load();
-    } catch { toast.error(t('فشل العملية', 'Operation failed', lang)); }
+    } catch (e) {
+      toast.error(e?.message || t('فشل الترحيل', 'Posting failed', lang));
+    }
   };
 
   // عكس القيد المرحّل: إنشاء قيد مضاد (مدين↔دائن) بدل تعديل القيد الأصلي أو حذفه.
@@ -237,11 +246,16 @@ export default function JournalEntries() {
                     <TableCell className="tabular-nums">{Number(item.totalDebit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     <TableCell className="tabular-nums">{Number(item.totalCredit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     <TableCell>
-                      <button onClick={() => togglePost(item)}
-                        className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full transition-colors ${item.isPosted ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                        {item.isPosted ? <CheckCircle className="size-3" /> : null}
-                        {item.isPosted ? t('مرحّل', 'Posted', lang) : t('مسودة', 'Draft', lang)}
-                      </button>
+                      {item.isPosted ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                          <CheckCircle className="size-3" /> {t('مرحّل', 'Posted', lang)}
+                        </span>
+                      ) : (
+                        <button onClick={() => togglePost(item)}
+                          className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                          <Send className="size-3" /> {t('ترحيل', 'Post', lang)}
+                        </button>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -304,7 +318,28 @@ export default function JournalEntries() {
                             <Select value={line.accountCode} onValueChange={v => pickAccount(idx, v)}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={t('اختر الحساب', 'Select account', lang)} /></SelectTrigger>
                               <SelectContent>
-                                {accounts.map(a => (
+                                {/* بحث داخل قائمة الحسابات برقم الحساب أو اسمه */}
+                                <div className="p-2 sticky top-0 bg-background z-10 border-b">
+                                  <Input
+                                    type="text"
+                                    placeholder={t('بحث بالرقم أو الاسم…', 'Search by code or name…', lang)}
+                                    value={line._search || ''}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      updateLine(idx, '_search', e.target.value);
+                                    }}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    className="h-7 text-xs"
+                                    autoFocus
+                                  />
+                                </div>
+                                {accounts
+                                  .filter(a => {
+                                    const q = (line._search || '').toLowerCase().trim();
+                                    if (!q) return true;
+                                    return a.code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
+                                  })
+                                  .map(a => (
                                   <SelectItem key={a.code} value={a.code} className="text-xs">
                                     <span className="font-mono text-muted-foreground me-1">{a.code}</span> {a.name}
                                   </SelectItem>
