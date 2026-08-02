@@ -66,6 +66,7 @@ export default function Tables() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+  const [selectedForDelete, setSelectedForDelete] = useState([]);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ name: '', seats: 4 });
   const [bulkForm, setBulkForm] = useState({ count: 5, prefix: 'طاولة', seats: 4 });
@@ -245,10 +246,22 @@ export default function Tables() {
     try {
       deleteTable(deleteId);
       toast.success(t('تم حذف الطاولة', 'Table deleted', lang));
+      setConfirmOpen(false);
       load();
     } catch (e) {
       toast.error(e?.message || t('فشل الحفظ', 'Delete failed', lang));
     }
+  };
+
+  // حذف جماعي: حذف كل الطاولات المُحدّدة دفعة واحدة.
+  const bulkDelete = () => {
+    if (selectedForDelete.length === 0) return;
+    for (const id of selectedForDelete) {
+      try { deleteTable(id); } catch { /* تجاهل */ }
+    }
+    toast.success(t(`تم حذف ${selectedForDelete.length} طاولة`, `Deleted ${selectedForDelete.length} tables`, lang));
+    setSelectedForDelete([]);
+    load();
   };
 
   // حفظ عدد الطاولات في كل صف في إعدادات الفرع.
@@ -452,6 +465,12 @@ export default function Tables() {
           <Button variant="outline" size="icon" onClick={load}>
             <RefreshCw className="size-4" />
           </Button>
+          {selectedForDelete.length > 0 && (
+            <Button variant="destructive" size="sm" className="gap-1.5 h-8" onClick={bulkDelete}>
+              <Trash2 className="size-3.5" />
+              {t('حذف المحدد', 'Delete Selected', lang)} ({selectedForDelete.length})
+            </Button>
+          )}
         </div>
       </div>
 
@@ -494,66 +513,73 @@ export default function Tables() {
             return (
               <Card
                 key={table.id}
-                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md ${canOpenPOS ? 'cursor-pointer hover:border-emerald-400' : ''}`}
+                className={`relative p-0 overflow-hidden border-2 transition-all hover:shadow-md`}
                 style={{ aspectRatio: '1.6 / 1' }}
-                onClick={() => canOpenPOS && openPOS(table)}
               >
-                {/* جسم الطاولة البسيط — رقم كبير فقط في وسط مستطيل ملوّن */}
-                <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-100'}`}>
+                {/* المنطقة القابلة للنقر — تفتح POS فقط (لا تتعارض مع الأزرار) */}
+                <div
+                  className={`absolute inset-0 flex flex-col items-center justify-center cursor-pointer ${status.bgColor || 'bg-slate-100'}`}
+                  onClick={() => canOpenPOS && openPOS(table)}
+                >
                   {/* رقم/اسم الطاولة — كبير وواضح */}
-                  <div className={`text-xl font-black leading-none ${status.textColor === 'text-white' ? 'text-white' : 'text-white'}`}>
+                  <div className="text-xl font-black leading-none text-white">
                     {(table.name || '').trim() || '—'}
                   </div>
                   {/* شارة الحالة الصغيرة في الأسفل */}
-                  <div className={`mt-1 text-[9px] font-bold ${status.textColor || 'text-muted-foreground'}`}>
+                  <div className="mt-1 text-[9px] font-bold text-white">
                     {lang === 'ar' ? status.ar : status.en}
                   </div>
                   {/* شارة المسودة إن وُجدت */}
                   {isDraft && draftItemsCount > 0 && (
-                    <div className="absolute top-1 end-1 rounded-full bg-red-500 text-white text-[9px] font-bold size-4 flex items-center justify-center">
+                    <div className="absolute top-1 end-1 rounded-full bg-white text-red-600 text-[9px] font-bold size-4 flex items-center justify-center">
                       {draftItemsCount}
                     </div>
                   )}
                 </div>
-                {/* قائمة الإجراءات — ظاهرة دائماً في الزاوية */}
-                <div className="absolute top-0.5 start-0.5 z-10">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost" size="icon"
-                        className="size-5 bg-white/70 backdrop-blur-sm rounded-full hover:bg-white"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="size-2.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-40">
-                      <DropdownMenuItem onClick={() => openEdit(table)} className="gap-2 text-xs">
-                        <Pencil className="size-3.5" /> {t('تعديل', 'Edit', lang)}
-                      </DropdownMenuItem>
-                      {(isReserved || isOccupied || isDraft) && (
-                        <DropdownMenuItem onClick={() => handleAction(table, 'free')} className="gap-2 text-xs">
-                          <Play className="size-3.5" /> {t('تحرير', 'Free', lang)}
-                        </DropdownMenuItem>
-                      )}
-                      {isCleaning && (
-                        <DropdownMenuItem onClick={() => handleAction(table, 'cleaning-done')} className="gap-2 text-xs">
-                          <Sparkles className="size-3.5" /> {t('تنظيف جاهز', 'Cleaning', lang)}
-                        </DropdownMenuItem>
-                      )}
-                      {(table.status === 'AVAILABLE' || isOccupied) && (
-                        <DropdownMenuItem onClick={() => handleAction(table, 'reserve')} className="gap-2 text-xs">
-                          <Clock className="size-3.5" /> {t('حجز', 'Reserve', lang)}
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem
-                        onClick={() => handleAction(table, 'delete')}
-                        className="gap-2 text-xs text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="size-3.5" /> {t('حذف', 'Delete', lang)}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                {/* أزرار الإجراءات — مستقلة تماماً عن منطقة النقر (لا propagation) */}
+                <div className="absolute top-0.5 start-0.5 z-20 flex gap-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openEdit(table); }}
+                    className="size-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white shrink-0"
+                    title={t('تعديل', 'Edit', lang)}
+                  >
+                    <Pencil className="size-2.5 text-slate-700" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleAction(table, 'delete'); }}
+                    className="size-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-red-100 shrink-0"
+                    title={t('حذف', 'Delete', lang)}
+                  >
+                    <Trash2 className="size-2.5 text-red-600" />
+                  </button>
+                  {/* زر تحرير الطاولة (للمشغولة/المسودة فقط) */}
+                  {(isReserved || isOccupied || isDraft) && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleAction(table, 'free'); }}
+                      className="size-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-emerald-100 shrink-0"
+                      title={t('تحرير', 'Free', lang)}
+                    >
+                      <Play className="size-2.5 text-emerald-600" />
+                    </button>
+                  )}
+                </div>
+                {/* مربع اختيار للحذف الجماعي */}
+                <div className="absolute bottom-0.5 end-0.5 z-20">
+                  <input
+                    type="checkbox"
+                    checked={selectedForDelete.includes(table.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.checked) setSelectedForDelete(prev => [...prev, table.id]);
+                      else setSelectedForDelete(prev => prev.filter(id => id !== table.id));
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="size-3.5 rounded accent-red-600 bg-white/80"
+                    title={t('تحديد للحذف', 'Select for delete', lang)}
+                  />
                 </div>
               </Card>
             );
