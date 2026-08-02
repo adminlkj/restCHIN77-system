@@ -64,7 +64,9 @@ export default function StockMovements() {
         // فصل المنيو عن المخزون: الحركات المخزنية (صرف/جرد/عجز/استلام) تختص بأصناف
         // المخزون (RAW) فقط. أصناف قائمة المنيو (MENU) ليست مخزوناً يُخصم منها عند
         // البيع — هى أصناف قابلة للبيع بسعرها، والمخزون يُدار منفصلاً يدوياً.
-        base44.entities.InventoryItem.filter({ itemType: 'RAW' }, 'code', 1000),
+        // طوابيل المخزون القابلة للحركة: RAW (مواد خام) + الأصناف بلا نوع محدّد
+        // (التي لم تُصنّف كقائمة منيو MENU).
+        base44.entities.InventoryItem.list('code', 1000),
         base44.entities.Warehouse.filter({ isActive: true }, 'code', 500),
         base44.entities.Project.list('-created_date', 500),
         base44.entities.Supplier.list('name', 500),
@@ -72,9 +74,14 @@ export default function StockMovements() {
         base44.entities.ChartAccount.filter({ isActive: true }, 'code', 1000),
       ]);
       setMovements(mv || []);
-      // أصناف فريدة بالكود لاختيارها (الرصيد موزّع على المخازن).
+      // أصناف فريدة بالكود لاختيارها — نستبعد المنيو (MENU) فقط.
       const seen = new Set();
-      setItems((it || []).filter(i => { if (seen.has(i.code)) return false; seen.add(i.code); return true; }));
+      setItems((it || []).filter(i => {
+        if (i.itemType === 'MENU') return false;
+        if (seen.has(i.code)) return false;
+        seen.add(i.code);
+        return true;
+      }));
       setWarehouses(wh || []);
       setProjects(pr || []);
       setSuppliers(sup || []);

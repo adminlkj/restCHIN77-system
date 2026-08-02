@@ -117,10 +117,13 @@ export default function Inventory() {
     setLoading(true);
     try {
       const [it, wh] = await Promise.all([
-        base44.entities.InventoryItem.filter({ itemType: 'RAW' }, 'code', 500),
+        // طوابيل المخزون: نعرض كل الأصناف ما عدا المنيو (MENU).
+        // الأصناف بلا نوع (unknown) + RAW تُعرض هنا.
+        base44.entities.InventoryItem.list('code', 1000),
         base44.entities.Warehouse.filter({ isActive: true }, 'code', 500),
       ]);
-      setItems(it || []);
+      // فلترة المنيو (MENU) محلياً — فقط المواد الخام والأصناف غير المُصنّفة.
+      setItems((it || []).filter(i => i.itemType !== 'MENU'));
       setWarehouses(wh || []);
     }
     catch { toast.error(t('فشل تحميل البيانات', 'Failed to load', lang)); }

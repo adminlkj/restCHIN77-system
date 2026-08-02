@@ -300,13 +300,6 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
                   <Money value={it.total} />
                 </span>
               </div>
-              {/* سعر الوحدة يظهر تحته فقط إن كانت كمية > 1 (معلومة إضافية) */}
-              {it.qty > 1 && (
-                <div style={{ display: 'flex', fontSize: fontS - 2, color: lightColor, fontWeight: 600 }}>
-                  <span style={{ width: '16px' }}>{''}</span>
-                  <span style={{ flex: 1, paddingInlineEnd: '4px' }} dir="ltr">@ <Money value={it.unitPrice} /></span>
-                </div>
-              )}
             </div>
           );
         })}
