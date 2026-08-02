@@ -9,6 +9,58 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+// ─── مكوّن اختيار الحساب مع بحث ───
+// مكوّن مستقل لكل سطر: يدير حالة البحث داخلياً ضمن Portal الخاص بـ Popover.
+// هذا يضمن أن الكتابة في حقل البحث تُعيد تصيير القائمة المُصفّاة فوراً.
+function AccountPicker({ accounts, value, accountName, onChange, lang, t }) {
+  const [query, setQuery] = useState('');
+  const selected = accounts.find(a => a.code === value);
+  const filtered = accounts.filter(a => {
+    const q = query.toLowerCase().trim();
+    if (!q) return true;
+    return a.code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
+  });
+  return (
+    <Popover onOpenChange={(open) => { if (!open) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex w-full h-8 items-center justify-between rounded-md border border-input bg-background px-2 text-xs hover:bg-accent">
+          {selected
+            ? <span><span className="font-mono text-muted-foreground me-1">{selected.code}</span>{selected.name}</span>
+            : <span className="text-muted-foreground">{t('اختر الحساب', 'Select account', lang)}</span>}
+          <Search className="size-3 text-muted-foreground shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <div className="p-2 border-b">
+          <Input
+            type="text"
+            placeholder={t('بحث بالرقم أو الاسم…', 'Search by code or name…', lang)}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-7 text-xs"
+            autoFocus
+          />
+        </div>
+        <div className="max-h-48 overflow-y-auto">
+          {filtered.length === 0
+            ? <p className="text-xs text-muted-foreground p-2">{t('لا نتائج', 'No results', lang)}</p>
+            : filtered.map(a => (
+              <button
+                key={a.code}
+                type="button"
+                className="flex w-full items-start px-2 py-1.5 text-xs text-start hover:bg-accent"
+                onClick={() => { onChange(a.code, a.name); setQuery(''); }}
+              >
+                <span className="font-mono text-muted-foreground me-1 shrink-0">{a.code}</span>
+                <span>{a.name}</span>
+              </button>
+            ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { t, formatCurrency, formatDate, nextCodeFromList } from '@/lib/utils-binaa';
@@ -27,7 +79,6 @@ export default function JournalEntries() {
   const [search, setSearch] = useState('');
   const [filterPosted, setFilterPosted] = useState('ALL');
   // بحث مستقل لكل حقل حساب في القيد (يُخزَّن مؤقتاً عند فتح القائمة).
-  const [accountSearch, setAccountSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -318,47 +369,16 @@ export default function JournalEntries() {
                       <TableRow key={idx}>
                         <TableCell className="p-1" colSpan={2}>
                           {accounts.length > 0 ? (
-                            <Popover onOpenChange={(open) => { if (!open) setAccountSearch(''); }}>
-                              <PopoverTrigger asChild>
-                                <button type="button" className="flex w-full h-8 items-center justify-between rounded-md border border-input bg-background px-2 text-xs hover:bg-accent">
-                                  {line.accountCode
-                                    ? <span><span className="font-mono text-muted-foreground me-1">{line.accountCode}</span>{line.accountName}</span>
-                                    : <span className="text-muted-foreground">{t('اختر الحساب', 'Select account', lang)}</span>}
-                                  <Search className="size-3 text-muted-foreground shrink-0" />
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-80 p-0" align="start">
-                                <div className="p-2 border-b sticky top-0 bg-background z-10">
-                                  <Input
-                                    type="text"
-                                    placeholder={t('بحث بالرقم أو الاسم…', 'Search by code or name…', lang)}
-                                    value={accountSearch}
-                                    onChange={(e) => setAccountSearch(e.target.value)}
-                                    className="h-7 text-xs"
-                                    autoFocus
-                                  />
-                                </div>
-                                <div className="max-h-48 overflow-y-auto">
-                                  {accounts
-                                    .filter(a => {
-                                      const q = accountSearch.toLowerCase().trim();
-                                      if (!q) return true;
-                                      return a.code.toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q);
-                                    })
-                                    .map(a => (
-                                      <button
-                                        key={a.code}
-                                        type="button"
-                                        className="flex w-full items-start px-2 py-1.5 text-xs text-start hover:bg-accent"
-                                        onClick={() => { pickAccount(idx, a.code); setAccountSearch(''); }}
-                                      >
-                                        <span className="font-mono text-muted-foreground me-1 shrink-0">{a.code}</span>
-                                        <span>{a.name}</span>
-                                      </button>
-                                    ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                            <AccountPicker
+                              accounts={accounts}
+                              value={line.accountCode}
+                              accountName={line.accountName}
+                              onChange={(code, name) => {
+                                setForm(f => { const lines = [...f.lines]; lines[idx] = { ...lines[idx], accountCode: code, accountName: name }; return { ...f, lines }; });
+                              }}
+                              lang={lang}
+                              t={t}
+                            />
                           ) : (
                             <div className="flex gap-1">
                               <Input value={line.accountCode} onChange={e => updateLine(idx, 'accountCode', e.target.value)} className="h-8 text-xs w-20" placeholder={t('كود', 'Code', lang)} />
