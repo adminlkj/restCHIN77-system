@@ -68,7 +68,7 @@ export function addTable(branchId, { name, seats = 4, sortOrder = 0 } = {}) {
   if (!branchId) return null;
   const all = readAll();
   const id = genId();
-  all[id] = {
+  const table = {
     id,
     branchId,
     name: name || `طاولة ${Object.values(all).filter(t => t.branchId === branchId).length + 1}`,
@@ -78,8 +78,11 @@ export function addTable(branchId, { name, seats = 4, sortOrder = 0 } = {}) {
     sortOrder: sortOrder || Object.values(all).filter(t => t.branchId === branchId).length + 1,
     createdAt: new Date().toISOString(),
   };
+  all[id] = table;
   writeAll(all);
-  return all[id];
+  // زامن مع الـ DB فوراً (لا يفقد عند مسح المتصفح).
+  syncTableToDB(table).catch(() => {});
+  return table;
 }
 
 // إنشاء طاولات افتراضية لفرع جديد (10 طاولات).
@@ -99,6 +102,8 @@ export function updateTable(tableId, updates) {
   if (!all[tableId]) return null;
   all[tableId] = { ...all[tableId], ...updates, updatedAt: new Date().toISOString() };
   writeAll(all);
+  // زامن مع الـ DB (التعديلات والحالات تُحفظ على الخادم).
+  syncTableToDB(all[tableId]).catch(() => {});
   return all[tableId];
 }
 
@@ -106,8 +111,13 @@ export function updateTable(tableId, updates) {
 export function deleteTable(tableId) {
   if (!tableId) return;
   const all = readAll();
+  const table = all[tableId];
   delete all[tableId];
   writeAll(all);
+  // احذف من الـ DB أيضاً.
+  if (table && table.branchId) {
+    deleteTableDB(table.branchId, tableId).catch(() => {});
+  }
 }
 
 // ربط طاولة بإيصال مفتوح (عند بدء طلب جديد) — يُغيّر الحالة إلى OCCUPIED.
@@ -386,6 +396,24 @@ export async function saveDraftToTableDB(branchId, tableId, draft) {
   updateTable(tableId, { status: 'DRAFT', draft: updated.draft });
   await syncTableToDB(updated);
   return updated;
+}
+
+// حذف طاولة من الخادم (DB) — يُستدعى عند حذف طاولة محلياً.
+export async function deleteTableDB(branchId, tableId) {
+  if (!branchId || !tableId) return null;
+  try {
+    const existing = await base44.entities.Table.filter({
+      branchId, tableId,
+    }, '-updated_date', 5);
+    if (existing && existing.length > 0) {
+      for (const t of existing) {
+        await base44.entities.Table.delete(t.id);
+      }
+    }
+  } catch (e) {
+    console.warn('deleteTableDB failed:', e);
+  }
+  return null;
 }
 
 // تحرير طاولة على الخادم بعد إتمام البيع/الإلغاء (مسح المسودة + فك القفل).
