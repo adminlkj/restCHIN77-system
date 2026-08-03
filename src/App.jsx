@@ -59,6 +59,15 @@ function MainApp() {
     currentPage = owningCycle ? <CycleScreen cycleKey={owningCycle.key} /> : <Dashboard />;
   }
 
+  // POS يأخذ الشاشة كاملة بدون Sidebar — واجهة كاشير مخصّصة.
+  if (activeItem === 'pos') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        {currentPage}
+      </Suspense>
+    );
+  }
+
   return (
     <AppShell>
       <Suspense fallback={<PageLoader />}>

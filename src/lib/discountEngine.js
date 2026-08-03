@@ -40,10 +40,14 @@
 
 /**
  * هل العميل نقدي (لا خصم له)؟
- * العميل النقدي = isCash === true، أو لا يوجد عميل أصلاً (زبون نقدي افتراضي).
+ * العميل النقدي = isCash === true **ولا** لديه نسبة خصم.
+ * إذا كان لديه discountPercentage > 0، فهو عميل مسجّل بخصم حتى لو isCash=true.
  */
 export function isCashCustomer(customer) {
   if (!customer) return true; // لا يوجد عميل = زبون نقدي
+  // إذا كان لديه خصم، فهو عميل مسجّل بغض النظر عن isCash.
+  const pct = parseFloat(customer.discountPercentage) || 0;
+  if (pct > 0) return false;
   return customer.isCash === true;
 }
 
