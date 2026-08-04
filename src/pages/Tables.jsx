@@ -85,17 +85,14 @@ export default function Tables() {
     if (!activeProjectId) { setTables([]); setLoading(false); return; }
     setLoading(true);
     try {
+      // الـ DB هو المصدر الوحيد للحقيقة — لا دمج مع localStorage (كان يسبّب تضارباً).
       const dbTables = await loadBranchTablesFromDB(activeProjectId);
-      const localTables = getBranchTables(activeProjectId);
-      // ادمج: طاولات DB (المصدر) + طاولات محلية بمعرّف غير موجودة في DB.
-      const seenIds = new Set(dbTables.map(t => t.id));
-      const merged = [...dbTables];
-      for (const lt of localTables) {
-        if (!seenIds.has(lt.id)) merged.push(lt);
-      }
-      // ترتيب موحّد.
-      merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
-      setTables(merged);
+      dbTables.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || String(a.name || '').localeCompare(String(b.name || ''), 'ar'));
+      setTables(dbTables);
+      // اكتب النتيجة لـ localStorage كـ cache فقط (يسرّع POS لحفظ المسودات).
+      const all = {};
+      for (const t of dbTables) all[t.id] = t;
+      try { localStorage.setItem('restaurant-tables', JSON.stringify(all)); } catch {}
     } catch (e) {
       console.warn('Tables load failed — falling back to local only:', e);
       setTables(getBranchTables(activeProjectId));

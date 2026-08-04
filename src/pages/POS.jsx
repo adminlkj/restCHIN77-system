@@ -213,13 +213,12 @@ export default function POS() {
         if (active && Array.isArray(cs)) setCustomers(cs);
       } catch { /* الزبائن اختياريون */ }
 
-      // Feature 3: منصات التوصيل — فقط المنصات ذات العمولة (>0)
-      // خيار "توصيل مباشر" يُضاف افتراضياً في القائمة المنسدلة (بلا عمولة)
+      // Feature 3: منصات التوصيل — كل المنصات النشطة تظهر في القائمة.
+      // خيار "توصيل مباشر" يُضاف افتراضياً في القائمة المنسدلة (بلا منصة).
       try {
         const ps = await base44.entities.DeliveryPlatform.filter({ isActive: true });
-        if (active && Array.isArray(ps) && ps.length) {
-          const filtered = ps.filter(p => (parseFloat(p.commissionRate) || 0) > 0);
-          setPlatforms(filtered);
+        if (active && Array.isArray(ps)) {
+          setPlatforms(ps);
         } else if (active) {
           setPlatforms([]);
         }
