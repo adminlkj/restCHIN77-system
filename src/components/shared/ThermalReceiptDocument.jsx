@@ -248,6 +248,9 @@ export default function ThermalReceiptDocument({ invoice, settings: settingsProp
           })()}
         </BiRow>
         <BiRow arLabel="الزبون" enLabel="Customer">{customerName}</BiRow>
+        {/* بيانات العميل الضريبية — للعملاء المسجّلين (شركات) */}
+        {c.taxNumber && <BiRow arLabel="الرقم الضريبي" enLabel="VAT No">{c.taxNumber}</BiRow>}
+        {c.phone && <BiRow arLabel="الهاتف" enLabel="Phone">{c.phone}</BiRow>}
         {invoice.cashier && <BiRow arLabel="الكاشير" enLabel="Cashier">{invoice.cashier}</BiRow>}
         {saleType !== 'PLATFORM' && saleType !== 'DIRECT_DELIVERY' && invoice.tableNo && (
           <BiRow arLabel="الطاولة" enLabel="Table">{invoice.tableNo}</BiRow>
