@@ -377,7 +377,7 @@ function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, 
   }
 
   const creditLines = [
-    { accountCode: rev.code, accountName: rev.name, debit: 0, credit: num(subtotal), description: 'إيرادات المبيعات', costCenter },
+    { accountCode: rev.code, accountName: rev.name, debit: 0, credit: num(subtotal), description: 'إيرادات المبيعات', costCenter, partyType: 'CLIENT', partyId: clientId || '', partyName: clientName || '' },
     ...(vat > 0 ? [{ accountCode: ACCOUNTS.VAT_PAYABLE.code, accountName: ACCOUNTS.VAT_PAYABLE.name, debit: 0, credit: vat, description: 'ضريبة القيمة المضافة 15%', costCenter }] : []),
   ];
 

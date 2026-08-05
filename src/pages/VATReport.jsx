@@ -95,7 +95,18 @@ export default function VATReport() {
           ? +Math.abs(revenueLine.credit - revenueLine.debit).toFixed(2)
           : +Math.abs((vat / 0.15)).toFixed(2);
         // اسم العميل: نأخذه من سطر الإيراد (له partyName/partyId) أو من وصف القيد.
-        const partyName = (revenueLine?.partyName) || l.partyName || '';
+        // وصف القيد بصيغة: "فاتورة مبيعات INV-XXXX — اسم العميل — الفرع"
+        // نستخرج اسم العميل من الوصف إن لم يوجد partyName على السطر.
+        const revenuePartyName = revenueLine?.partyName || '';
+        let displayName = revenuePartyName;
+        if (!displayName) {
+          // ابحث في وصف القيد الأصلي (je.description).
+          const jeDesc = l.jeDescription || '';
+          // الصيغة: "فاتورة مبيعات INV-XXXX — اسم العميل"
+          const parts = jeDesc.split('—').map(s => s.trim());
+          if (parts.length >= 2) displayName = parts[1]; // الجزء بعد رقم الفاتورة
+        }
+        const partyName = displayName || l.partyName || '';
         return {
           date: l.date,
           docNo: l.entryNo,
