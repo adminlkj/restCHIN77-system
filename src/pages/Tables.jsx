@@ -69,7 +69,7 @@ export default function Tables() {
   const [selectedForDelete, setSelectedForDelete] = useState([]);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ name: '', seats: 4 });
-  const [bulkForm, setBulkForm] = useState({ count: 5, prefix: 'طاولة', seats: 4 });
+  const [bulkForm, setBulkForm] = useState({ count: 5, prefix: '', seats: 4 });
   const [saving, setSaving] = useState(false);
   // عدد الطاولات في كل صف — يُقرأ من branchSettings ويعاد للواجهة فوراً عند التغيير.
   const [tablesPerRow, setTablesPerRow] = useState(6);
@@ -167,7 +167,7 @@ export default function Tables() {
   };
 
   const openBulk = () => {
-    setBulkForm({ count: 5, prefix: t('طاولة', 'Table', lang), seats: 4 });
+    setBulkForm({ count: 5, prefix: '', seats: 4 });
     setBulkOpen(true);
   };
 
