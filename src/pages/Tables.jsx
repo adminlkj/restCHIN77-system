@@ -158,8 +158,9 @@ export default function Tables() {
   // ─── إجراءات ─────────────────────────────────────────────────────────
   const openNew = () => {
     setEditId(null);
+    // الاسم الافتراضي = الرقم التالي (أرقام فقط، لا بادئة).
     setForm({
-      name: `${t('طاولة', 'Table', lang)} ${(tables.length || 0) + 1}`,
+      name: String((tables.length || 0) + 1),
       seats: 4,
     });
     setDialogOpen(true);
@@ -208,25 +209,24 @@ export default function Tables() {
     }
   };
 
-  // إضافة متعددة — تنشئ N طاولات بالبادئة المعطاة.
+  // إضافة متعددة — تنشئ N طاولات مرقّمة (أرقام فقط أو ببادئة إن أُدخلت).
   const saveBulk = () => {
     const count = parseInt(bulkForm.count) || 0;
     if (count <= 0 || count > 200) {
       toast.error(t('عدد الطاولات يجب أن يكون بين 1 و 200', 'Count must be 1–200', lang));
       return;
     }
-    const prefix = (bulkForm.prefix || t('طاولة', 'Table', lang)).trim();
-    if (!prefix) {
-      toast.error(t('الرجاء إدخال بادئة الاسم', 'Please enter a name prefix', lang));
-      return;
-    }
+    // البادئة اختيارية — إن تُركت فارغة، الأسماء أرقام فقط (1, 2, 3...).
+    const prefix = (bulkForm.prefix || '').trim();
     const seats = parseInt(bulkForm.seats) || 1;
     setSaving(true);
     try {
       const start = (tables.length || 0) + 1;
       let created = 0;
       for (let i = 0; i < count; i++) {
-        addTable(activeProjectId, { name: `${prefix} ${start + i}`, seats });
+        const num = start + i;
+        const name = prefix ? `${prefix} ${num}` : String(num);
+        addTable(activeProjectId, { name, seats });
         created++;
       }
       toast.success(t(`تمت إضافة ${created} طاولات`, `Added ${created} tables`, lang));
@@ -580,12 +580,15 @@ export default function Tables() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>{t('اسم الطاولة', 'Table Name', lang)} *</Label>
+              <Label>{t('رقم الطاولة', 'Table Number', lang)} *</Label>
               <Input
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder={t('مثال: طاولة 1', 'e.g. Table 1', lang)}
+                placeholder={t('مثال: 1، 22، 99', 'e.g. 1, 22, 99', lang)}
               />
+              <p className="text-[11px] text-muted-foreground">
+                {t('أدخل رقماً بأي عدد من الخانات. يمكن تعديله لاحقاً.', 'Enter any number of digits. Can be edited later.', lang)}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>{t('عدد المقاعد', 'Number of Seats', lang)}</Label>
@@ -626,15 +629,17 @@ export default function Tables() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>{t('بادئة الاسم', 'Name Prefix', lang)}</Label>
+              <Label>{t('بادئة (اختياري)', 'Prefix (optional)', lang)}</Label>
               <Input
                 value={bulkForm.prefix}
                 onChange={e => setBulkForm(f => ({ ...f, prefix: e.target.value }))}
-                placeholder={t('مثال: طاولة', 'e.g. Table', lang)}
+                placeholder={t('اتركه فارغاً لأرقام فقط', 'Leave empty for numbers only', lang)}
               />
               <p className="text-[11px] text-muted-foreground">
-                {t('سيتم إنشاء أسماء مثل:', 'Will create names like:', lang)}{' '}
-                <span className="font-mono">{(bulkForm.prefix || 'طاولة').trim()} 1، {(bulkForm.prefix || 'طاولة').trim()} 2 …</span>
+                {bulkForm.prefix
+                  ? <span className="font-mono">{bulkForm.prefix.trim()} 1، {bulkForm.prefix.trim()} 2 …</span>
+                  : <span className="font-mono">1، 2، 3، 4 …</span>
+                }
               </p>
             </div>
             <div className="space-y-1.5">

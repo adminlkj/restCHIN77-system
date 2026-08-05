@@ -90,7 +90,7 @@ export function createDefaultTables(branchId, count = 10) {
   if (!branchId) return [];
   const created = [];
   for (let i = 1; i <= count; i++) {
-    created.push(addTable(branchId, { name: `طاولة ${i}`, seats: i <= 4 ? 2 : (i <= 8 ? 4 : 6), sortOrder: i }));
+    created.push(addTable(branchId, { name: String(i), seats: i <= 4 ? 2 : (i <= 8 ? 4 : 6), sortOrder: i }));
   }
   return created;
 }
