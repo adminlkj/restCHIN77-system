@@ -68,7 +68,15 @@ export default function VATReport() {
 
   // الضريبة المخرجة: سطور VAT_PAYABLE (دائن − مدين) ضمن الفترة.
   // القيد العكسي (إلغاء) يُنتج قيمة سالبة فتُخصم تلقائياً من المحصّل — ميزة المصدر الموحّد.
+  // مهم: الوعاء الضريبي يُؤخذ من سطر الإيراد في نفس القيد (لا يُعاد اشتقاقه بـ vat/0.15
+  // لأن التقريب يُسبّب فرق هللة: 0.65/0.15=4.333 بدل 4.34 الفعلي).
   const outputRows = useMemo(() => {
+    // بناء خريطة: entryNo → كل سطور القيد (للبحث عن سطر الإيراد + partyName).
+    const jeLinesByEntryNo = {};
+    for (const l of allLines) {
+      if (!jeLinesByEntryNo[l.entryNo]) jeLinesByEntryNo[l.entryNo] = [];
+      jeLinesByEntryNo[l.entryNo].push(l);
+    }
     return allLines
       .filter(l => {
         const acc = accountMap[l.accountCode];
@@ -76,12 +84,22 @@ export default function VATReport() {
       })
       .map(l => {
         const vat = +(l.credit - l.debit).toFixed(2);
-        // القاعدة الخاضعة = VAT / 15% (نستنتجها من الضريبة المرحّلة، لا من الفاتورة).
-        const base = +Math.abs((vat / 0.15)).toFixed(2);
+        // ابحث في نفس القيد عن سطر الإيراد (REVENUE) لأخذ الوعاء الفعلي واسم العميل.
+        const siblings = jeLinesByEntryNo[l.entryNo] || [];
+        const revenueLine = siblings.find(s => {
+          const a = accountMap[s.accountCode];
+          return a && (a.semanticRole === 'REVENUE_SALES' || a.accountType === 'REVENUE');
+        });
+        // الوعاء = رصيد سطر الإيراد (credit - debit). إن لم يوجد، نعود للاشتقاق.
+        const base = revenueLine
+          ? +Math.abs(revenueLine.credit - revenueLine.debit).toFixed(2)
+          : +Math.abs((vat / 0.15)).toFixed(2);
+        // اسم العميل: نأخذه من سطر الإيراد (له partyName/partyId) أو من وصف القيد.
+        const partyName = (revenueLine?.partyName) || l.partyName || '';
         return {
           date: l.date,
           docNo: l.entryNo,
-          party: l.partyName || l.description || '',
+          party: partyName || l.description || '',
           source: l.sourceType || '',
           base: vat >= 0 ? base : -base,
           vat,

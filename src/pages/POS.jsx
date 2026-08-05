@@ -363,6 +363,15 @@ export default function POS() {
   // (أُزيلت setItemDiscount — لا خصم على مستوى الصنف وفق القاعدة 4)
 
   const changeQty = (itemId, delta) => {
+    // تخفيض الكمية (delta < 0) يتطلب كلمة مرور مشرف (ما لم يكن مالكاً).
+    if (delta < 0 && !isOwner) {
+      setPendingRemoveItem(itemId);
+      setCancelPassword('');
+      setCancelAttempts(0);
+      setCancelError('');
+      setConfirmCancelOpen(true);
+      return;
+    }
     setCart(prev => prev
       .map(c => c.itemId === itemId ? { ...c, qty: c.qty + delta } : c)
       .filter(c => c.qty > 0)
@@ -371,6 +380,17 @@ export default function POS() {
 
   const setQty = (itemId, qty) => {
     const q = Math.max(0, parseInt(qty) || 0);
+    // تخفيض الكمية لصفر = حذف الصنف (يتطلب مشرف). التخفيض لقيمة أقل يتطلب مشرف.
+    const item = cart.find(c => c.itemId === itemId);
+    const isDecrease = item && q < item.qty;
+    if (isDecrease && !isOwner) {
+      setPendingRemoveItem(itemId);
+      setCancelPassword('');
+      setCancelAttempts(0);
+      setCancelError('');
+      setConfirmCancelOpen(true);
+      return;
+    }
     if (q === 0) {
       setCart(prev => prev.filter(c => c.itemId !== itemId));
     } else {
@@ -1235,8 +1255,8 @@ export default function POS() {
 
       {/* الجسم: شبكة منقسمة */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* ─── الجزء الأيمن: المنتجات (يسار في RTL) ─── */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50">
+        {/* ─── جزء المنيو: نصف الشاشة ─── */}
+        <div className="w-1/2 min-w-0 flex flex-col overflow-hidden bg-slate-50">
           {/* شريط البحث */}
           <div className="shrink-0 p-3 border-b bg-white">
             <div className="relative">
@@ -1382,7 +1402,8 @@ export default function POS() {
         </div>
 
         {/* ─── الجزء الأيسر: الإيصال (يمين في RTL) ─── */}
-        <div className="w-[360px] shrink-0 border-s bg-white flex flex-col overflow-hidden">
+        {/* ─── جزء بيانات الفاتورة: نصف الشاشة ─── */}
+        <div className="w-1/2 shrink-0 border-s bg-white flex flex-col overflow-hidden">
           {/* رأس الإيصال: زبون + طاولة + نوع الطلب */}
           <div className="shrink-0 px-2.5 py-1.5 border-b bg-slate-50 space-y-1">
             <div className="flex items-center gap-2">
@@ -1765,8 +1786,8 @@ export default function POS() {
               </div>
             )}
 
-            {/* المبلغ المستلم + طرق الدفع — تُخفى لطلبات المنصات (آجلة) */}
-            {!isPlatformSale && (
+            {/* المبلغ المستلم + طرق الدفع — تُخفى لكل فواتير التوصيل (آجلة) */}
+            {!isDelivery && (
             <>
             {/* الدفع نقداً — مع إدخال المبلغ */}
             <div className="grid grid-cols-2 gap-1.5">

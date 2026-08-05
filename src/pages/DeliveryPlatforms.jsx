@@ -242,7 +242,11 @@ export default function DeliveryPlatforms() {
       const list = filterByDate(
         invoices.filter(i => i.platformId && i.platformId === p.id)
       );
-      const salesPreTax = list.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+      // الوعاء الخاضع للضريبة = subtotal − كل الخصومات (القاعدة الضريبية الصحيحة).
+      // subtotal = إجمالي الأصناف قبل الخصم. الوعاء = ما يُحتسب عليه VAT فعلياً.
+      const grossBeforeDiscount = list.reduce((s, i) => s + (Number(i.subtotal) || 0), 0);
+      const totalDiscount = list.reduce((s, i) => s + (Number(i.discountAmount) || (Number(i.customerDiscountAmount) || 0) + (Number(i.manualDiscountAmount) || 0)), 0);
+      const salesPreTax = +(grossBeforeDiscount - totalDiscount).toFixed(2); // الوعاء بعد الخصم
       const salesVat = list.reduce((s, i) => s + (Number(i.vatAmount) || 0), 0);
       const salesTotal = list.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
       const commission = list.reduce((s, i) => s + (Number(i.platformCommission) || 0), 0);
@@ -271,7 +275,9 @@ export default function DeliveryPlatforms() {
         invoices: list,
         settlements: platformSettlements,
         orders: list.length,
-        salesPreTax,
+        grossBeforeDiscount, // إجمالي الأصناف قبل الخصم
+        totalDiscount,       // إجمالي الخصومات
+        salesPreTax,         // الوعاء الخاضع للضريبة (بعد الخصم)
         salesVat,
         salesTotal,
         commissionRate,
@@ -284,7 +290,8 @@ export default function DeliveryPlatforms() {
         settlementMethod: p.settlementMethod || 'NET',
         lastSettlementDate: lastSettlement?.date || '',
         lastSettlementRef: lastSettlement?.referenceNo || '',
-        isFullySettled: pending <= 0.01 && list.length > 0,
+        // آجل = لا توجد تسويات مرحّلة بعد. لو pending > 0 = لم تُسوَّى.
+        isFullySettled: pending <= 0.01 && list.length > 0 && platformSettlements.length > 0,
       };
     });
   }, [items, invoices, settlements, filterByDate]);
