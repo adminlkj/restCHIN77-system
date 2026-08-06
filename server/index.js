@@ -188,7 +188,7 @@ async function handleAuth(req, res, route) {
   if (route === '/api/functions/posVerifySupervisor' && req.method === 'POST') {
     const user = await requireUser(req).catch(() => null);
     if (!user) return sendJson(res, { error: 'Unauthorized' }, 401);
-    const { password } = await readBody(req);
+    const { password } = body;
     if (!password) return sendJson(res, { error: 'كلمة المرور مطلوبة' }, 400);
 
     // المالك بالبريد يتجاوز كلمة المرور (مطابقة لمنطق POS السابق).
@@ -236,7 +236,7 @@ async function handleAuth(req, res, route) {
   if ((route === '/api/pos/set-supervisor-password' || route === '/api/functions/setSupervisorPassword') && req.method === 'POST') {
     const user = await requireUser(req).catch(() => null);
     if (!user || user.role !== 'admin') return sendJson(res, { error: 'Forbidden — admin only' }, 403);
-    const { newPassword } = await readBody(req);
+    const { newPassword } = body;
     // لا نفرض أي قيد على طول/نوع كلمة المرور — يقرر المستخدم ما يناسبه.
     // المطلوب الوحيد: ألا تكون فارغة.
     if (!newPassword || String(newPassword).length === 0) {

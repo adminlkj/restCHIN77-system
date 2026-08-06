@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ReactDOMServer from 'react-dom/server';
 import {
   Plus, Minus, X, Search, Printer, Receipt as ReceiptIcon, Pause,
   CreditCard, Banknote, Clock, UtensilsCrossed, LogOut,
@@ -851,18 +852,18 @@ export default function POS() {
     setConfirmCancelOpen(true);
   };
 
-  const performCancel = () => {
+  const performCancel = async () => {
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
-      // حرّر الطاولة على الخادم أيضاً ليرى كل الأجهزة أنها متاحة فوراً.
+      // حرّر الطاولة على الخادم بشكل متزامن (ننتظر النتيجة قبل الانتقال).
       if (activeProjectId) {
-        clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
+        try { await clearTableDraftDB(activeProjectId, activeTable.tableId); } catch { /* ignore */ }
       }
     }
     clearCart();
     setConfirmCancelOpen(false);
-    toast.info(t('تم إلغاء الفاتورة وحذف المسودة وتحرير الطاولة', 'Invoice cancelled, draft deleted, table freed', lang));
+    toast.info(t('تم إلغاء الفاتورة وتحرير الطاولة', 'Invoice cancelled and table freed', lang));
     clearActiveTable();
     setActiveTable(null);
     setActiveItem('tables');
@@ -909,6 +910,62 @@ export default function POS() {
     setCancelAttempts(nextAttempts);
     setCancelError(t('كلمة المرور غير صحيحة', 'Incorrect password', lang));
     setCancelPassword('');
+  };
+
+  // ─── طباعة مباشرة في نافذة خارجية ──────────────────────────────────
+  // تفتح نافذة منبثقة مستقلة للطابعة الحرارية مباشرة بعد الترحيل.
+  // يمكن للمستخدم إعادة الطباعة منها دون حد. لا تُغلق إلا بيد المستخدم.
+  const printReceiptDirect = async (invoiceData) => {
+    try {
+      const settings = activeProjectId
+        ? await resolveReceiptSettings(activeProjectId, companySettings)
+        : companySettings;
+      // ابحث عن العميل إن وُجد لعرض بياناته الضريبية.
+      let clientObj = null;
+      if (invoiceData.clientId) {
+        clientObj = await base44.entities.Client.get(invoiceData.clientId).catch(() => null);
+      }
+      // ابنِ HTML الإيصال عبر renderToString يدوي (نستخدم DOM مؤقت).
+      const tempDiv = document.createElement('div');
+      const receiptRoot = React.createElement(ThermalReceiptDocument, {
+        invoice: invoiceData, settings, client: clientObj, lang, innerRef: { current: tempDiv },
+      });
+      // استخدم ReactDOM server render للحصول على HTML.
+      const html = ReactDOMServer.renderToStaticMarkup(receiptRoot);
+      tempDiv.innerHTML = html;
+      const content = tempDiv.innerHTML;
+      const rtl = lang === 'ar';
+      const recW = Number(settings.thermalReceiptWidth) || 240;
+      const fontW = Number(settings.thermalFontWeight) || 700;
+      const fontS = Number(settings.thermalFontSize) || 10;
+      const lineH = Number(settings.thermalLineHeight) || 1.35;
+      const paperSize = settings.thermalPaperSize || '80mm';
+      const paperMm = paperSize === '58mm' ? 58 : 80;
+      const printableMm = paperMm - 4;
+      const w = window.open('', '_blank', 'width=400,height=760');
+      if (!w) {
+        toast.warning(t('تم ترحيل الفاتورة — اسمح بالنوافذ المنبثقة لإعادة الطباعة', 'Invoice posted — allow pop-ups to reprint', lang));
+        return;
+      }
+      w.document.write(`<!DOCTYPE html><html dir="${rtl ? 'rtl' : 'ltr'}" lang="${lang}"><head><meta charset="utf-8"><title>${invoiceData.invoiceNo || 'Receipt'}</title><style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap');
+        @font-face { font-family:'saudi_riyal'; src:url('https://cdn.jsdelivr.net/gh/emran-alhaddad/Saudi-Riyal-Font@1.1.1/fonts/regular/saudi_riyal.woff2') format('woff2'); unicode-range:U+20C1; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { font-family: 'saudi_riyal', 'Tahoma', 'Cairo', sans-serif; color: #000; direction: ${rtl ? 'rtl' : 'ltr'}; font-weight: ${fontW}; font-size: ${fontS}px; line-height: ${lineH}; }
+        .receipt-wrap { width: ${recW}px; margin: 0 auto; padding: 0; }
+        img { max-width: 100%; }
+        @page { size: ${paperSize} auto; margin: 2mm; }
+        @media print { body { font-weight: ${fontW}; } html, body { width: ${paperSize}; margin: 0; padding: 0; } .receipt-wrap { width: ${printableMm}mm; padding: 0; } * { overflow: visible !important; color: #000 !important; } .no-print { display: none !important; } }
+        @media screen { body { background: #f1f5f9; padding: 16px; } }
+      </style></head><body><div class="receipt-wrap">${content}</div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script></body></html>`);
+      w.document.close();
+      w.focus();
+    } catch (e) {
+      console.error('printReceiptDirect failed:', e);
+      toast.warning(t('تم ترحيل الفاتورة — يمكنك إعادة الطباعة من شاشة الإيصالات', 'Invoice posted — reprint from Receipts', lang));
+    }
   };
 
   // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
@@ -1199,18 +1256,30 @@ export default function POS() {
       return;
     }
 
-    // الترحيل نجح بالكامل (إنشاء + اعتماد + قيد متوازن). الآن نفتح المعاينة.
-    // سجل الخادم (saved) لا يحتوي على lineItems/الخصومات التفصيلية (تُخزّن ضمن notes)،
-    // لذا ندمج الحقول المحلية فوقه حتى يظهر كل الأصناف والخصم في الإيصال المطبوع.
-    setPrintReceipt({
+    // الترحيل نجح بالكامل. افتح نافذة الطباعة الخارجية مباشرة (لا معاينة داخلية).
+    // يمكن للمستخدم إعادة الطباعة لاحقاً من شاشة الإيصالات.
+    const receiptData = {
       ...(saved || {}),
       ...invoice,
       id: saved?.id || invoice.id,
-    });
+    };
+    // افتح نافذة الطباعة الحرارية الخارجية مباشرة.
+    printReceiptDirect(receiptData);
     toast.success(t('تم ترحيل الفاتورة وفتح الطباعة', 'Invoice posted and print opened', lang));
+
+    // تحرير الطاولة بشكل متزامن قبل العودة.
+    skipAutoClearRef.current = true;
+    if (activeTable?.tableId) {
+      try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
+      if (activeProjectId) {
+        try { await clearTableDraftDB(activeProjectId, activeTable.tableId); } catch { /* ignore */ }
+      }
+    }
 
     // تنظيف
     clearCart();
+    clearActiveTable();
+    setActiveTable(null);
     } finally {
       // حرّر القفل دائماً (حتى عند الخطأ) لتفادي بقاء الزر معطّلاً للأبد.
       setSaving(false);
