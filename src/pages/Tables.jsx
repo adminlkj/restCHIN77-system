@@ -67,6 +67,7 @@ export default function Tables() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [selectedForDelete, setSelectedForDelete] = useState([]);
+  const [editMode, setEditMode] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ name: '', seats: 4 });
   const [bulkForm, setBulkForm] = useState({ count: 5, prefix: '', seats: 4 });
@@ -473,6 +474,16 @@ export default function Tables() {
           <Button variant="outline" size="icon" onClick={load}>
             <RefreshCw className="size-4" />
           </Button>
+          {/* زر وضع التحرير — تعديل/إعادة تسمية الطاولات */}
+          <Button
+            variant="outline"
+            size="sm"
+            className={`h-8 gap-1 ${editMode ? 'bg-blue-50 text-blue-700 border-blue-300' : ''}`}
+            onClick={() => { setEditMode(!editMode); if (editMode) setSelectedForDelete([]); }}
+          >
+            <Pencil className="size-3.5" />
+            {editMode ? t('إنهاء التحرير', 'Done', lang) : t('تحرير', 'Edit', lang)}
+          </Button>
           {/* زر التحديد للحذف الجماعي */}
           <Button
             variant="outline"
@@ -533,7 +544,7 @@ export default function Tables() {
             return (
               <Card
                 key={table.id}
-                className={`relative p-0 overflow-hidden border-2 cursor-pointer transition-all hover:shadow-md ${selectedForDelete.includes(table.id) ? 'ring-2 ring-red-500' : ''}`}
+                className={`relative p-0 overflow-hidden border-2 cursor-pointer transition-all hover:shadow-md ${selectedForDelete.includes(table.id) ? 'ring-2 ring-red-500' : ''} ${editMode ? 'ring-2 ring-blue-400' : ''}`}
                 style={{ aspectRatio: '1.6 / 1' }}
                 onClick={(e) => {
                   if (selectedForDelete.length > 0) {
@@ -541,10 +552,9 @@ export default function Tables() {
                     setSelectedForDelete(prev => prev.includes(table.id) ? prev.filter(id => id !== table.id) : [...prev, table.id]);
                     return;
                   }
+                  if (editMode) { e.stopPropagation(); openEdit(table); return; }
                   if (canOpenPOS) openPOS(table);
                 }}
-                onDoubleClick={(e) => { e.stopPropagation(); openEdit(table); }}
-                title={t('نقر: فتح | نقر مزدوج: تعديل', 'Click: open | Double-click: edit', lang)}
               >
                 {/* جسم الطاولة — رقم/اسم فقط في وسط مستطيل ملوّن */}
                 <div className={`absolute inset-0 flex flex-col items-center justify-center ${status.bgColor || 'bg-slate-100'}`}>
