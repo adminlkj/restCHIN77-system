@@ -1843,15 +1843,14 @@ async function createSalesReturn(base44, data) {
   }
 
   // حساب المبالغ — يجب أن تعكس نفس قيم الفاتورة الأصلية بعد الخصم.
-  // المشكلة السابقة: المرتجع كان يعيد حساب subtotal من unitPrice×qty بدون
-  // مراعاة خصم العميل، فيعطي 500 بدل 450 (الصافي بعد الخصم).
-  // الحل: نحسب نسبة المرتجع من الفاتورة الأصلية، ثم نطبّقها على القيم النهائية.
+  // inv.subtotal = إجمالي الأصناف قبل الخصم (gross).
+  // المرتجع الكامل يجب أن يعطي: subtotal_after_discount = gross - discount = net.
+  // نسبة المرتجع = grossReturn / inv.subtotal (لا نضيف discount لأن subtotal هو gross بالفعل).
   const lineTotals = effectiveLines.map(l => +(num(l.qty) * num(l.unitPrice)).toFixed(2));
-  const grossReturn = +lineTotals.reduce((s, t) => s + t, 0).toFixed(2); // إجمالي الأصناف المرتجعة قبل الخصم
-  // نسبة المرتجع من إجمالي الفاتورة الأصلية (لحساب الخصم النسبي).
-  const originalGross = num(inv.subtotal) + num(inv.discountAmount) || num(inv.subtotal);
+  const grossReturn = +lineTotals.reduce((s, t) => s + t, 0).toFixed(2);
+  const originalGross = num(inv.subtotal) || grossReturn;
   const returnRatio = originalGross > 0 ? grossReturn / originalGross : 1;
-  // خصم العميل النسبي لهذا المرتجع.
+  // خصم العميل النسبي لهذا المرتجع (من الفاتورة الأصلية).
   const originalDiscount = num(inv.discountAmount) || (num(inv.customerDiscountAmount) + num(inv.manualDiscountAmount));
   const returnDiscount = +(originalDiscount * returnRatio).toFixed(2);
   // subtotal للمرتجع = إجمالي الأصناف − خصم نسبي = الوعاء الخاضع للضريبة.
