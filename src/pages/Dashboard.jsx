@@ -130,31 +130,35 @@ export default function Dashboard() {
   }, [todayInvoices]);
 
   // إيرادات حسب طريقة الدفع (اليوم) — من JE ليتطابق مع ميزان المراجعة.
+  // طرق الدفع اليوم — من القيود المرحّلة (المصدر الموحّد).
   // صندوق الكاشير (1111) = نقد، بطاقات POS (1114) = بطاقات.
-  // هام: نستخدم **الصافي** (مدين − دائن) وليس المدين وحده، حتى نخصم مرتجعات
-  // النقد (رَدّ النقد للزبون عند الإرجاع = دائن على 1111). سابقاً كان العرض
-  // يجمع المدين فقط فيُظهر نقداً أعلى من المحصّل الفعلي (521.02 بدل 391.01).
+  // نستخدم المدين الصافي (مدين − دائن) لخصم المرتجعات.
   const paymentBreakdown = useMemo(() => {
     const methods = { cash: 0, card_mada: 0, card_visa: 0, card_mc: 0, card_other: 0 };
+    // من JE: 1111 = نقد، 1114 = بطاقات (مُجمّعة).
     allLines
       .filter(l => toBusinessDayDate(l.date) === today)
       .forEach(l => {
         const acc = accountMap[l.accountCode] || {};
         const code = acc.code || '';
-        // الصافي = مدين − دائن. للنقد المدين موجب، وللمرتجع دائن (سالب).
-        const net = (Number(l.debit) || 0) - (Number(l.credit) || 0);
-        if (net === 0) return;
-        if (code === '1111' || acc.semanticRole === 'CASH') methods.cash += net;
-        else if (code === '1114') {
-          // كل البطاقات تُجمَّع على 1114 — نضعها تحت card_mada (أكبر فئة).
+        const debit = Number(l.debit) || 0;
+        const credit = Number(l.credit) || 0;
+        const net = debit - credit;
+        if (net <= 0) return; // فقط المدين (تحصيل)
+        if (code === '1111' || acc.semanticRole === 'CASH') {
+          methods.cash += net;
+        } else if (code === '1114') {
+          // البطاقات مُجمّعة على 1114 — لا يمكن التفريق بين مدى/فيزا/MC من JE.
+          // نضعها تحت card_mada (أكبر فئة عادة) ونعرض الإجمالي.
           methods.card_mada += net;
+        } else if (code === '1112' || acc.semanticRole === 'BANK') {
+          methods.card_other += net; // تحويلات بنكية
         }
       });
-    // نقّب للأرقام السالبة (مثلاً مرتجع بنك).
-    methods.cash = +methods.cash.toFixed(2);
-    methods.card_mada = +methods.card_mada.toFixed(2);
+    // تقريب.
+    Object.keys(methods).forEach(k => { methods[k] = +methods[k].toFixed(2); });
     return methods;
-  }, [allLines, accountMap, today]);
+  }, [todayInvoices]);
 
   // إيرادات حسب الفرع (اليوم) — من JE ليتطابق مع قائمة الدخل.
   // نعدّ الإيصالات الفريدة لكل فرع عبر تتبّع entryNo على سطور الإيراد (REVENUE)
