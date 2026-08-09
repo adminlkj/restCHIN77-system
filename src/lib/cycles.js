@@ -60,8 +60,6 @@ export const CYCLES = [
     Icon: ShoppingCart,
     color: { text: 'text-amber-600', border: 'border-amber-500', light: 'bg-amber-50', bg: 'bg-amber-600' },
     tabs: [
-      { key: 'purchase-requests', ar: 'طلبات الشراء',    en: 'Purchase Requests', Icon: ClipboardList },
-      { key: 'purchase-orders',   ar: 'أوامر الشراء',    en: 'Purchase Orders',   Icon: ShoppingCart },
       { key: 'goods-receipts',    ar: 'الاستلام',        en: 'Goods Receipts',    Icon: Package },
       { key: 'supplier-invoices', ar: 'فواتير الموردين', en: 'Supplier Invoices', Icon: ReceiptText },
       { key: 'supplier-payments', ar: 'سداد الموردين',   en: 'Supplier Payments', Icon: Wallet },

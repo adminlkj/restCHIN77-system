@@ -502,8 +502,9 @@ function buildSupplierPaymentJE({ paymentNo, date, supplierId, supplierName, amo
   };
 }
 
-// فاتورة مورد (التزام): من ح/ مشتريات + ضريبة مدفوعة (مدين) إلى ح/ ذمم الموردين (دائن)
-// مركز التكلفة = المشروع (فتقع التكلفة على المشروع) وإلا المخزن.
+// فاتورة مورد: تنشئ كل القيود (مشتريات/تكلفة + ضريبة مدخلة + ذمم الموردين).
+// بما أن سند الاستلام لا ينشئ ذمم (فقط مخزون مؤقت)، ففاتورة المورد هي
+// التي تُنشئ الالتزام الكامل للمورد.
 function buildSupplierInvoiceJE({ invoiceNo, date, supplierId, supplierName, baseAmount, vatAmount, totalAmount, projectName, warehouseName }, accounts) {
   const purchase = resolveAccount('EXPENSE_PURCHASE', accounts);
   const vatRec = resolveAccount('VAT_RECEIVABLE', accounts);
@@ -513,7 +514,7 @@ function buildSupplierInvoiceJE({ invoiceNo, date, supplierId, supplierName, bas
     entryNo: `JE-SUPINV-${invoiceNo}`, date, description: `فاتورة مورد ${invoiceNo} — ${supplierName || ''}`, sourceType: 'SupplierInvoice', isPosted: true,
     totalDebit: totalAmount, totalCredit: totalAmount,
     lines: [
-      { accountCode: purchase.code, accountName: purchase.name, debit: baseAmount, credit: 0, description: `مشتريات ومواد${projectName ? ` — ${projectName}` : ''}`, costCenter },
+      { accountCode: purchase.code, accountName: purchase.name, debit: baseAmount, credit: 0, description: `مشتريات ومواد${projectName ? ` — ${projectName}` : ''}`, costCenter, partyType: 'SUPPLIER', partyId: supplierId || '', partyName: supplierName || '' },
       ...(vatAmount > 0 ? [{ accountCode: vatRec.code, accountName: vatRec.name, debit: vatAmount, credit: 0, description: 'ضريبة مدفوعة' }] : []),
       { accountCode: payables.code, accountName: payables.name, debit: 0, credit: totalAmount, description: `مستحقات ${supplierName || ''}`, partyType: 'SUPPLIER', partyId: supplierId, partyName: supplierName },
     ],
@@ -532,9 +533,11 @@ function buildStockMovementJE(m, accounts) {
   if (m.type === 'RECEIVE') {
     let creditAcc, creditParty = null, creditDesc;
     if (m.sourceType === 'SUPPLIER') {
-      creditAcc = resolveAccount('PAYABLES', accounts);
-      creditParty = { type: 'SUPPLIER', id: m.supplierId, name: m.supplierName };
-      creditDesc = `مستحقات ${m.supplierName || 'مورد'}`;
+      // سند الاستلام من مورد = مخزون فقط (لا ذمم مورد).
+      // الذمم تُنشأ عند اعتماد فاتورة المورد لاحقاً.
+      // الطرف الدائن = رصيد افتتاحي مؤقت حتى تُعتمد الفاتورة.
+      creditAcc = resolveAccount('OPENING_BALANCE_EQUITY', accounts);
+      creditDesc = `استلام مؤقت — بانتظار فاتورة المورد`;
     } else if (m.sourceType === 'CASH') {
       creditAcc = { code: m.cashAccountCode, name: m.cashAccountName || 'النقدية' };
       creditDesc = `شراء نقدي من ${creditAcc.name}`;
@@ -751,28 +754,41 @@ function qtyReached(received, ordered) {
 async function createGoodsReceipt(base44, data) {
   if (isBlank(data.receiptNo)) throw new Error('رقم السند مطلوب');
   if (isBlank(data.date)) throw new Error('تاريخ السند مطلوب');
-  if (isBlank(data.purchaseOrderId)) throw new Error('اختر أمر الشراء أولاً');
+  // الاستلام لا يتطلب أمر شراء — يمكن الاستلام مباشرة (إدخال مخزون).
+  // supplierId و supplierName اختياريان.
 
-  const po = await base44.asServiceRole.entities.PurchaseOrder.get(data.purchaseOrderId);
-  if (!po) throw new Error('أمر الشراء غير موجود');
-  // مخزن الوجهة: إن لم يوجد warehouseId، استخدم projectId (الفرع) كمخزن افتراضي.
-  const effectiveWarehouseId = po.warehouseId || po.projectId || '';
-  const effectiveWarehouseName = po.warehouseName || po.projectName || '';
-  if (isBlank(effectiveWarehouseId)) throw new Error('أمر الشراء بلا مخزن وجهة أو فرع — لا يمكن إدخال المخزون');
+  // إذا وُجد أمر شراء، نطابقه. وإلا، نعالج الاستلام كوارد مخزون مباشر.
+  let po = null;
+  let orderLines = [];
+  if (!isBlank(data.purchaseOrderId)) {
+    po = await base44.asServiceRole.entities.PurchaseOrder.get(data.purchaseOrderId);
+    if (po) orderLines = Array.isArray(po.items) ? po.items.map((l) => ({ ...l })) : [];
+  }
 
-  // البنود المستلمة في هذه الدفعة: [{ boqItemId | description, receivingQty }]
+  // مخزن الوجهة: من البيانات، أو من أمر الشراء، أو من الفرع.
+  const effectiveWarehouseId = (po?.warehouseId || data.warehouseId || data.projectId || '');
+  const effectiveWarehouseName = (po?.warehouseName || data.warehouseName || data.projectName || '');
+  if (isBlank(effectiveWarehouseId)) throw new Error('حدد المخزن أو الفرع لاستلام البضاعة');
+
+  // البنود المستلمة.
   const incoming = Array.isArray(data.lines) ? data.lines : [];
-  const orderLines = Array.isArray(po.items) ? po.items.map((l) => ({ ...l })) : [];
   const matched = [];
   for (const inc of incoming) {
-    const recvQty = num(inc.receivingQty);
+    const recvQty = num(inc.receivingQty || inc.quantity || inc.qty);
     if (recvQty <= 0) continue;
-    const idx = orderLines.findIndex((ol) => (inc.boqItemId && ol.boqItemId === inc.boqItemId) || (!inc.boqItemId && ol.description === inc.description));
-    if (idx < 0) continue;
-    const ol = orderLines[idx];
-    const remaining = +(num(ol.orderedQty) - num(ol.receivedQty)).toFixed(3);
-    if (recvQty > remaining + 0.001) throw new Error(`الكمية المستلمة من "${ol.description}" تتجاوز المتبقي (${remaining})`);
-    matched.push({ idx, recvQty, line: ol });
+    // مطابقة بأمر الشراء إن وُجد، وإلا إنشاء بند جديد.
+    if (orderLines.length) {
+      const idx = orderLines.findIndex((ol) => (inc.boqItemId && ol.boqItemId === inc.boqItemId) || (!inc.boqItemId && ol.description === inc.description));
+      if (idx >= 0) {
+        const ol = orderLines[idx];
+        const remaining = +(num(ol.orderedQty) - num(ol.receivedQty)).toFixed(3);
+        // قبول الاستلام بالزيادة أو النقص عن المطلوب.
+        matched.push({ idx, recvQty, line: ol, over: recvQty > remaining + 0.001 });
+        continue;
+      }
+    }
+    // بند جديد بدون أمر شراء.
+    matched.push({ idx: -1, recvQty, line: { description: inc.description || inc.itemName || '', unitPrice: num(inc.unitCost || inc.unitPrice) || 0, unit: inc.unit || '', orderedQty: 0, receivedQty: 0 }, over: false });
   }
   if (matched.length === 0) throw new Error('لم تُدخل أي كمية مستلمة');
 
@@ -784,10 +800,10 @@ async function createGoodsReceipt(base44, data) {
 
   const payload = {
     receiptNo: data.receiptNo, date: data.date,
-    purchaseOrderId: po.id, orderNo: po.orderNo,
-    supplierId: po.supplierId, supplierName: po.supplierName,
-    projectId: po.projectId, projectName: po.projectName,
-    warehouseId: po.warehouseId, warehouseName: po.warehouseName,
+    purchaseOrderId: po?.id || '', orderNo: po?.orderNo || '',
+    supplierId: po?.supplierId || data.supplierId || '', supplierName: po?.supplierName || data.supplierName || '',
+    projectId: po?.projectId || data.projectId || effectiveWarehouseId, projectName: po?.projectName || data.projectName || effectiveWarehouseName,
+    warehouseId: effectiveWarehouseId, warehouseName: effectiveWarehouseName,
     receivedAmount, items: receiptItems, status: 'RECEIVED', invoicedStatus: 'PENDING',
     description: data.notes || '', notes: data.notes || '',
   };
@@ -808,10 +824,10 @@ async function createGoodsReceipt(base44, data) {
         itemName: m.line.description, itemCode: m.line.itemNo || '', unit: m.line.unit || '',
         quantity, unitCost, totalCost,
         toWarehouseId: effectiveWarehouseId, toWarehouseName: effectiveWarehouseName,
-        supplierId: po.supplierId, supplierName: po.supplierName,
+        supplierId: payload.supplierId, supplierName: payload.supplierName,
         reference: payload.receiptNo, journalEntryNo: `JE-STK-${movementNo}`,
       });
-      // 2) القيد المحاسبي (المخزون مدين / ذمم المورد دائن).
+      // 2) القيد المحاسبي (المخزون مدين / رصيد افتتاحي مؤقت دائن — لا ذمم مورد).
       if (totalCost > 0) {
         await autoPostJE(base44, buildStockMovementJE(mv, accounts));
       }
@@ -820,15 +836,18 @@ async function createGoodsReceipt(base44, data) {
         name: m.line.description, unit: m.line.unit, warehouseId: effectiveWarehouseId, warehouseName: effectiveWarehouseName,
         quantity, unitCost,
       });
-      // 4) تراكم الكمية المستلمة على بند الأمر.
-      orderLines[m.idx].receivedQty = +(num(orderLines[m.idx].receivedQty) + quantity).toFixed(3);
+      // 4) تراكم الكمية المستلمة على بند الأمر (إن وُجد).
+      if (m.idx >= 0 && orderLines[m.idx]) orderLines[m.idx].receivedQty = +(num(orderLines[m.idx].receivedQty) + quantity).toFixed(3);
     }
-    const allDone = orderLines.every((ol) => qtyReached(ol.receivedQty, ol.orderedQty));
-    const anyReceived = orderLines.some((ol) => num(ol.receivedQty) > 0);
-    const receiptStatus = allDone ? 'RECEIVED' : anyReceived ? 'PARTIAL' : 'PENDING';
-    await base44.asServiceRole.entities.PurchaseOrder.update(po.id, {
-      items: orderLines, receiptStatus, status: allDone ? 'RECEIVED' : po.status,
-    });
+    // تحديث حالة أمر الشراء إن وُجد.
+    if (po && orderLines.length) {
+      const allDone = orderLines.every((ol) => qtyReached(ol.receivedQty, ol.orderedQty));
+      const anyReceived = orderLines.some((ol) => num(ol.receivedQty) > 0);
+      const receiptStatus = allDone ? 'RECEIVED' : anyReceived ? 'PARTIAL' : 'PENDING';
+      await base44.asServiceRole.entities.PurchaseOrder.update(po.id, {
+        items: orderLines, receiptStatus, status: allDone ? 'RECEIVED' : po.status,
+      });
+    }
   } catch (e) {
     await rollback(base44, 'GoodsReceipt', receipt.id);
     throw e;
@@ -1462,26 +1481,11 @@ async function approveSupplierInvoice(base44, id) {
   if (inv.status !== 'DRAFT') throw new Error('لا يمكن اعتماد إلا الفواتير التي في حالة مسودة');
   const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
 
-  if (inv.goodsReceiptId) {
-    // الذمة والمخزون مُثبتان من سند الاستلام. نُثبت فقط ضريبة المدخلات المسترجعة
-    // (ضريبة مدفوعة مدين / ذمم المورد دائن) لأنها لم تُثبت في قيد الاستلام.
-    if (num(inv.vatAmount) > 0) {
-      const vatRec = resolveAccount('VAT_RECEIVABLE', accounts);
-      const payables = resolveAccount('PAYABLES', accounts);
-      await autoPostJE(base44, {
-        entryNo: `JE-SUPINV-VAT-${inv.invoiceNo}`, date: inv.date,
-        description: `ضريبة مدخلات فاتورة مورد ${inv.invoiceNo} — ${inv.supplierName || ''}`,
-        sourceType: 'SupplierInvoice', isPosted: true,
-        totalDebit: num(inv.vatAmount), totalCredit: num(inv.vatAmount),
-        lines: [
-          { accountCode: vatRec.code, accountName: vatRec.name, debit: num(inv.vatAmount), credit: 0, description: 'ضريبة قيمة مضافة مدفوعة' },
-          { accountCode: payables.code, accountName: payables.name, debit: 0, credit: num(inv.vatAmount), description: `مستحقات ${inv.supplierName || ''}`, partyType: 'SUPPLIER', partyId: inv.supplierId, partyName: inv.supplierName },
-        ],
-      });
-    }
-  } else {
-    await autoPostJE(base44, buildSupplierInvoiceJE(inv, accounts));
-  }
+  // فاتورة المورد تنشئ دائماً القيد الكامل (مشتريات + ضريبة مدخلة + ذمم).
+  // سابقاً: إذا كانت مرتبطة بسند استلام، كان يُرحّل VAT فقط لأن الذمم سُجّلت
+  // في الاستلام. لكن بعد التعديل، الاستلام لا ينشئ ذمم — فقط مخزون مؤقت.
+  // لذلك فاتورة المورد تنشئ القيد الكامل في كل الحالات.
+  await autoPostJE(base44, buildSupplierInvoiceJE(inv, accounts));
   return await base44.asServiceRole.entities.SupplierInvoice.update(id, { status: 'APPROVED' });
 }
 
