@@ -457,8 +457,10 @@ export default function PayrollRuns() {
             <div className="space-y-1.5"><Label>{t('ملاحظات', 'Notes', lang)}</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('إلغاء', 'Cancel', lang)}</Button>
-            <Button onClick={save} disabled={saving} className="bg-violet-600 hover:bg-violet-700">{saving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}</Button>
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{t('إلغاء', 'Cancel', lang)}</Button>
+            {/* type="button" ضروري: زر type="submit" خارج <form> لا يطلق onClick في
+                بعض المتصفحات وخصوصاً داخل Radix Dialog. تحديده كـ button يضمن عمل النقر. */}
+            <Button type="button" onClick={save} disabled={saving} className="bg-violet-600 hover:bg-violet-700">{saving ? t('جاري الحفظ...', 'Saving...', lang) : t('حفظ', 'Save', lang)}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
