@@ -50,7 +50,7 @@ const ACCOUNTS = {
   REVENUE_SERVICE:      { code: '4300', name: 'إيرادات مبيعات التوصيل' },
   COMMISSION_EXPENSE:   { code: '5231', name: 'عمولات منصات التوصيل' },
   COMMISSION_VAT_INPUT: { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة (عمولات)' },
-  EXPENSE_GENERAL:      { code: '5250', name: 'رسوم ومصروفات حكومية' },
+  EXPENSE_GENERAL:      { code: '5220', name: 'مصروفات التشغيل' },
   EXPENSE_SALARIES:     { code: '5210', name: 'الرواتب والأجور' },
   EXPENSE_PURCHASE:     { code: '5110', name: 'تكلفة المواد الغذائية' },
   EXPENSE_PROJECT:      { code: '5150', name: 'مصروفات تجهيز الطلبات' },

@@ -36,6 +36,9 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
   const [codeError, setCodeError] = useState('');
 
   const accountsList = allAccounts || parents || [];
+  // الحسابات النظامية: تُقفل حقول الدور/النوع/الطبيعة/الرمز/الأب لأن المحرك يعتمد
+  // عليها. يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء والملاحظات.
+  const locked = account?.isSystem === true;
 
   useEffect(() => {
     if (account) setForm({ ...EMPTY, ...account, openingBalance: 0 });
@@ -99,7 +102,7 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <Label className="text-xs">{t('الحساب الأب', 'Parent Account', lang)}</Label>
-            <Select value={form.parentCode || 'none'} onValueChange={handleParent}>
+            <Select value={form.parentCode || 'none'} onValueChange={handleParent} disabled={locked}>
               <SelectTrigger className="mt-1"><SelectValue placeholder={t('رئيسي', 'Top-level', lang)} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">{t('حساب رئيسي (بدون أب)', 'Top-level (no parent)', lang)}</SelectItem>
@@ -109,17 +112,19 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
               </SelectContent>
             </Select>
             <p className="text-[10px] text-muted-foreground mt-1">
-              {t('اختر حساباً رئيسياً لإضافة حساب فرعي تحته (مثل حساب بنكي جديد تحت "البنوك")', 'Pick a parent to add a sub-account under it (e.g. a new bank under "Banks")', lang)}
+              {locked
+                ? t('حساب نظامي — لا يمكن تغيير موقعه في الشجرة', 'System account — its position in the tree cannot be changed', lang)
+                : t('اختر حساباً رئيسياً لإضافة حساب فرعي تحته (مثل حساب بنكي جديد تحت "البنوك")', 'Pick a parent to add a sub-account under it (e.g. a new bank under "Banks")', lang)}
             </p>
           </div>
           <div>
             <Label className="text-xs">{t('رقم الحساب', 'Account Code', lang)} *</Label>
-            <Input value={form.code} onChange={e => set('code', e.target.value)} placeholder="1021" className={`mt-1 ${codeError ? 'border-destructive focus-visible:ring-destructive' : ''}`} />
+            <Input value={form.code} onChange={e => set('code', e.target.value)} disabled={locked} placeholder="1021" className={`mt-1 ${codeError ? 'border-destructive focus-visible:ring-destructive' : ''}`} />
             {codeError && <p className="text-[10px] text-destructive mt-1">{codeError}</p>}
           </div>
           <div>
             <Label className="text-xs">{t('نوع الحساب', 'Account Type', lang)} *</Label>
-            <Select value={form.accountType} onValueChange={handleType} disabled={!!form.parentCode}>
+            <Select value={form.accountType} onValueChange={handleType} disabled={locked || !!form.parentCode}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ACCOUNT_TYPES.map(a => <SelectItem key={a.key} value={a.key}>{lang === 'ar' ? a.ar : a.en}</SelectItem>)}
@@ -137,7 +142,7 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
           </div>
           <div>
             <Label className="text-xs">{t('الطبيعة', 'Nature', lang)}</Label>
-            <Select value={form.nature} onValueChange={v => set('nature', v)}>
+            <Select value={form.nature} onValueChange={v => set('nature', v)} disabled={locked}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="DEBIT">{t('مدين', 'Debit', lang)}</SelectItem>
@@ -154,9 +159,11 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
           )}
           <div className="col-span-2">
             <Label className="text-xs">{t('الدور الدلالي (اختياري)', 'Semantic Role (optional)', lang)}</Label>
-            <Input value={form.semanticRole} onChange={e => set('semanticRole', e.target.value.toUpperCase())} placeholder="EXPENSE_GENERAL" className="mt-1 font-mono text-xs" />
+            <Input value={form.semanticRole} onChange={e => set('semanticRole', e.target.value.toUpperCase())} disabled={locked} placeholder="EXPENSE_GENERAL" className="mt-1 font-mono text-xs" />
             <p className="text-[10px] text-muted-foreground mt-1">
-              {t('يُستخدم لربط القيود التلقائية بهذا الحساب. اتركه فارغاً للحسابات التفصيلية.', 'Links auto-journal entries to this account. Leave empty for detail accounts.', lang)}
+              {locked
+                ? t('حساب نظامي — دوره الدلالي مقفل لأن القيود التلقائية تعتمد عليه', 'System account — its semantic role is locked because auto-posting depends on it', lang)
+                : t('يُستخدم لربط القيود التلقائية بهذا الحساب. اتركه فارغاً للحسابات التفصيلية.', 'Links auto-journal entries to this account. Leave empty for detail accounts.', lang)}
             </p>
           </div>
         </div>

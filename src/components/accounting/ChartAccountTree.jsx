@@ -67,6 +67,7 @@ function AccountBranch({ acc, depth, childrenMap, expanded, onToggle, onEdit, on
 function AccountRow({ acc, depth, hasChildren, expanded, searchMode, onToggle, onEdit, onDelete, typeMeta, lang }) {
   const meta = typeMeta[acc.accountType] || typeMeta.ASSET;
   const postable = acc.isPostable !== false;
+  const isSystem = acc.isSystem === true;
   return (
     <div className="group relative flex items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-muted/50 transition-colors" style={{ paddingInlineStart: `${depth * 26 + 12}px` }}>
       {hasChildren ? (
@@ -80,6 +81,7 @@ function AccountRow({ acc, depth, hasChildren, expanded, searchMode, onToggle, o
           <p className={`${postable ? 'font-semibold' : 'font-bold'} truncate`}>{lang === 'ar' ? acc.name : (acc.nameEn || acc.name)}</p>
           {!postable && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 shrink-0">{t('تجميعي', 'Group', lang)}</span>}
           {postable && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 shrink-0">{t('نهائي', 'Leaf', lang)}</span>}
+          {isSystem && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 shrink-0 border border-amber-200">{t('نظامي', 'System', lang)}</span>}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <span>{acc.nature === 'DEBIT' ? t('طبيعته مدينة', 'Debit nature', lang) : t('طبيعته دائنة', 'Credit nature', lang)}</span>
@@ -90,7 +92,8 @@ function AccountRow({ acc, depth, hasChildren, expanded, searchMode, onToggle, o
       <span className={`hidden md:inline-flex rounded-full border px-2.5 py-1 text-xs font-medium shrink-0 ${meta.color}`}>{lang === 'ar' ? meta.ar : meta.en}</span>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         <button onClick={() => onEdit(acc)} className="size-8 flex items-center justify-center rounded-lg hover:bg-white text-muted-foreground"><Pencil className="size-4" /></button>
-        <button onClick={() => onDelete(acc)} className="size-8 flex items-center justify-center rounded-lg hover:bg-rose-50 text-rose-500"><Trash2 className="size-4" /></button>
+        {/* الحسابات النظامية محمية من الحذف — لا يظهر زر السلة لها */}
+        {!isSystem && <button onClick={() => onDelete(acc)} className="size-8 flex items-center justify-center rounded-lg hover:bg-rose-50 text-rose-500"><Trash2 className="size-4" /></button>}
       </div>
     </div>
   );

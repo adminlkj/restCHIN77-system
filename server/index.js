@@ -416,12 +416,18 @@ async function handleUserEntity(req, res, action, id, body, user) {
 async function handlePurgeTransactions(req, res) {
   const user = await requireUser(req);
   if (user.role !== 'admin') return sendJson(res, { error: 'Forbidden' }, 403);
+  // ⚠️ القائمة تحذف العمليات/القيود فقط — وتُحفظ البيانات الرئيسية:
+  //   User, Employee, Project (فرع), InventoryItem (منيو), MenuCategory,
+  //   Supplier, Client, DeliveryPlatform.
+  // ChartAccount يُحذف أيضاً ثم يُعاد إنشاؤه تلقائياً من الدليل القياسي عند
+  // إعادة تشغيل الخادم (seedCoreData). هذا يضمن دليلاً نظيفاً بعد التنقية.
+  // ملاحظة: سابقاً كانت القائمة تحذف Client و Supplier بالخطأ — تم الإصلاح.
   const TRANSACTION_ENTITIES = [
-    'SalesInvoice', 'SalesReturn', 'ClientPayment', 'PurchaseReturn',
+    'SalesInvoice', 'SalesReturn', 'ClientPayment', 'PlatformSettlement', 'PurchaseReturn',
     'JournalEntry', 'SupplierInvoice', 'SupplierPayment', 'PurchaseOrder',
     'PurchaseRequest', 'GoodsReceipt', 'Expense', 'PayrollRun', 'PayrollSheet',
-    'AttendanceRecord', 'EmployeeAdvance', 'BusinessDay', 'StockMovement',
-    'Table', 'Client', 'Supplier', 'AuditLog',
+    'AttendanceRecord', 'EmployeeAdvance', 'EmployeeCustody', 'EmployeeDocument',
+    'BusinessDay', 'StockMovement', 'Table', 'AuditLog', 'ChartAccount',
   ];
   const results = {};
   for (const entityName of TRANSACTION_ENTITIES) {

@@ -137,6 +137,16 @@ export async function updateEntity(entityName, id, data, options = {}) {
     // CRITICAL: block direct PATCH on financial fields (subtotal, vatAmount, etc.)
     // These must be changed only via postOperation which recomputes totals + JEs.
     await assertNoFinancialFieldPatch(entityName, data);
+    // الحسابات النظامية في دليل الحسابات: لا يجوز تغيير الدور الدلالي/النوع/الطبيعة/
+    // الرمز/الأب لأن المحرك يعتمد عليها لترحيل القيود التلقائية. يُسمح فقط بإعادة
+    // التسمية والتنشيط/الإلغاء والملاحظات.
+    if (entityName === 'ChartAccount' && current?.isSystem === true) {
+      const locked = ['semanticRole', 'accountType', 'nature', 'code', 'parentCode'];
+      const changed = locked.filter((f) => data[f] !== undefined && data[f] !== current[f]);
+      if (changed.length > 0) {
+        throw validationError(`لا يمكن تعديل (${changed.join('، ')}) لحساب نظامي أساسي — يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء`);
+      }
+    }
   }
   await assertOpenFiscalYear(entityName, { ...(current || {}), ...(data || {}) });
   await validateEntityData(entityName, { ...current, ...data }, current);
@@ -158,6 +168,11 @@ export async function deleteEntity(entityName, id) {
   // CRITICAL: block DELETE on posted/approved documents (not just referential children)
   // This prevents deleting an APPROVED SalesInvoice and leaving orphan JEs
   await assertNotDeletable(entityName, current);
+  // الحسابات النظامية (isSystem) في دليل الحسابات محمية من الحذف — لأن المحرك
+  // يعتمد عليها لترحيل القيود التلقائية. حذفها يكسر النظام بالكامل.
+  if (entityName === 'ChartAccount' && current?.isSystem === true) {
+    throw validationError('لا يمكن حذف حساب نظامي أساسي لتشغيل النظام — يمكنك إلغاء تنشيطه بدلاً من ذلك');
+  }
   // CRITICAL: referential integrity — block delete if children exist
   await assertNoChildren(entityName, current);
   await pool.query('DELETE FROM entity_records WHERE entity_name = $1 AND id = $2', [entityName, id]);
