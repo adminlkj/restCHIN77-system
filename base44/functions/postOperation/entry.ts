@@ -44,10 +44,11 @@ const ACCOUNTS = {
   VAT_PAYABLE:          { code: '2160', name: 'ضريبة القيمة المضافة المحصلة' },
   VAT_RECEIVABLE:       { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة' },
   ACCRUED_SALARIES:     { code: '2140', name: 'رواتب مستحقة الدفع' },
-  REVENUE_SALES:        { code: '4100', name: 'إيرادات مبيعات الصالة' },
-  REVENUE_CONSTRUCTION: { code: '4100', name: 'إيرادات مبيعات الصالة' },
-  REVENUE_RENTAL:       { code: '4200', name: 'إيرادات الحجوزات والمناسبات' },
-  REVENUE_SERVICE:      { code: '4300', name: 'إيرادات مبيعات التوصيل' },
+  // إيرادات المطعم — أسماء صحيحة لنشاط المطعم (وليس قوالب المقاولات القديمة).
+  // ملاحظة الترقيم: التوصيل (4200) أبرز من الحجوزات (4300) لأنه مصدر إيراد رئيسي للمطعم.
+  REVENUE_DINE_IN:      { code: '4100', name: 'مبيعات الصالة' },
+  REVENUE_DELIVERY:     { code: '4200', name: 'مبيعات منصات التوصيل' },
+  REVENUE_EVENTS:       { code: '4300', name: 'مبيعات الحجوزات والمناسبات' },
   COMMISSION_EXPENSE:   { code: '5231', name: 'عمولات منصات التوصيل' },
   COMMISSION_VAT_INPUT: { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة (عمولات)' },
   EXPENSE_GENERAL:      { code: '5220', name: 'مصروفات التشغيل' },
@@ -61,7 +62,7 @@ const ACCOUNTS = {
   EXPENSE_ADMIN:        { code: '5240', name: 'مصروفات إدارية' },
   INVENTORY_MATERIALS:  { code: '1131', name: 'مخزون المواد الغذائية' },
   OPENING_BALANCE_EQUITY: { code: '3900', name: 'رصيد افتتاحي — حقوق ملكية' },
-  RETAINED_EARNINGS:    { code: '3200', name: 'الأرباح المبقاة' },
+  RETAINED_EARNINGS:    { code: '3300', name: 'الأرباح المبقاة' },
   INVENTORY_LOSS:       { code: '5170', name: 'خسائر تلف وهدر المخزون' },
   INVENTORY_GAIN:       { code: '4430', name: 'فروقات جرد المخزون (زيادة)' },
   STAFF_RECEIVABLE:     { code: '1125', name: 'تحميلات على الموظفين' },
@@ -275,7 +276,9 @@ const PAYMENT_METHOD_ACCOUNTS = {
 };
 
 function buildSalesInvoiceJE({ invoiceNo, date, clientId, clientName, subtotal, vatAmount, totalAmount, invoiceType, projectName, payments, isPlatformSale, platformId, platformName, platformCommission, platformCommissionVat, settlementMethod }) {
-  const rev = invoiceType === 'RENTAL' ? ACCOUNTS.REVENUE_RENTAL : invoiceType === 'SERVICE' ? ACCOUNTS.REVENUE_SERVICE : ACCOUNTS.REVENUE_SALES;
+  // اختيار حساب الإيراد حسب نوع الفاتورة. القيم المتوقعة: 'DINE_IN' (صالة، افتراضي)،
+  // 'DELIVERY' (توصيل)، 'EVENTS' (حجوزات/مناسبات).
+  const rev = invoiceType === 'EVENTS' ? ACCOUNTS.REVENUE_EVENTS : invoiceType === 'DELIVERY' ? ACCOUNTS.REVENUE_DELIVERY : ACCOUNTS.REVENUE_DINE_IN;
   const costCenter = projectName || '';
   const vat = num(vatAmount);
   const commission = num(platformCommission);
@@ -1697,9 +1700,13 @@ async function guarded(base44, payload, handler) {
 //   - بيع منصة: دائن ذمم المنصة.
 function buildSalesReturnJE({ returnNo, date, originalInv, lines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale }) {
   const costCenter = originalInv.projectName || '';
-  const rev = originalInv.invoiceType === 'SERVICE'
-    ? resolveAccount('REVENUE_SERVICE', accounts)
-    : resolveAccount('REVENUE_SALES', accounts);
+  // مرتجع المبيعات: نعكس حساب الإيراد الأصلي. نميّز التوصيل والحجوزات،
+  // وما عداها يُعكس على إيراد الصالة (الافتراضي).
+  const rev = originalInv.invoiceType === 'DELIVERY'
+    ? resolveAccount('REVENUE_DELIVERY', accounts)
+    : originalInv.invoiceType === 'EVENTS'
+      ? resolveAccount('REVENUE_EVENTS', accounts)
+      : resolveAccount('REVENUE_DINE_IN', accounts);
   const vat = resolveAccount('VAT_PAYABLE', accounts);
 
   // استخرج بيانات الدفع/المنصة من notes الفاتورة الأصلية.

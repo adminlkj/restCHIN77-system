@@ -16,9 +16,9 @@ function Money({ value, symbolSize = '1.35em' }) {
 }
 
 const TYPE_LABEL = {
-  CONSTRUCTION: { ar: 'فاتورة أعمال تنفيذية', en: 'Construction Invoice' },
-  SERVICE: { ar: 'فاتورة خدمات', en: 'Service Invoice' },
-  RENTAL: { ar: 'فاتورة تأجير', en: 'Rental Invoice' },
+  DINE_IN: { ar: 'فاتورة مبيعات صالة', en: 'Dine-in Invoice' },
+  DELIVERY: { ar: 'فاتورة مبيعات توصيل', en: 'Delivery Invoice' },
+  EVENTS: { ar: 'فاتورة حجوزات ومناسبات', en: 'Events Invoice' },
 };
 
 // يبني قائمة بنود الفاتورة. إن لم توجد بنود تفصيلية نُنشئ بنداً واحداً من الوصف والصافي.
@@ -59,7 +59,7 @@ export default function InvoiceDocument({ invoice, settings, client, lang = 'ar'
 
   const primary = settings.primaryColor || '#c8891f';
   const accent = settings.accentColor || '#1f2d3d';
-  const _typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.RENTAL;
+  const _typeLabel = TYPE_LABEL[invoice.invoiceType] || TYPE_LABEL.DINE_IN;
 
   const subtotal = invoice.subtotal != null ? invoice.subtotal : (invoice.totalAmount || 0) - (invoice.vatAmount || 0);
   const vat = invoice.vatAmount || 0;
@@ -79,8 +79,8 @@ export default function InvoiceDocument({ invoice, settings, client, lang = 'ar'
       })
     : null;
 
-  // فاتورة التأجير تُختم وتُؤرشف — لا نُظهر فيها المدفوع/المتبقّي، ونضيف خانتَي ختم.
-  const isRental = invoice.invoiceType === 'RENTAL';
+  // فاتورة الحجوزات/المناسبات تُختم وتُؤرشف — لا نُظهر فيها المدفوع/المتبقّي، ونضيف خانتَي ختم.
+  const isRental = invoice.invoiceType === 'EVENTS';
 
   const labelColor = '#6b7280';
   const border = '1px solid #e5e7eb';

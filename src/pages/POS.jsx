@@ -148,7 +148,7 @@ export default function POS() {
   const [activeTable, setActiveTable] = useState(() => readActiveTable());
 
   // Feature 2 & 3: نوع الإيصال (CONSTRUCTION=صالة, SERVICE=توصيل) + رسوم التوصيل + المنصة
-  const [invoiceType, setInvoiceType] = useState('CONSTRUCTION'); // CONSTRUCTION=dine-in, SERVICE=delivery
+  const [invoiceType, setInvoiceType] = useState('DINE_IN'); // DINE_IN=صالة، DELIVERY=توصيل
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [platformId, setPlatformId] = useState('');
   const [platforms, setPlatforms] = useState([]);
@@ -243,7 +243,7 @@ export default function POS() {
       setCart(draft.cart);
       setCustomerId(draft.customerId || '');
       setCustomerName(draft.customerName || '');
-      setInvoiceType(draft.invoiceType || 'CONSTRUCTION');
+      setInvoiceType(draft.invoiceType || 'DINE_IN');
       setPlatformId(draft.platformId || '');
       setDeliveryFee(typeof draft.deliveryFee === 'number' ? draft.deliveryFee : 0);
       setNotes(draft.notes || '');
@@ -461,7 +461,7 @@ export default function POS() {
     setCart([]);
     setPayments([]);
     setCashReceived('');
-    setInvoiceType('CONSTRUCTION');
+    setInvoiceType('DINE_IN');
     setDeliveryFee(0);
     setPlatformId('');
     setNotes('');
@@ -489,7 +489,7 @@ export default function POS() {
   );
 
   // ── مشتقّات لازمة لحساب totals — يجب تعريفها قبله (تجنّب Temporal Dead Zone) ──
-  const isDelivery = invoiceType === 'SERVICE';
+  const isDelivery = invoiceType === 'DELIVERY';
   const effectiveDeliveryFee = isDelivery ? (parseFloat(deliveryFee) || 0) : 0;
 
   // المنصة المختارة (إن وُجدت)
@@ -1088,12 +1088,12 @@ export default function POS() {
     } else if (isDelivery) {
       saleType = 'DIRECT_DELIVERY';
       platformName = t('توصيل مباشر', 'Direct Delivery', lang);
-    } else if (invoiceType === 'CONSTRUCTION') {
+    } else if (invoiceType === 'DINE_IN') {
       // القاعدة الثابتة: البيع الآجل حصري للمنصات فقط. كل مبيعات الصالة تُدفع فوراً
       // بالكامل عند إنشاء الفاتورة — سواء كان الزبون نقدياً أو مسجّل حساب. لا CREDIT هنا.
       saleType = 'DINE_IN';
     } else {
-      // ملاحظة: invoiceType لا يُضبط إلا لـ CONSTRUCTION أو SERVICE من أزرار الواجهة،
+      // ملاحظة: invoiceType لا يُضبط إلا لـ DINE_IN أو DELIVERY من أزرار الواجهة،
       // فلا يمكن الوصول لهذا الفرع فعلياً. KEEP كـ safety net بدل افتراض افتراضي صامت.
       saleType = 'DINE_IN';
     }
@@ -1106,7 +1106,7 @@ export default function POS() {
 
     const invoice = {
       invoiceNo,
-      invoiceType, // CONSTRUCTION=صالة / SERVICE=توصيل
+      invoiceType, // DINE_IN=صالة / DELIVERY=توصيل
       saleType, // DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM | CREDIT
       projectId: activeProjectId || '',
       projectName: activeProjectName || branchLabel,
@@ -1580,22 +1580,22 @@ export default function POS() {
             {/* Feature 2 & 3: نوع الطلب (صالة/توصيل) + حقول التوصيل */}
             <div className="grid grid-cols-2 gap-2">
               <Button
-                variant={invoiceType === 'CONSTRUCTION' ? 'default' : 'outline'}
+                variant={invoiceType === 'DINE_IN' ? 'default' : 'outline'}
                 onClick={() => {
-                  setInvoiceType('CONSTRUCTION');
+                  setInvoiceType('DINE_IN');
                   // عند العودة للصالة: لا حاجة لرسوم التوصيل أو المنصة
                   setDeliveryFee(0);
                   setPlatformId('');
                 }}
-                className={`h-8 text-xs gap-1.5 ${invoiceType === 'CONSTRUCTION' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
+                className={`h-8 text-xs gap-1.5 ${invoiceType === 'DINE_IN' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
               >
                 <UtensilsCrossed className="size-3.5" />
                 {t('صالة', 'Dine-in', lang)}
               </Button>
               <Button
-                variant={invoiceType === 'SERVICE' ? 'default' : 'outline'}
-                onClick={() => setInvoiceType('SERVICE')}
-                className={`h-8 text-xs gap-1.5 ${invoiceType === 'SERVICE' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+                variant={invoiceType === 'DELIVERY' ? 'default' : 'outline'}
+                onClick={() => setInvoiceType('DELIVERY')}
+                className={`h-8 text-xs gap-1.5 ${invoiceType === 'DELIVERY' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
               >
                 <Truck className="size-3.5" />
                 {t('توصيل', 'Delivery', lang)}

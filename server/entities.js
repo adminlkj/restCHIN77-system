@@ -137,14 +137,15 @@ export async function updateEntity(entityName, id, data, options = {}) {
     // CRITICAL: block direct PATCH on financial fields (subtotal, vatAmount, etc.)
     // These must be changed only via postOperation which recomputes totals + JEs.
     await assertNoFinancialFieldPatch(entityName, data);
-    // الحسابات النظامية في دليل الحسابات: لا يجوز تغيير الدور الدلالي/النوع/الطبيعة/
-    // الرمز/الأب لأن المحرك يعتمد عليها لترحيل القيود التلقائية. يُسمح فقط بإعادة
-    // التسمية والتنشيط/الإلغاء والملاحظات.
-    if (entityName === 'ChartAccount' && current?.isSystem === true) {
+    // الحسابات «المطلوبة» (isRequired) في دليل الحسابات: لا يجوز تغيير الدور الدلالي/
+    // النوع/الطبيعة/الرمز/الأب لأن المحرك يعتمد عليها لترحيل القيود التلقائية. يُسمح
+    // فقط بإعادة التسمية والتنشيط/الإلغاء والملاحظات. أما «الافتراضية» فيتحكم بها
+    // المستخدم بالكامل (إعادة تسمية/تغيير نوع/تغيير أب/حذف إن لم تُستخدم).
+    if (entityName === 'ChartAccount' && current?.isRequired === true) {
       const locked = ['semanticRole', 'accountType', 'nature', 'code', 'parentCode'];
       const changed = locked.filter((f) => data[f] !== undefined && data[f] !== current[f]);
       if (changed.length > 0) {
-        throw validationError(`لا يمكن تعديل (${changed.join('، ')}) لحساب نظامي أساسي — يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء`);
+        throw validationError(`لا يمكن تعديل (${changed.join('، ')}) لحساب ضروري للنظام — يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء`);
       }
     }
   }
@@ -168,10 +169,12 @@ export async function deleteEntity(entityName, id) {
   // CRITICAL: block DELETE on posted/approved documents (not just referential children)
   // This prevents deleting an APPROVED SalesInvoice and leaving orphan JEs
   await assertNotDeletable(entityName, current);
-  // الحسابات النظامية (isSystem) في دليل الحسابات محمية من الحذف — لأن المحرك
-  // يعتمد عليها لترحيل القيود التلقائية. حذفها يكسر النظام بالكامل.
-  if (entityName === 'ChartAccount' && current?.isSystem === true) {
-    throw validationError('لا يمكن حذف حساب نظامي أساسي لتشغيل النظام — يمكنك إلغاء تنشيطه بدلاً من ذلك');
+  // الحسابات «المطلوبة» (isRequired) في دليل الحسابات محمية من الحذف كلياً — لأن
+  // المحرك يعتمد عليها لترحيل القيود التلقائية (مبيعات/مشتريات/ضرائب). أما الحسابات
+  // «الافتراضية» (isSystem && !isRequired) فيجوز حذفها إن لم تُستخدم (قاعدة JE-ref
+  // أدناه + assertNoChildren تحمي ما عليه قيود/أبناء).
+  if (entityName === 'ChartAccount' && current?.isRequired === true) {
+    throw validationError('لا يمكن حذف حساب ضروري لتشغيل النظام — يمكنك إلغاء تنشيطه بدلاً من ذلك');
   }
   // CRITICAL: referential integrity — block delete if children exist
   await assertNoChildren(entityName, current);

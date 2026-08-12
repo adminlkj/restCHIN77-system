@@ -24,12 +24,11 @@ export const ACCOUNTS = {
   PAYABLES:              { code: '2110', name: 'ذمم الموردين', nameEn: 'Accounts Payable' },
   ACCRUED_SALARIES:      { code: '2140', name: 'رواتب مستحقة الدفع', nameEn: 'Accrued Salaries' },
   VAT_PAYABLE:           { code: '2160', name: 'ضريبة القيمة المضافة المحصلة', nameEn: 'VAT Payable (Output)' },
-  // الإيرادات (standardChart 41xx)
-  // ملاحظة: اسم الدور REVENUE_CONSTRUCTION محفوظ لأسباب توافق مع المحرك (entry.ts)
-  // لكنه يُمثّل فعلياً إيرادات مبيعات الصالة في سياق المطعم.
-  REVENUE_CONSTRUCTION:  { code: '4100', name: 'إيرادات مبيعات الصالة', nameEn: 'Dine-in Sales Revenue' },
-  REVENUE_RENTAL:        { code: '4200', name: 'إيرادات الحجوزات والمناسبات', nameEn: 'Reservations & Events Revenue' },
-  REVENUE_SERVICE:       { code: '4300', name: 'إيرادات مبيعات التوصيل', nameEn: 'Delivery Sales Revenue' },
+  // الإيرادات (standardChart 41xx) — أسماء صحيحة لنشاط المطعم.
+  // ملاحظة: الترقيم 4100 صالة، 4200 توصيل، 4300 حجوزات (التوصيل أبرز).
+  REVENUE_DINE_IN:       { code: '4100', name: 'مبيعات الصالة', nameEn: 'Dine-in Sales' },
+  REVENUE_DELIVERY:      { code: '4200', name: 'مبيعات منصات التوصيل', nameEn: 'Delivery Sales' },
+  REVENUE_EVENTS:        { code: '4300', name: 'مبيعات الحجوزات والمناسبات', nameEn: 'Reservations & Events' },
   // المصروفات (standardChart 51xx/52xx)
   EXPENSE_PURCHASE:      { code: '5110', name: 'تكلفة المواد الغذائية', nameEn: 'Food Cost' },
   EXPENSE_SALARIES:      { code: '5210', name: 'الرواتب والأجور', nameEn: 'Salaries & Wages' },

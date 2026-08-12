@@ -88,7 +88,7 @@ export default function VATReport() {
         const siblings = jeLinesByEntryNo[l.entryNo] || [];
         const revenueLine = siblings.find(s => {
           const a = accountMap[s.accountCode];
-          return a && (a.semanticRole === 'REVENUE_SALES' || a.accountType === 'REVENUE');
+          return a && (a.semanticRole === 'REVENUE_DINE_IN' || a.semanticRole === 'REVENUE_DELIVERY' || a.semanticRole === 'REVENUE_EVENTS' || a.accountType === 'REVENUE');
         });
         // الوعاء = رصيد سطر الإيراد (credit - debit). إن لم يوجد، نعود للاشتقاق.
         const base = revenueLine

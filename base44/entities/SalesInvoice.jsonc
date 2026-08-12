@@ -8,11 +8,11 @@
     "invoiceType": {
       "type": "string",
       "enum": [
-        "CONSTRUCTION",
-        "SERVICE",
-        "RENTAL"
+        "DINE_IN",
+        "DELIVERY",
+        "EVENTS"
       ],
-      "default": "CONSTRUCTION"
+      "default": "DINE_IN"
     },
     "projectId": {
       "type": "string"

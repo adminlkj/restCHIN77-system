@@ -25,12 +25,12 @@ import { toast } from 'sonner';
 const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const TYPES = {
-  CONSTRUCTION: { ar: 'صالة',     en: 'Dine-in' },
-  SERVICE:      { ar: 'توصيل',  en: 'Delivery' },
-  RENTAL:       { ar: 'حجز',    en: 'Reservation' },
+  DINE_IN: { ar: 'صالة',     en: 'Dine-in' },
+  DELIVERY: { ar: 'توصيل',  en: 'Delivery' },
+  EVENTS:   { ar: 'حجز',    en: 'Reservation' },
 };
 const empty = {
-  invoiceNo: '', invoiceType: 'CONSTRUCTION',
+  invoiceNo: '', invoiceType: 'DINE_IN',
   projectId: '', projectName: '', clientId: '', clientName: '',
   date: '', dueDate: '', subtotal: '', vatRate: '0.15',
   paidAmount: '', status: 'DRAFT', description: '', notes: '',

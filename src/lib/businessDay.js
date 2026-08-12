@@ -227,7 +227,7 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
   for (const l of dayLines) {
     const acc = accountMap[l.accountCode] || {};
     const code = acc.code || '';
-    if (acc.semanticRole === 'REVENUE_SALES' || acc.accountType === 'REVENUE') {
+    if (acc.semanticRole === 'REVENUE_DINE_IN' || acc.semanticRole === 'REVENUE_DELIVERY' || acc.semanticRole === 'REVENUE_EVENTS' || acc.accountType === 'REVENUE') {
       // مرتجع المبيعات يقلب الإيراد (مدين) فلا نضيفه لإجمالي المبيعات الخام.
       if (l.sourceType === 'SalesReturn') {
         grossReturns += (l.debit - l.credit);

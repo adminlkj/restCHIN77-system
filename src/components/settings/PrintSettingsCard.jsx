@@ -25,7 +25,7 @@ const TEMPLATES = [
 // فاتورة تجريبية لمعاينة القالب داخل الإعدادات.
 const SAMPLE_INVOICE = {
   invoiceNo: 'INV-0001',
-  invoiceType: 'CONSTRUCTION',
+  invoiceType: 'DINE_IN',
   clientName: 'زبون تجريبي',
   projectName: 'الفرع الرئيسي',
   date: new Date().toISOString().slice(0, 10),

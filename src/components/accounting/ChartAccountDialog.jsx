@@ -36,9 +36,10 @@ export default function ChartAccountDialog({ open, onOpenChange, account, parent
   const [codeError, setCodeError] = useState('');
 
   const accountsList = allAccounts || parents || [];
-  // الحسابات النظامية: تُقفل حقول الدور/النوع/الطبيعة/الرمز/الأب لأن المحرك يعتمد
-  // عليها. يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء والملاحظات.
-  const locked = account?.isSystem === true;
+  // الحسابات «المطلوبة» (isRequired): تُقفل حقول الدور/النوع/الطبيعة/الرمز/الأب
+  // لأن المحرك يعتمد عليها. يُسمح فقط بإعادة التسمية والتنشيط/الإلغاء والملاحظات.
+  // الحسابات «الافتراضية» (isSystem && !isRequired) يتحكم بها المستخدم بالكامل.
+  const locked = account?.isRequired === true;
 
   useEffect(() => {
     if (account) setForm({ ...EMPTY, ...account, openingBalance: 0 });
