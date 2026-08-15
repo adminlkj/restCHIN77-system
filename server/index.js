@@ -460,7 +460,7 @@ async function handleEntity(req, res, parts) {
   // قبل هذا الإصلاح كان أي مستخدم مسجّل يستطيع حذف/تعديل أي كيان (اكتشاف
   // اختبار الصلاحيات: كاشير حذف حساباً من الدليل بنجاح).
   const WRITE_ACTIONS = new Set(['create', 'bulk-create', 'update', 'bulk-update', 'update-many', 'delete', 'delete-many']);
-  const NON_ADMIN_WRITE_ENTITIES = new Set(['Table', 'SalesInvoice', 'SalesReturn', 'ClientPayment', 'StockMovement']);
+  const NON_ADMIN_WRITE_ENTITIES = new Set(['Table', 'SalesInvoice', 'SalesReturn', 'ClientPayment', 'StockMovement', 'BusinessDay']);
   if (WRITE_ACTIONS.has(action) && user.role !== 'admin' && !NON_ADMIN_WRITE_ENTITIES.has(entityName)) {
     return sendJson(res, { error: 'Forbidden — هذه العملية تتطلب صلاحية المدير' }, 403);
   }

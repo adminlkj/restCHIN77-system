@@ -136,7 +136,7 @@ export async function updateEntity(entityName, id, data, options = {}) {
     await assertNoDirectStatusChange(entityName, current, data);
     // CRITICAL: block direct PATCH on financial fields (subtotal, vatAmount, etc.)
     // These must be changed only via postOperation which recomputes totals + JEs.
-    await assertNoFinancialFieldPatch(entityName, data);
+    await assertNoFinancialFieldPatch(entityName, data, current);
     // الحسابات «المطلوبة» (isRequired) في دليل الحسابات: لا يجوز تغيير الدور الدلالي/
     // النوع/الطبيعة/الرمز/الأب لأن المحرك يعتمد عليها لترحيل القيود التلقائية. يُسمح
     // فقط بإعادة التسمية والتنشيط/الإلغاء والملاحظات. أما «الافتراضية» فيتحكم بها
@@ -453,8 +453,12 @@ const FINANCIAL_DOCUMENTS = new Set([
  * يمنع تعديل الحقول المالية مباشرةً على المستندات المالية.
  * استثناء: الحالة (status) مسموح بها عبر مسارها الخاص (postOperation).
  */
-async function assertNoFinancialFieldPatch(entityName, newData) {
+async function assertNoFinancialFieldPatch(entityName, newData, current) {
   if (!FINANCIAL_DOCUMENTS.has(entityName)) return;
+  // استثناء: تعديل بنود/إجماليات قيد يدوي في حالة مسودة — وظيفة شرعية في شاشة
+  // القيود (تعديل سطر/إضافة/حذف قبل الترحيل). المرحّل محمي بالكامل (سطر أعلاه
+  // assertNotImmutable يرفض أي تعديل عليه ويوجّه للعكس REVERSAL).
+  if (entityName === 'JournalEntry' && current && current.isPosted !== true) return;
   const patchedFinancialFields = Object.keys(newData || {}).filter(k => FINANCIAL_FIELDS.has(k));
   if (patchedFinancialFields.length > 0) {
     throw validationError(
