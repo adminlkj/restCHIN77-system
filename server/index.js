@@ -453,6 +453,18 @@ async function handleEntity(req, res, parts) {
 
   if (entityName === 'User') return handleUserEntity(req, res, action, id, body, user);
 
+  // ─── فرض الصلاحيات (RLS) ───────────────────────────────────────────────
+  // القراءات (list/filter/get/schema) متاحة لأي مستخدم مسجّل (الشاشات تعتمدها)،
+  // أما الكتابة (create/update/delete/bulk*) فحصرية للمدير — باستثناء الكيانات
+  // التي يكتبها الكاشير شرعاً أثناء البيع (POS يحفظ مسودات الطاولات والفواتير).
+  // قبل هذا الإصلاح كان أي مستخدم مسجّل يستطيع حذف/تعديل أي كيان (اكتشاف
+  // اختبار الصلاحيات: كاشير حذف حساباً من الدليل بنجاح).
+  const WRITE_ACTIONS = new Set(['create', 'bulk-create', 'update', 'bulk-update', 'update-many', 'delete', 'delete-many']);
+  const NON_ADMIN_WRITE_ENTITIES = new Set(['Table', 'SalesInvoice', 'SalesReturn', 'ClientPayment', 'StockMovement']);
+  if (WRITE_ACTIONS.has(action) && user.role !== 'admin' && !NON_ADMIN_WRITE_ENTITIES.has(entityName)) {
+    return sendJson(res, { error: 'Forbidden — هذه العملية تتطلب صلاحية المدير' }, 403);
+  }
+
   if (action === 'schema' && req.method === 'GET') return sendJson(res, loadSchema(entityName) || {});
   if (action === 'list' && req.method === 'POST') return sendJson(res, await listEntity(entityName, body));
   if (action === 'filter' && req.method === 'POST') return sendJson(res, await listEntity(entityName, body));
@@ -589,6 +601,14 @@ async function handleApi(req, res) {
         const user = await requireUser(req);
         const functionName = route.split('/')[3];
         const payload = await readBody(req);
+        // ─── صلاحيات العمليات المحرّكة ─────────────────────────────────────
+        // عمليات البيع متاحة لأي مستخدم مسجّل (الكاشير يبيع/يرجّع/يحصّل/يحرك المخزون)،
+        // وكل العمليات المالية/الشرائية/الرواتب/الدليل/الإقفال حصرية للمدير.
+        // قبل هذا الإصلاح كان أي مسجّل يستطيع اعتماد فواتير موردين وتشغيل مسيرات.
+        const USER_OPERATIONS = new Set(['SALES_INVOICE', 'SALES_RETURN', 'CLIENT_PAYMENT', 'STOCK_MOVEMENT']);
+        if (functionName === 'postOperation' && user.role !== 'admin' && !USER_OPERATIONS.has(payload?.operation)) {
+          return sendJson(res, { error: 'Forbidden — هذه العملية تتطلب صلاحية المدير' }, 403);
+        }
         try {
           const result = await runStandaloneFunction(functionName, payload, user);
           return sendJson(res, result);
