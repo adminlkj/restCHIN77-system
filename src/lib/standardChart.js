@@ -80,7 +80,7 @@ export const STANDARD_CHART = [
   { code: '4000', name: 'الإيرادات', nameEn: 'Revenue', accountType: 'REVENUE', nature: 'CREDIT', group: true, isSystem: true, isRequired: true },
   { code: '4100', name: 'مبيعات الصالة', nameEn: 'Dine-in Sales', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', semanticRole: 'REVENUE_DINE_IN', isSystem: true, isRequired: true },
   { code: '4200', name: 'مبيعات منصات التوصيل', nameEn: 'Delivery Sales', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', semanticRole: 'REVENUE_DELIVERY', isSystem: true, isRequired: true },
-  { code: '4300', name: 'مبيعات الحجوزات والمناسبات', nameEn: 'Reservations & Events', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', semanticRole: 'REVENUE_EVENTS', isSystem: true },
+  { code: '4300', name: 'مبيعات الحجوزات والمناسبات', nameEn: 'Reservations & Events', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', semanticRole: 'REVENUE_EVENTS', isSystem: true, isRequired: true },
   { code: '4430', name: 'فروقات جرد المخزون (زيادة)', nameEn: 'Inventory Count Gain', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', semanticRole: 'INVENTORY_GAIN', isSystem: true, isRequired: true },
   { code: '4900', name: 'إيرادات متنوعة', nameEn: 'Miscellaneous Revenue', accountType: 'REVENUE', nature: 'CREDIT', parentCode: '4000', group: true, isSystem: true },
 
