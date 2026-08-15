@@ -102,11 +102,15 @@ export default function BusinessDayScreen() {
         // نصنّف القيد حسب يوم العمل (لا UTC) ليتوافق مع باقي التقارير.
         if (toBusinessDayDate(je.date, DEFAULT_BUSINESS_HOURS) !== dayDate) continue;
         for (const l of (je.lines || [])) {
-          // فلترة الفرع: السطر يجب أن ينتمي لنفس فرع اليوم المفتوح.
-          if (branchName && (l.costCenter || '') !== branchName) continue;
           const acc = accountMap[l.accountCode] || {};
           const code = acc.code || '';
           const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
+          // فلترة الفرع: الـوارد يجب أن ينتمي لفرع اليوم المفتوح (وإلا ضممنا نقد
+          // فروع أخرى للدرّج). أما الصوادر (d<0: مصاريف/عهد/سلف تُصرف من الصندوق
+          // غالباً بلا costCenter) فتُخصم دائماً — كل صادر من الصندوق يوم اليوم
+          // يخرج فعلياً من الدرّج، وتجاهله كان يرفع «المتوقع» فوق الحقيقة
+          // (اكتشاف اختبار الإنتاج: متوقع 1485 بينما الفعلي 1285).
+          if (branchName && (l.costCenter || '') !== branchName && d > 0) continue;
           if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
           else if (code === '1114') cardDelta += d;
           else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;
