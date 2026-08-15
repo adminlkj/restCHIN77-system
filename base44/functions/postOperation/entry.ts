@@ -49,32 +49,31 @@ const ACCOUNTS = {
   REVENUE_DINE_IN:      { code: '4100', name: 'مبيعات الصالة' },
   REVENUE_DELIVERY:     { code: '4200', name: 'مبيعات منصات التوصيل' },
   REVENUE_EVENTS:       { code: '4300', name: 'مبيعات الحجوزات والمناسبات' },
-  COMMISSION_EXPENSE:   { code: '5231', name: 'عمولات منصات التوصيل' },
+  COMMISSION_EXPENSE:   { code: '5430', name: 'عمولات وخدمات المنصات' },
   COMMISSION_VAT_INPUT: { code: '1140', name: 'ضريبة القيمة المضافة المدفوعة (عمولات)' },
-  EXPENSE_GENERAL:      { code: '5220', name: 'مصروفات التشغيل' },
-  EXPENSE_SALARIES:     { code: '5210', name: 'الرواتب والأجور' },
+  EXPENSE_GENERAL:      { code: '5290', name: 'مستلزمات تشغيلية' },
+  EXPENSE_SALARIES:     { code: '5310', name: 'الرواتب والأجور' },
   EXPENSE_PURCHASE:     { code: '5110', name: 'تكلفة المواد الغذائية' },
-  EXPENSE_PROJECT:      { code: '5150', name: 'مصروفات تجهيز الطلبات' },
-  EXPENSE_SUBCONTRACTOR: { code: '5140', name: 'تكلفة موردي الخدمات' },
-  EXPENSE_EQUIPMENT:    { code: '5224', name: 'صيانة المعدات' },
-  EXPENSE_EMPLOYEE:     { code: '5215', name: 'بدلات ومكافآت الموظفين' },
-  EXPENSE_GOVERNMENT:   { code: '5250', name: 'رسوم ومصروفات حكومية' },
-  EXPENSE_ADMIN:        { code: '5240', name: 'مصروفات إدارية' },
+  EXPENSE_PROJECT:      { code: '5130', name: 'تكاليف أخرى مباشرة' },
+  EXPENSE_EQUIPMENT:    { code: '5260', name: 'صيانة وإصلاح' },
+  EXPENSE_EMPLOYEE:     { code: '5320', name: 'بدلات الموظفين' },
+  EXPENSE_GOVERNMENT:   { code: '5610', name: 'رسوم حكومية' },
+  EXPENSE_ADMIN:        { code: '5380', name: 'مصروفات إدارية عامة' },
   INVENTORY_MATERIALS:  { code: '1131', name: 'مخزون المواد الغذائية' },
   OPENING_BALANCE_EQUITY: { code: '3900', name: 'رصيد افتتاحي — حقوق ملكية' },
   RETAINED_EARNINGS:    { code: '3300', name: 'الأرباح المبقاة' },
-  INVENTORY_LOSS:       { code: '5170', name: 'خسائر تلف وهدر المخزون' },
+  INVENTORY_LOSS:       { code: '5140', name: 'خسائر تلف وهدر المخزون' },
   INVENTORY_GAIN:       { code: '4430', name: 'فروقات جرد المخزون (زيادة)' },
   STAFF_RECEIVABLE:     { code: '1125', name: 'تحميلات على الموظفين' },
 };
 
 const EXPENSE_TYPE_ACCOUNTS = {
-  EXPENSE_PROJECT:    ACCOUNTS.EXPENSE_PROJECT,     // 5150 — مصروفات تجهيز الطلبات (تكلفة مباشرة)
-  EXPENSE_EQUIPMENT:  ACCOUNTS.EXPENSE_EQUIPMENT,    // 5224 — صيانة المعدات
-  EXPENSE_EMPLOYEE:   ACCOUNTS.EXPENSE_EMPLOYEE,     // 5215 — بدلات ومكافآت الموظفين
-  EXPENSE_GOVERNMENT: ACCOUNTS.EXPENSE_GOVERNMENT,    // 5250 — رسوم حكومية
-  EXPENSE_ADMIN:      ACCOUNTS.EXPENSE_ADMIN,         // 5240 — مصروفات إدارية
-  EXPENSE_GENERAL:    { code: '5220', name: 'مصروفات التشغيل' }, // 5220 — مصروفات تشغيلية (إيجار/كهرباء/ماء)
+  EXPENSE_PROJECT:    ACCOUNTS.EXPENSE_PROJECT,     // 5130 — تكاليف أخرى مباشرة (صرف المخزون على تجهيز الطلبات)
+  EXPENSE_EQUIPMENT:  ACCOUNTS.EXPENSE_EQUIPMENT,    // 5260 — صيانة وإصلاح
+  EXPENSE_EMPLOYEE:   ACCOUNTS.EXPENSE_EMPLOYEE,     // 5320 — بدلات الموظفين
+  EXPENSE_GOVERNMENT: ACCOUNTS.EXPENSE_GOVERNMENT,    // 5610 — رسوم حكومية
+  EXPENSE_ADMIN:      ACCOUNTS.EXPENSE_ADMIN,         // 5380 — مصروفات إدارية عامة
+  EXPENSE_GENERAL:    ACCOUNTS.EXPENSE_GENERAL,       // 5290 — مستلزمات تشغيلية (fallback المصروف العام)
 };
 
 const num = (v) => parseFloat(v) || 0;

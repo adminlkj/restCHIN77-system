@@ -19,7 +19,7 @@ const CATEGORY_ASSET_ROLE = {
 const FALLBACK = {
   FIXED_EQUIPMENT: { code: '1210', name: 'المعدات والآلات الثقيلة' },
   ACCUM_DEPRECIATION: { code: '1290', name: 'مجمع الإهلاك' },
-  EXPENSE_DEPRECIATION: { code: '5260', name: 'مصروف الإهلاك' },
+  EXPENSE_DEPRECIATION: { code: '5810', name: 'مصروف الإهلاك' },
 };
 
 function resolveAccount(role, accounts) {

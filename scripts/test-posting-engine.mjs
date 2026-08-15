@@ -123,7 +123,7 @@ const tests = [
     const je = jes[0]; if (!je) return check('منصة: قيد', false);
     assertBalanced(je, 'منصة');
     check('منصة: 1115 مدين', !!lineWith(je, '1115'));
-    check('منصة: 5231 مدين 15', lineWith(je, '5231')?.debit === 15);
+    check('منصة: 5430 عمولة مدين 15', lineWith(je, '5430')?.debit === 15);
     check('منصة: 1140 مدين 2.25', lineWith(je, '1140')?.debit === 2.25);
     check('منصة: 4200 دائن 100', lineWith(je, '4200')?.credit === 100);
     return linesOf(je).join('  ');
@@ -166,7 +166,7 @@ const tests = [
     const { jes } = await run('EXPENSE', 'create', { data: { voucherNo: 'EX1', date: '2026-08-10', category: 'OPERATING', expenseType: 'COMPANY', description: 'كهرباء', amount: 60, paymentAccountCode: '1111', paymentAccountName: 'صندوق الكاشير', baseAmount: 60, vatRate: 0, vatAmount: 0, totalAmount: 60, status: 'POSTED' } });
     const je = jes[0]; if (!je) return check('مصروف: قيد', false);
     assertBalanced(je, 'مصروف');
-    check('مصروف: 5220 مدين 60', lineWith(je, '5220')?.debit === 60);
+    check('مصروف: 5290 مدين 60', lineWith(je, '5290')?.debit === 60);
     check('مصروف: 1111 دائن 60', lineWith(je, '1111')?.credit === 60);
     return linesOf(je).join('  ');
   }],
@@ -177,7 +177,7 @@ const tests = [
     let out = '';
     if (acc) {
       assertBalanced(acc, 'استحقاق');
-      check('استحقاق: 5210 مدين 5500', lineWith(acc, '5210')?.debit === 5500);
+      check('استحقاق: 5310 مدين 5500', lineWith(acc, '5310')?.debit === 5500);
       check('استحقاق: 2140 دائن 5500', lineWith(acc, '2140')?.credit === 5500);
       out += 'استحقاق: ' + linesOf(acc).join(' ');
     }
@@ -195,7 +195,7 @@ const tests = [
     const { jes } = await run('STOCK_MOVEMENT', 'create', { data: { date: '2026-08-10', type: 'DAMAGE_NORMAL', reason: 'تلف', itemId: 'it1', itemName: 'وجبة دجاج', unit: 'كجم', quantity: 2, unitCost: 20, fromWarehouseId: 'pr1', fromWarehouseName: 'PALACE INDIA' } });
     const je = jes[0]; if (!je) return check('تلف: قيد', false);
     assertBalanced(je, 'تلف');
-    check('تلف: 5170 مدين 40', lineWith(je, '5170')?.debit === 40);
+    check('تلف: 5140 مدين 40', lineWith(je, '5140')?.debit === 40);
     check('تلف: 1131 دائن 40', lineWith(je, '1131')?.credit === 40);
     return linesOf(je).join('  ');
   }],

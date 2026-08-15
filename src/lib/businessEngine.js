@@ -29,15 +29,15 @@ export const ACCOUNTS = {
   REVENUE_DINE_IN:       { code: '4100', name: 'مبيعات الصالة', nameEn: 'Dine-in Sales' },
   REVENUE_DELIVERY:      { code: '4200', name: 'مبيعات منصات التوصيل', nameEn: 'Delivery Sales' },
   REVENUE_EVENTS:        { code: '4300', name: 'مبيعات الحجوزات والمناسبات', nameEn: 'Reservations & Events' },
-  // المصروفات (standardChart 51xx/52xx)
+  // المصروفات (standardChart 51xx-58xx) — الأكواد مطابقة للدليل القياسي الجديد
   EXPENSE_PURCHASE:      { code: '5110', name: 'تكلفة المواد الغذائية', nameEn: 'Food Cost' },
-  EXPENSE_SALARIES:      { code: '5210', name: 'الرواتب والأجور', nameEn: 'Salaries & Wages' },
-  EXPENSE_EMPLOYEE:      { code: '5215', name: 'بدلات ومكافآت الموظفين', nameEn: 'Allowances & Bonuses' },
-  EXPENSE_GENERAL:       { code: '5220', name: 'المصروفات التشغيلية', nameEn: 'Operating Expenses' },
-  EXPENSE_EQUIPMENT:     { code: '5224', name: 'صيانة المعدات', nameEn: 'Equipment Maintenance' },
-  EXPENSE_PROJECT:       { code: '5150', name: 'مصروفات تجهيز الطلبات', nameEn: 'Order Preparation Expenses' },
-  EXPENSE_GOVERNMENT:    { code: '5250', name: 'رسوم ومصروفات حكومية', nameEn: 'Government Fees' },
-  EXPENSE_ADMIN:         { code: '5240', name: 'مصروفات إدارية', nameEn: 'Administrative Expenses' },
+  EXPENSE_SALARIES:      { code: '5310', name: 'الرواتب والأجور', nameEn: 'Salaries & Wages' },
+  EXPENSE_EMPLOYEE:      { code: '5320', name: 'بدلات الموظفين', nameEn: 'Employee Allowances' },
+  EXPENSE_GENERAL:       { code: '5290', name: 'مستلزمات تشغيلية', nameEn: 'Operating Supplies' },
+  EXPENSE_EQUIPMENT:     { code: '5260', name: 'صيانة وإصلاح', nameEn: 'Maintenance & Repair' },
+  EXPENSE_PROJECT:       { code: '5130', name: 'تكاليف أخرى مباشرة', nameEn: 'Other Direct Costs' },
+  EXPENSE_GOVERNMENT:    { code: '5610', name: 'رسوم حكومية', nameEn: 'Government Fees' },
+  EXPENSE_ADMIN:         { code: '5380', name: 'مصروفات إدارية عامة', nameEn: 'General Administrative' },
 };
 
 // ─── حسابات الضريبة (Single Source of Truth) ─────────────────────────────────
