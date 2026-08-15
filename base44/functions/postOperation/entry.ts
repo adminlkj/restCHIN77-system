@@ -147,6 +147,7 @@ const RULES = {
   ],
   STOCK_MOVEMENT: [
     { m: 'تاريخ الحركة مطلوب', t: (d) => !isBlank(d.date) },
+    { m: 'رقم الحركة مطلوب (فريد) — يمنع فشل الترحيل برقم مكرر أو فارغ', t: (d) => !isBlank(d.movementNo) },
     { m: 'اختيار الصنف مطلوب', t: (d) => !isBlank(d.itemId) },
     { m: 'الكمية يجب أن تكون أكبر من صفر', t: (d) => num(d.quantity) > 0 },
     { m: 'نوع الحركة غير صحيح', t: (d) => ['RECEIVE', 'ISSUE', 'TRANSFER', 'DAMAGE_NORMAL', 'DAMAGE_ABNORMAL', 'ADJUST_INCREASE', 'ADJUST_DECREASE'].includes(d.type) },
@@ -536,11 +537,13 @@ function buildStockMovementJE(m, accounts) {
   if (m.type === 'RECEIVE') {
     let creditAcc, creditParty = null, creditDesc;
     if (m.sourceType === 'SUPPLIER') {
-      // سند الاستلام من مورد = مخزون فقط (لا ذمم مورد).
-      // الذمم تُنشأ عند اعتماد فاتورة المورد لاحقاً.
-      // الطرف الدائن = رصيد افتتاحي مؤقت حتى تُعتمد الفاتورة.
-      creditAcc = resolveAccount('OPENING_BALANCE_EQUITY', accounts);
-      creditDesc = `استلام مؤقت — بانتظار فاتورة المورد`;
+      // سند الاستلام من مورد: مخزون مدين / ذمم الموردين دائن (التزام مؤقت).
+      // سابقاً كان الطرف الدائن = رصيد افتتاحي (3900) لكنه محاسبياً غير صحيح لبضاعة
+      // مستلمة من مورد، ويترك 3900 مفتوحاً للأبد. الآن 2110 (ذمم) — وعند اعتماد
+      // فاتورة المورد المرتبطة، يُعكس قيد الاستلام بالكامل ويُرحّل القيد الكامل.
+      creditAcc = resolveAccount('PAYABLES', accounts);
+      creditParty = { type: 'SUPPLIER', id: m.supplierId || '', name: m.supplierName || '' };
+      creditDesc = `استلام من ${m.supplierName || 'مورد'} — بانتظار الفاتورة`;
     } else if (m.sourceType === 'CASH') {
       creditAcc = { code: m.cashAccountCode, name: m.cashAccountName || 'النقدية' };
       creditDesc = `شراء نقدي من ${creditAcc.name}`;
@@ -691,6 +694,11 @@ async function weightedCostFor(base44, itemId, warehouseId, fallbackUnitCost) {
 const OUTBOUND_TYPES = ['ISSUE', 'DAMAGE_NORMAL', 'DAMAGE_ABNORMAL', 'ADJUST_DECREASE'];
 
 async function createStockMovement(base44, data) {
+  // توليد رقم حركة فريد تلقائياً إن لم يُدخله المستخدم — يمنع entryNo=undefined
+  // الذي كان يُسبب فشل الترحيل بصمت (منع التكرار في autoPostJE).
+  if (isBlank(data.movementNo)) {
+    data = { ...data, movementNo: `STK-${Date.now()}` };
+  }
   assertValid('STOCK_MOVEMENT', data);
   const quantity = num(data.quantity);
   let unitCost = num(data.unitCost);
@@ -1475,19 +1483,40 @@ async function updateSupplierInvoice(base44, id, data) {
 }
 
 // اعتماد فاتورة مورد:
-//   • فاتورة مرتبطة بسند استلام: الذمة والمخزون أُثبتا سلفاً عند الاستلام —
-//     لا يُرحّل قيد ذمة جديد (منعاً للازدواج)، ويُثبت فرق الضريبة فقط إن وُجد.
-//   • فاتورة مباشرة (خدمات/بلا استلام): يُرحّل قيد الالتزام الكامل.
+//   • فاتورة مرتبطة بسند استلام (GR): الاستلام سجّل قيداً مؤقتاً
+//     (1131 مخزون مدين / 2110 ذمم دائن). نعكسه بالكامل أولاً ثم نرحّل قيد الفاتورة
+//     الكامل (5110 تكلفة + 1140 VAT / 2110 ذمم). النتيجة الصافية نظيفة لا تكرار:
+//     5110 + 1140 / 2110. هذا يحل الخطأ المزدوج السابق (3900 مفتوح + تكرار التكلفة).
+//   • فاتورة مباشرة (بلا استلام): يُرحّل قيد الالتزام الكامل مباشرة.
 async function approveSupplierInvoice(base44, id) {
   const inv = await base44.asServiceRole.entities.SupplierInvoice.get(id);
   if (!inv) throw new Error('الفاتورة غير موجودة');
   if (inv.status !== 'DRAFT') throw new Error('لا يمكن اعتماد إلا الفواتير التي في حالة مسودة');
   const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
 
-  // فاتورة المورد تنشئ دائماً القيد الكامل (مشتريات + ضريبة مدخلة + ذمم).
-  // سابقاً: إذا كانت مرتبطة بسند استلام، كان يُرحّل VAT فقط لأن الذمم سُجّلت
-  // في الاستلام. لكن بعد التعديل، الاستلام لا ينشئ ذمم — فقط مخزون مؤقت.
-  // لذلك فاتورة المورد تنشئ القيد الكامل في كل الحالات.
+  // إن كانت الفاتورة مرتبطة بسند استلام: اعكس قيد الاستلام المؤقت بالكامل.
+  if (inv.goodsReceiptId) {
+    const gr = await base44.asServiceRole.entities.GoodsReceipt.get(inv.goodsReceiptId);
+    if (gr) {
+      const reversedAmount = num(gr.receivedAmount);
+      if (reversedAmount > 0) {
+        const inventory = resolveAccount('INVENTORY_MATERIALS', accounts);
+        const payables = resolveAccount('PAYABLES', accounts);
+        await autoPostJE(base44, {
+          entryNo: `JE-GRREV-${inv.invoiceNo}`, date: inv.date,
+          description: `عكس سند استلام ${gr.receiptNo} عند اعتماد فاتورة ${inv.invoiceNo}`,
+          sourceType: 'SupplierInvoice', isPosted: true,
+          totalDebit: reversedAmount, totalCredit: reversedAmount,
+          lines: [
+            { accountCode: payables.code, accountName: payables.name, debit: reversedAmount, credit: 0, description: 'عكس ذمم الاستلام المؤقت', partyType: 'SUPPLIER', partyId: inv.supplierId || '', partyName: inv.supplierName || '' },
+            { accountCode: inventory.code, accountName: inventory.name, debit: 0, credit: reversedAmount, description: 'عكس مخزون الاستلام المؤقت' },
+          ],
+        });
+      }
+    }
+  }
+
+  // قيد الفاتورة الكامل (دائماً): 5110 تكلفة + 1140 VAT / 2110 ذمم.
   await autoPostJE(base44, buildSupplierInvoiceJE(inv, accounts));
   return await base44.asServiceRole.entities.SupplierInvoice.update(id, { status: 'APPROVED' });
 }
