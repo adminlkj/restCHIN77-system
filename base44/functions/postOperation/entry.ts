@@ -699,6 +699,12 @@ async function createStockMovement(base44, data) {
     data = { ...data, movementNo: `STK-${Date.now()}` };
   }
   assertValid('STOCK_MOVEMENT', data);
+  // رفض رقم الحركة المكرر صراحةً: قبوله كان يُنشئ حركة كمية جديدة بينما يمنع
+  // dedup القيد — فيتحرك المخزون الكمي بلا محاسبة قيمة (فجوة اكتشفها اختبار الفشل).
+  const dup = await base44.asServiceRole.entities.StockMovement.filter({ movementNo: data.movementNo });
+  if (dup && dup.length > 0) {
+    throw new Error(`رقم الحركة "${data.movementNo}" مستخدم مسبقاً — استخدم رقماً فريداً`);
+  }
   const quantity = num(data.quantity);
   let unitCost = num(data.unitCost);
 
