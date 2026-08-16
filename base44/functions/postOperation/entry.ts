@@ -1041,6 +1041,21 @@ async function approveSalesInvoice(base44, id) {
     } catch { /* افتراضي NET */ }
   }
 
+  // مركز التكلفة يجب أن يكون اسم الفرع الحقيقي من سجله — لا نصًا أرسله العميل.
+  // الواجهة قد ترسل اسمًا افتراضيًا ("الفرع") عند البيع بعد reload بلا سياق فرع،
+  // فتنفصل الفاتورة عن درج يوم عمل الفرع وتقارير الفروع. المصدر الموثوق: projectId.
+  let resolvedProjectName = inv.projectName || '';
+  if (inv.projectId) {
+    try {
+      const branchRec = await base44.asServiceRole.entities.Project.get(inv.projectId);
+      if (branchRec && branchRec.name) resolvedProjectName = branchRec.name;
+    } catch { /* أبقِ الاسم النصي */ }
+    // صحّح سجل الفاتورة نفسه ليطابق الفرع الحقيقي (تصويب مرجعي — لا يمس المبالغ).
+    if (resolvedProjectName && resolvedProjectName !== inv.projectName) {
+      try { await base44.asServiceRole.entities.SalesInvoice.update(id, { projectName: resolvedProjectName }); } catch { /* غير حرج */ }
+    }
+  }
+
   const je = await buildJE(base44, 'SALES_INVOICE',
     { entryNo: `JE-SINV-${inv.invoiceNo}`, date: inv.date, description: `فاتورة مبيعات ${inv.invoiceNo} — ${inv.clientName}`, sourceType: 'SalesInvoice' },
     { base: +(num(inv.totalAmount) - num(inv.vatAmount)).toFixed(2), vat: num(inv.vatAmount), total: num(inv.totalAmount) },
@@ -1050,7 +1065,7 @@ async function approveSalesInvoice(base44, id) {
       // الوعاء المُقيَّد للإيراد هو المبلغ الخاضع للضريبة بعد الخصم (= الإجمالي − الضريبة)،
       // لا subtotal الخام قبل الخصم — وإلا اختل توازن القيد بمقدار الخصم.
       subtotal: +(num(inv.totalAmount) - num(inv.vatAmount)).toFixed(2), vatAmount: inv.vatAmount, totalAmount: inv.totalAmount,
-      invoiceType: inv.invoiceType, projectName: inv.projectName,
+      invoiceType: inv.invoiceType, projectName: resolvedProjectName,
       payments, isPlatformSale, platformId, platformName,
       platformCommission, platformCommissionVat, settlementMethod,
     }),

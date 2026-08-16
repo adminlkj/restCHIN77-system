@@ -174,19 +174,25 @@ export default function POS() {
 
   // اسم الفرع من إعدادات الفرع (المدمجة مع إعدادات الشركة)
   // ملاحظة: getBranchSettings دالة async — useMemo يُرجع Promise! استخدم useEffect+useState.
+  // اشتقاق الفرع من الطاولة النشطة عند غياب سياق المتجر (بعد reload أو دخول مستخدم
+  // جديد مباشرة للطاولة): الطاولة تنتمي حتمًا لفرع واحد. بدون هذا تُرحّل الفاتورة
+  // باسم "الفرع" الافتراضي فتنفصل عن درج يوم عمل الفرع وتقاريره (عيب مكتشف حيًا).
+  const effectiveProjectId = activeProjectId || activeTable?.branchId || '';
   const [branchSettings, setBranchSettings] = useState({});
   useEffect(() => {
-    if (!activeProjectId) { setBranchSettings({}); return; }
+    if (!effectiveProjectId) { setBranchSettings({}); return; }
     let active = true;
     (async () => {
       try {
-        const s = await getBranchSettings(activeProjectId);
+        const s = await getBranchSettings(effectiveProjectId);
         if (active) setBranchSettings(s || {});
       } catch { if (active) setBranchSettings({}); }
     })();
     return () => { active = false; };
-  }, [activeProjectId]);
-  const branchLabel = activeProjectName || branchSettings.branchName || t('الفرع', 'Branch', lang);
+  }, [effectiveProjectId]);
+  // اسم الفرع الحقيقي من إعدادات الفرع يُقدَّم على النص العام — يضمن صحة
+  // مركز التكلفة على القيد حتى لو كان اسم سياق المتجر قديمًا أو افتراضيًا.
+  const branchLabel = branchSettings.branchName || activeProjectName || t('الفرع', 'Branch', lang);
   const tableLabel = activeTable?.tableName || t('طاولة', 'Table', lang);
 
   // ─── تحميل المنتجات والزبائن والمنصات ───────────────────────────────
@@ -290,15 +296,15 @@ export default function POS() {
         try {
           saveDraftToTable(activeTable.tableId, draftData);
         } catch { /* ignore */ }
-        if (activeProjectId) {
-          saveDraftToTableDB(activeProjectId, activeTable.tableId, draftData).catch(() => {});
+        if (effectiveProjectId) {
+          saveDraftToTableDB(effectiveProjectId, activeTable.tableId, draftData).catch(() => {});
         }
       } else {
         // السلة فارغة + الطاولة لها مسودة → حرّر الطاولة محلياً وعلى الخادم
         const draft = getTableDraft(activeTable.tableId);
         if (draft) {
           try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
-          if (activeProjectId) clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
+          if (effectiveProjectId) clearTableDraftDB(effectiveProjectId, activeTable.tableId).catch(() => {});
           toast.success(t('تم تحرير الطاولة — السلة فارغة', 'Table freed — cart is empty', lang));
         }
       }
@@ -675,7 +681,7 @@ export default function POS() {
   };
 
   // ─── حارس صلاحية الفرع: منع الوصول لفرع غير مصرّح به (حماية عميقة) ───
-  if (activeProjectId && !canAccessBranch(user, activeProjectId)) {
+  if (effectiveProjectId && !canAccessBranch(user, effectiveProjectId)) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 p-8 text-center">
         <div className="size-14 rounded-full bg-rose-100 flex items-center justify-center">
@@ -728,8 +734,8 @@ export default function POS() {
   // ─── إجراءات ────────────────────────────────────────────────────────
   const exitToTables = () => {
     // حرّر قفل الطاولة على الخادم (ليمكن لجهاز آخر فتحها) ثم امسح محلياً واخرج.
-    if (activeProjectId && activeTable?.tableId) {
-      unlockTableDB(activeProjectId, activeTable.tableId).catch(() => {});
+    if (effectiveProjectId && activeTable?.tableId) {
+      unlockTableDB(effectiveProjectId, activeTable.tableId).catch(() => {});
     }
     clearActiveTable();
     setActiveItem('tables');
@@ -748,7 +754,7 @@ export default function POS() {
     try {
       await createKitchenOrder({
         orderNo,
-        branchId: activeProjectId || '',
+        branchId: effectiveProjectId || '',
         branchName: branchLabel,
         tableId: activeTable?.tableId || '',
         tableName: tableLabel,
@@ -851,8 +857,8 @@ export default function POS() {
       try {
         saveDraftToTable(activeTable.tableId, draftData);
       } catch { /* ignore */ }
-      if (activeProjectId) {
-        saveDraftToTableDB(activeProjectId, activeTable.tableId, draftData).catch(() => {});
+      if (effectiveProjectId) {
+        saveDraftToTableDB(effectiveProjectId, activeTable.tableId, draftData).catch(() => {});
       }
     }
     // منع الـ auto-clear من تحرير الطاولة عند إفراغ السلة
@@ -881,8 +887,8 @@ export default function POS() {
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
       // حرّر الطاولة على الخادم بشكل متزامن (ننتظر النتيجة قبل الانتقال).
-      if (activeProjectId) {
-        try { await clearTableDraftDB(activeProjectId, activeTable.tableId); } catch { /* ignore */ }
+      if (effectiveProjectId) {
+        try { await clearTableDraftDB(effectiveProjectId, activeTable.tableId); } catch { /* ignore */ }
       }
     }
     clearCart();
@@ -900,7 +906,7 @@ export default function POS() {
     }
     // المالك لا يحتاج كلمة مرور (يتحقق الخادم من ذلك أيضاً، لكن نتجاوز سريعاً محلياً).
     if (isOwner) {
-      await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: activeProjectId, name: branchLabel }, true);
+      await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: effectiveProjectId, name: branchLabel }, true);
       performCancel();
       return;
     }
@@ -914,7 +920,7 @@ export default function POS() {
       const result = await base44.functions.invoke('posVerifySupervisor', { password: cancelPassword });
       const ok = result?.data?.ok === true;
       if (ok) {
-        await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: activeProjectId, name: branchLabel }, true);
+        await audit.cancel(user, { invoiceNo: '', totalAmount: 0 }, { id: effectiveProjectId, name: branchLabel }, true);
         performCancel();
         return;
       }
@@ -927,7 +933,7 @@ export default function POS() {
       }
     }
     // كلمة مرور خاطئة — نسجّل المحاولة الفاشلة في سجل التدقيق.
-    await audit.cancel(user, { invoiceNo: '' }, { id: activeProjectId, name: branchLabel }, false);
+    await audit.cancel(user, { invoiceNo: '' }, { id: effectiveProjectId, name: branchLabel }, false);
     const nextAttempts = cancelAttempts + 1;
     if (nextAttempts >= MAX_CANCEL_ATTEMPTS) {
       setConfirmCancelOpen(false);
@@ -944,8 +950,8 @@ export default function POS() {
   // يمكن للمستخدم إعادة الطباعة منها دون حد. لا تُغلق إلا بيد المستخدم.
   const printReceiptDirect = async (invoiceData) => {
     try {
-      const settings = activeProjectId
-        ? await resolveReceiptSettings(activeProjectId, companySettings)
+      const settings = effectiveProjectId
+        ? await resolveReceiptSettings(effectiveProjectId, companySettings)
         : companySettings;
       // ابحث عن العميل إن وُجد لعرض بياناته الضريبية.
       let clientObj = null;
@@ -1020,9 +1026,9 @@ export default function POS() {
     // ─── التحقق من يوم العمل المفتوح للفرع ─────────────────────────────
     // مطعّم بلا يوم عمل مفتوح = لا يمكن ربط المبيعات بوردية. نمنع البيع صراحةً
     // حتى يفتح الكاشير يوم العمل. هذا يمنع التناقض (رسالتان متعارضتان في آن واحد).
-    if (activeProjectId) {
+    if (effectiveProjectId) {
       try {
-        const openDay = await getOpenBusinessDay(activeProjectId, DEFAULT_BUSINESS_HOURS);
+        const openDay = await getOpenBusinessDay(effectiveProjectId, DEFAULT_BUSINESS_HOURS);
         if (!openDay) {
           toast.error(
             t('لا يوجد يوم عمل مفتوح لهذا الفرع — افتحه من شاشة يوم العمل أولاً', 'No open business day for this branch — open it from the Business Day screen first', lang)
@@ -1091,8 +1097,8 @@ export default function POS() {
       };
     });
     // إعدادات الإيصال المدمجة (فرع + شركة)
-    const branchReceiptSettings = activeProjectId
-      ? await resolveReceiptSettings(activeProjectId, companySettings)
+    const branchReceiptSettings = effectiveProjectId
+      ? await resolveReceiptSettings(effectiveProjectId, companySettings)
       : companySettings;
 
     // تحديد نوع البيع واسم العميل
@@ -1134,8 +1140,8 @@ export default function POS() {
       invoiceNo,
       invoiceType, // DINE_IN=صالة / DELIVERY=توصيل
       saleType, // DINE_IN | TAKEAWAY | DIRECT_DELIVERY | PLATFORM | CREDIT
-      projectId: activeProjectId || '',
-      projectName: activeProjectName || branchLabel,
+      projectId: effectiveProjectId,
+      projectName: branchLabel,
       clientId: effectiveClientId,
       clientName: effectiveClientName,
       date: new Date().toISOString(),
@@ -1247,12 +1253,12 @@ export default function POS() {
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
-      if (activeProjectId) {
-        clearTableDraftDB(activeProjectId, activeTable.tableId).catch(() => {});
+      if (effectiveProjectId) {
+        clearTableDraftDB(effectiveProjectId, activeTable.tableId).catch(() => {});
       }
     }
     // سجّل العملية في سجل التدقيق (البيع + الترحيل).
-    audit.sale(user, saved || { invoiceNo, totalAmount: total }, { id: activeProjectId, name: branchLabel },
+    audit.sale(user, saved || { invoiceNo, totalAmount: total }, { id: effectiveProjectId, name: branchLabel },
       approvedOk ? AUDIT_ACTIONS.SALE_APPROVE : AUDIT_ACTIONS.SALE_CREATE,
       approvedOk ? 'INFO' : 'WARNING',
       { approvedOk, paidAmount: invoice.paidAmount, isPlatformSale }
@@ -1297,8 +1303,8 @@ export default function POS() {
     skipAutoClearRef.current = true;
     if (activeTable?.tableId) {
       try { clearTableDraft(activeTable.tableId); } catch { /* ignore */ }
-      if (activeProjectId) {
-        try { await clearTableDraftDB(activeProjectId, activeTable.tableId); } catch { /* ignore */ }
+      if (effectiveProjectId) {
+        try { await clearTableDraftDB(effectiveProjectId, activeTable.tableId); } catch { /* ignore */ }
       }
     }
 
