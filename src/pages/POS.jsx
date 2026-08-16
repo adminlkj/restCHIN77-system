@@ -34,6 +34,7 @@ import {
   saveDraftToTable, getTableDraft, clearTableDraft,
 } from '@/lib/tables';
 import ReceiptPrintDialog from '@/components/shared/ReceiptPrintDialog';
+import ThermalReceiptDocument from '@/components/shared/ThermalReceiptDocument';
 import DailyReportDialog from '@/components/shared/DailyReportDialog';
 import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
 import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
