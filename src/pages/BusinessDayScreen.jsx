@@ -105,12 +105,15 @@ export default function BusinessDayScreen() {
           const acc = accountMap[l.accountCode] || {};
           const code = acc.code || '';
           const d = (Number(l.debit) || 0) - (Number(l.credit) || 0);
-          // فلترة الفرع: الـوارد يجب أن ينتمي لفرع اليوم المفتوح (وإلا ضممنا نقد
-          // فروع أخرى للدرّج). أما الصوادر (d<0: مصاريف/عهد/سلف تُصرف من الصندوق
-          // غالباً بلا costCenter) فتُخصم دائماً — كل صادر من الصندوق يوم اليوم
-          // يخرج فعلياً من الدرّج، وتجاهله كان يرفع «المتوقع» فوق الحقيقة
-          // (اكتشاف اختبار الإنتاج: متوقع 1485 بينما الفعلي 1285).
-          if (branchName && (l.costCenter || '') !== branchName && d > 0) continue;
+          // فلترة الفرع المتناظرة: أي سطر موسوم بمركز تكلفة لفرع آخر يُستبعد
+          // كليًا — واردًا وصادرًا. هذا يمنع خصم صادر فرع آخر من درجنا بلا مقابل
+          // وارده (اكتشاف حي: مرتجع فاتورة رُحّلت باسم «الفرع» خُصم من درج
+          // PALACE بينما فاتورتها الأصلية لم تدخله أصلًا → عجز وهمي 44).
+          // السطر غير الموسوم (costCenter فارغ — مصاريف/عهد/سلف نقدية) يبقى:
+          // صادره يخرج فعليًا من الدرج، وتجاهله كان يرفع «المتوقع» فوق الحقيقة
+          // (اختبار الإنتاج السابق: متوقع 1485 بينما الفعلي 1285).
+          const lineBranch = l.costCenter || '';
+          if (branchName && lineBranch !== branchName && lineBranch !== '') continue;
           if (code === '1111' || acc.semanticRole === 'CASH') cashDelta += d;
           else if (code === '1114') cardDelta += d;
           else if (code === '1112' || acc.semanticRole === 'BANK') bankDelta += d;

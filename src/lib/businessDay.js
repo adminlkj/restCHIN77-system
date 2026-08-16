@@ -198,13 +198,14 @@ export async function closeBusinessDay({ branchId, hours, closingCash = 0, user,
     if (!je || !je.isPosted) continue;
     if (toBusinessDayDate(je.date, hours) !== dayDate) continue;
     for (const l of (je.lines || [])) {
-      // فلترة الفرع: الـوارد يجب أن ينتمي لفرع اليوم المفتوح (حتى لا يختلط نقد
-      // فرع بآخر في Z-Report). أما الصوادر (credit>debit: مصاريف/عهد/سلف تُصرف
-      // غالباً بلا costCenter) فتُضمّ دائماً — كل صادر من الصندوق يوم اليوم يخرج
-      // فعلياً من الدرّج، واستبعاده كان يرفع «المتوقع» المخزَّن فوق الحقيقة
+      // فلترة الفرع المتناظرة: أي سطر موسوم بمركز تكلفة لفرع آخر يُستبعد كليًا
+      // (واردًا وصادرًا) — يمنع خصم صادر فرع آخر من درجنا بلا مقابل وارده
+      // (اكتشاف حي: مرتجع فاتورة فرع آخر خُصم من درج PALACE بعجز وهمي).
+      // السطر غير الموسوم (costCenter فارغ — مصاريف/عهد/سلف نقدية) يبقى دائمًا:
+      // صادره يخرج فعليًا من الدرّج واستبعاده كان يرفع «المتوقع» فوق الحقيقة
       // (متطابق مع إصلاح العرض في BusinessDayScreen).
-      const isOutflow = (Number(l.credit) || 0) > (Number(l.debit) || 0);
-      if (branchName && (l.costCenter || '') !== branchName && !isOutflow) continue;
+      const lineBranch = l.costCenter || '';
+      if (branchName && lineBranch !== branchName && lineBranch !== '') continue;
       dayLines.push({
         ...l,
         entryNo: je.entryNo || '',
