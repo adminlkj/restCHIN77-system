@@ -162,6 +162,10 @@ export default function POS() {
   // حماية من النقر المزدوج على "طباعة الإيصال": أثناء الحفظ غير المتزامن يُعطَّل الزر
   // لمنع إنشاء فواتير مكررة + قيود محاسبية مكررة من نقرة مزدوجة.
   const [saving, setSaving] = useState(false);
+  // قفل متزامن (ref): state saving وحدها لا تكفي — النقرات المتزامنة (double-click
+  // سريع) تُنفَّذ قبل إعادة الرندر وترى closure قديماً (saving=false)، فتُنشئ فواتير
+  // مكررة. الـ ref يُقرأ/يُكتب فوراً في نفس الـ tick فيمنع إعادة الدخول جذرياً.
+  const postingRef = useRef(false);
 
   // مرجع يمنع تكرار تحميل المسودة عند العودة للطاولة نفسها
   const draftLoadedRef = useRef(false);
@@ -970,9 +974,8 @@ export default function POS() {
   };
 
   // ─── حفظ الإيصال + طباعته ─────────────────────────────────────────
-  const handlePrintReceipt = async () => {
-    // حماية من النقر المزدوج: إن كان الحفظ جارياً، تجاهل النقرة الإضافية.
-    if (saving) return;
+  const handlePrintReceiptInner = async () => {
+    // (حماية النقر المزدوج في الغلاف handlePrintReceipt أدناه — postingRef متزامن)
     if (!cart.length) {
       toast.error(t('السلة فارغة', 'Cart is empty', lang));
       return;
@@ -1285,6 +1288,14 @@ export default function POS() {
       // حرّر القفل دائماً (حتى عند الخطأ) لتفادي بقاء الزر معطّلاً للأبد.
       setSaving(false);
     }
+  };
+
+  // غلاف القفل المتزامن: نقرة واحدة = فاتورة واحدة. النقرات المتزامنة اللاحقة
+  // (double/triple-click قبل اكتمال الترحيل) تُرفض فوراً قبل أي طلب شبكة.
+  const handlePrintReceipt = () => {
+    if (postingRef.current) return;
+    postingRef.current = true;
+    Promise.resolve(handlePrintReceiptInner()).finally(() => { postingRef.current = false; });
   };
 
   // ─── عرض ───────────────────────────────────────────────────────────
