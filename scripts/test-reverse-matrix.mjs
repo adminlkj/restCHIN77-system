@@ -187,6 +187,7 @@ for (const [type, acc, name] of [['COMPANY', '5290', 'مستلزمات'], ['ADMI
   await run('EXPENSE', 'create', { data: { voucherNo: `EX-${type}`, date: D, category: 'X', expenseType: type, description: name, amount: 50, paymentAccountCode: '1111', paymentAccountName: 'صندوق', baseAmount: 50, vatRate: 0, vatAmount: 0, totalAmount: 50, status: 'POSTED' } },
     { label: `مصروف ${type} → ${acc}`, expect: { lines: [[acc, 'dr', 50], ['1111', 'cr', 50]], dr: acc, cr: '1111' } });
 }
+await new Promise((r) => setTimeout(r, 5));
 await run('EXPENSE', 'create', { data: { voucherNo: 'EX-MAN', date: D, category: 'X', expenseType: 'COMPANY', description: 'إيجار', amount: 70, expenseAccountCode: '5210', expenseAccountName: 'إيجار', paymentAccountCode: '1112', paymentAccountName: 'البنك', baseAmount: 70, vatRate: 0, vatAmount: 0, totalAmount: 70, status: 'POSTED' } },
   { label: 'مصروف بحساب يدوي (5210 إيجار)', expect: { lines: [['5210', 'dr', 70], ['1112', 'cr', 70]], dr: '5210 (يدوي)', cr: '1112' } });
 

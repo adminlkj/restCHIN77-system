@@ -696,7 +696,7 @@ async function createStockMovement(base44, data) {
   // توليد رقم حركة فريد تلقائياً إن لم يُدخله المستخدم — يمنع entryNo=undefined
   // الذي كان يُسبب فشل الترحيل بصمت (منع التكرار في autoPostJE).
   if (isBlank(data.movementNo)) {
-    data = { ...data, movementNo: `STK-${Date.now()}` };
+    data = { ...data, movementNo: `STK-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
   }
   assertValid('STOCK_MOVEMENT', data);
   // رفض رقم الحركة المكرر صراحةً: قبوله كان يُنشئ حركة كمية جديدة بينما يمنع
@@ -1266,7 +1266,9 @@ async function createExpense(base44, data) {
   // نُولّد المرجع قبل الإنشاء ونُخزّنه على المصروف، حتى يبقى رابط دقيق بين المصروف
   // وقيده (JE-EXP-{ref}) عند العكس — بدل المطابقة الهشّة بالوصف النصي.
   // ref = timestamp فقط (لا EXP-) لتجنب تضاعف البادئة مع JE-EXP في entryNo.
-  const ref = `${Date.now()}`;
+  // لاحقة عشوائية: عمليتان خلال نفس المللي يجب أن تنتجا رقمين مختلفين —
+  // autoPostJE يبتلع التصادم بصمت (يرجع القيد الموجود) فينشأ المصروف بلا قيد.
+  const ref = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   payload.reference = `JE-EXP-${ref}`;
   const expense = await base44.asServiceRole.entities.Expense.create(payload);
   try {
@@ -1921,7 +1923,7 @@ async function createSalesReturn(base44, data) {
 
   const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
   const isPlatformSale = notesObj.isPlatformSale === true || inv.isPlatformSale === true;
-  const returnNo = data.returnNo || `SR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+  const returnNo = data.returnNo || `SR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}-${Math.random().toString(36).slice(2, 5)}`;
 
   // 1) أنشئ مستند المرتجع (سيمسح إن فشل لاحقاً).
   const returnRec = await base44.asServiceRole.entities.SalesReturn.create({
@@ -2030,7 +2032,7 @@ async function createPurchaseReturn(base44, data) {
   const totalAmount = +(baseAmount + vatAmount).toFixed(2);
 
   const accounts = await base44.asServiceRole.entities.ChartAccount.list('code', 1000);
-  const returnNo = data.returnNo || `PR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+  const returnNo = data.returnNo || `PR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}-${Math.random().toString(36).slice(2, 5)}`;
 
   const returnRec = await base44.asServiceRole.entities.PurchaseReturn.create({
     returnNo,
