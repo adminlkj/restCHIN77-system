@@ -448,8 +448,12 @@ export default function POS() {
         return;
       }
     } catch (e) {
-      toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
-      return;
+      // 403/400 = الخادم رفض كلمة المرور (تحقق صالح) — يسقط لمعالجة "كلمة مرور
+      // خاطئة" أدناه: رسالة داخل المودال + إنقاص المحاولات. غير ذلك = عطل اتصال.
+      if (e?.status !== 403 && e?.status !== 400) {
+        toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
+        return;
+      }
     }
     // كلمة مرور خاطئة.
     const nextAttempts = cancelAttempts + 1;
@@ -901,8 +905,11 @@ export default function POS() {
       }
     } catch (e) {
       // فشل الشبكة بالخادم: لا نسمح بالإلغاء (الأمان قبل الراحة).
-      toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
-      return;
+      // 403/400 استثناء: رفض تحقق صالح (كلمة خاطئة) — يسقط لتسجيل المحاولة الفاشلة.
+      if (e?.status !== 403 && e?.status !== 400) {
+        toast.error(t('تعذّر التحقق من الخادم — حاول مجدداً', 'Could not verify with server — try again', lang));
+        return;
+      }
     }
     // كلمة مرور خاطئة — نسجّل المحاولة الفاشلة في سجل التدقيق.
     await audit.cancel(user, { invoiceNo: '' }, { id: activeProjectId, name: branchLabel }, false);
