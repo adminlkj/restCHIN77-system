@@ -370,8 +370,9 @@ export default function POS() {
 
   const changeQty = (itemId, delta) => {
     // تخفيض الكمية (delta < 0) يتطلب كلمة مرور مشرف (ما لم يكن مالكاً).
+    // النية "decrement": بعد المصادقة نُنقص 1 فقط — لا نحذف الصنف كاملاً.
     if (delta < 0 && !isOwner) {
-      setPendingRemoveItem(itemId);
+      setPendingRemoveItem({ itemId, action: 'decrement' });
       setCancelPassword('');
       setCancelAttempts(0);
       setCancelError('');
@@ -386,11 +387,11 @@ export default function POS() {
 
   const setQty = (itemId, qty) => {
     const q = Math.max(0, parseInt(qty) || 0);
-    // تخفيض الكمية لصفر = حذف الصنف (يتطلب مشرف). التخفيض لقيمة أقل يتطلب مشرف.
+    // تخفيض الكمية لقيمة أقل يتطلب مشرفاً. النية "set": بعد المصادقة نضبط الكمية المطلوبة.
     const item = cart.find(c => c.itemId === itemId);
     const isDecrease = item && q < item.qty;
     if (isDecrease && !isOwner) {
-      setPendingRemoveItem(itemId);
+      setPendingRemoveItem({ itemId, action: 'set', qty: q });
       setCancelPassword('');
       setCancelAttempts(0);
       setCancelError('');
@@ -415,20 +416,37 @@ export default function POS() {
       return;
     }
     // غير المالك: افتح نافذة كلمة مرور المشرف.
-    setPendingRemoveItem(itemId);
+    setPendingRemoveItem({ itemId, action: 'remove' });
     setCancelPassword('');
     setCancelAttempts(0);
     setCancelError('');
     setConfirmCancelOpen(true);
   };
 
+  // تنفيذ نية سلة مؤجّلة بعد مصادقة المشرف حسب النية الأصلية للمستخدم:
+  // decrement (زر −) ينقص 1 فقط، set (كتابة الكمية) يضبط القيمة، remove (X) يحذف.
+  const applyPendingItemAction = () => {
+    if (!pendingRemoveItem) return;
+    const { itemId, action, qty } = pendingRemoveItem;
+    if (action === 'decrement') {
+      setCart(prev => prev
+        .map(c => c.itemId === itemId ? { ...c, qty: c.qty - 1 } : c)
+        .filter(c => c.qty > 0));
+    } else if (action === 'set') {
+      const q = Math.max(0, parseInt(qty) || 0);
+      setCart(prev => q === 0
+        ? prev.filter(c => c.itemId !== itemId)
+        : prev.map(c => c.itemId === itemId ? { ...c, qty: q } : c));
+    } else {
+      setCart(prev => prev.filter(c => c.itemId !== itemId));
+    }
+    setPendingRemoveItem(null);
+  };
+
   // التحقق من كلمة مرور المشرف لحذف صنف (منفصل عن إلغاء الفاتورة).
   const submitRemoveItemPassword = async () => {
     if (isOwner) {
-      if (pendingRemoveItem) {
-        setCart(prev => prev.filter(c => c.itemId !== pendingRemoveItem));
-      }
-      setPendingRemoveItem(null);
+      applyPendingItemAction();
       setConfirmCancelOpen(false);
       return;
     }
@@ -439,12 +457,9 @@ export default function POS() {
     try {
       const result = await base44.functions.invoke('posVerifySupervisor', { password: cancelPassword });
       if (result?.data?.ok === true) {
-        if (pendingRemoveItem) {
-          setCart(prev => prev.filter(c => c.itemId !== pendingRemoveItem));
-        }
-        setPendingRemoveItem(null);
+        applyPendingItemAction();
         setConfirmCancelOpen(false);
-        toast.success(t('تم حذف الصنف', 'Item removed', lang));
+        toast.success(t('تم تنفيذ الإجراء', 'Action applied', lang));
         return;
       }
     } catch (e) {
@@ -1992,7 +2007,9 @@ export default function POS() {
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="size-5 text-amber-600" />
               {pendingRemoveItem
-                ? t('حذف صنف — يتطلب صلاحية مشرف', 'Remove Item — Supervisor Required', lang)
+                ? (pendingRemoveItem.action === 'decrement'
+                    ? t('تخفيض الكمية — يتطلب صلاحية مشرف', 'Decrease Quantity — Supervisor Required', lang)
+                    : t('حذف صنف — يتطلب صلاحية مشرف', 'Remove Item — Supervisor Required', lang))
                 : t('تأكيد الإلغاء — يتطلب صلاحية مشرف', 'Confirm Cancel — Supervisor Required', lang)}
             </DialogTitle>
           </DialogHeader>
@@ -2004,7 +2021,9 @@ export default function POS() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {pendingRemoveItem
-                  ? t('سيتم حذف الصنف من السلة. هل أنت متأكد؟', 'The item will be removed from cart. Are you sure?', lang)
+                  ? (pendingRemoveItem.action === 'decrement'
+                      ? t('سيتم تخفيض كمية الصنف بمقدار واحد. هل أنت متأكد؟', 'The item quantity will be decreased by one. Are you sure?', lang)
+                      : t('سيتم حذف الصنف من السلة. هل أنت متأكد؟', 'The item will be removed from cart. Are you sure?', lang))
                   : t('سيتم إفراغ السلة وتحرير الطاولة. هل أنت متأكد؟', 'The cart will be cleared and the table freed. Are you sure?', lang)}
               </p>
             </div>
@@ -2012,7 +2031,9 @@ export default function POS() {
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
                 {pendingRemoveItem
-                  ? t('سيتم حذف الصنف من السلة. يتطلب هذا الإجراء صلاحية مشرف.', 'The item will be removed from cart. This action requires supervisor authority.', lang)
+                  ? (pendingRemoveItem.action === 'decrement'
+                      ? t('سيتم تخفيض كمية الصنف بمقدار واحد. يتطلب هذا الإجراء صلاحية مشرف.', 'The item quantity will be decreased by one. This action requires supervisor authority.', lang)
+                      : t('سيتم حذف الصنف من السلة. يتطلب هذا الإجراء صلاحية مشرف.', 'The item will be removed from cart. This action requires supervisor authority.', lang))
                   : t('سيتم إفراغ السلة وتحرير الطاولة. يتطلب هذا الإجراء صلاحية مشرف.', 'The cart will be cleared and the table freed. This action requires supervisor authority.', lang)}
               </p>
               <Label className="text-xs font-semibold">{t('كلمة مرور المشرف', 'Supervisor Password', lang)}</Label>
@@ -2045,7 +2066,9 @@ export default function POS() {
             <Button variant="destructive" onClick={submitCancelPassword}>
               <XCircle className="size-4" />
               {pendingRemoveItem
-                ? t('تأكيد الحذف', 'Confirm Remove', lang)
+                ? (pendingRemoveItem.action === 'decrement'
+                    ? t('تأكيد التخفيض', 'Confirm Decrease', lang)
+                    : t('تأكيد الحذف', 'Confirm Remove', lang))
                 : t('تأكيد الإلغاء', 'Confirm Cancel', lang)}
             </Button>
           </DialogFooter>
