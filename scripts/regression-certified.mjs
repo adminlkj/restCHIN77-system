@@ -19,6 +19,8 @@
 //   R13 الحسابات المطلوبة لا تُحذف ولا تُغيّر حقولها المقفلة
 //   R14 المستندات المرحّلة لا تُعدّل ولا تُحذف
 //   R15 لا حساب Default يستخدمه المحرك (كل ذي دور = Required)
+//   R16 سلامة سلسلة العملية End-to-End: العملية كاملة (مستند→ترحيل→قيد→
+//       حسابات→تقارير→درج→ذمم) بلا أثر جانبي — دلتا قبل/بعد مطابقة حرفياً
 //
 // المبدأ المعتمد (مجمّد): وظيفة النظام → العملية → الأثر المالي → الحساب
 // المطلوب → Required/Default. لا حساب/دور/عملية جديدة «لمجرد أنها منطقية».
@@ -472,6 +474,109 @@ console.log('\n── القسم 6: الحمايات عبر API (R12, R13, R14) 
       if (allOk && allowedOk) ok('R12', 'كل المحظورات على الكاشير 403 والبيع مسموح (وليس 403)');
       else bad('R12', 'تجاوز صلاحيات!', `${badOnes.join(' | ')} | بيع=${allowed.status}`);
     }
+  }
+}
+
+// ═══ القسم 7: R16 — سلامة سلسلة العملية End-to-End (دلتا شاملة) ═══
+console.log('\n── القسم 7: سلسلة العملية الكاملة E2E (R16) ──');
+{
+  // لقطة كاملة قبل العملية: كل قيد مرحّل، صافي كل حساب، الميزان، الدرج، الذمم.
+  const snapshot = async () => {
+    const jesNow = (await entFilter(admin, 'JournalEntry', { isPosted: true }, '-created_date', 1000)).body || [];
+    const netByAcc = {}; let totDr = 0;
+    for (const j of jesNow) {
+      totDr += (j.lines || []).reduce((x, l) => x + num(l.debit), 0);
+      for (const l of (j.lines || [])) {
+        const c = String(l.accountCode);
+        netByAcc[c] = r2((netByAcc[c] || 0) + num(l.debit) - num(l.credit));
+      }
+    }
+    const daysNow = (await entFilter(admin, 'BusinessDay', { status: 'OPEN' }, '-dayDate', 20)).body || [];
+    const drawers = {};
+    for (const day of daysNow) {
+      if (!day.branchName) continue;
+      let drawer = 0;
+      for (const j of jesNow) {
+        if (businessDayOf(j.date) !== day.dayDate) continue;
+        for (const l of (j.lines || [])) {
+          if (String(l.accountCode) !== '1111') continue;
+          const cc = l.costCenter || '';
+          if (cc === '' || cc === day.branchName) drawer += num(l.debit) - num(l.credit);
+        }
+      }
+      drawers[day.branchName] = r2(num(day.openingCash) + drawer);
+    }
+    return { jeCount: jesNow.length, totalDebit: r2(totDr), netByAcc, drawers };
+  };
+
+  const br2 = (await entFilter(admin, 'Project', {}, 'name', 20)).body.find((b) => b.name === 'PALACE INDIA');
+  const pf2 = (await entFilter(admin, 'DeliveryPlatform', {}, 'name', 10)).body.find((x) => x.id);
+  if (!br2 || !pf2) skip('R16', 'E2E', 'لا فرع أو منصة للاختبار');
+  else {
+    const before = await snapshot();
+    const st2 = Date.now().toString().slice(-8);
+    const mkE2E = (seq, over) => ({
+      invoiceNo: `REG-E2E-${st2}-${seq}`, invoiceType: over.invoiceType || 'DINE_IN', saleType: over.saleType || 'DINE_IN',
+      projectId: br2.id, projectName: br2.name, clientId: '', clientName: 'زبون نقدي', date: new Date().toISOString(),
+      lineItems: [{ itemId: `e2e-${st2}`, name: 'E2E Probe', qty: 1, unitPrice: over.price, price: over.price }],
+      subtotal: over.sub, discountPercentage: 0, customerDiscountAmount: over.disc || 0,
+      manualDiscountType: 'AMOUNT', manualDiscountValue: 0, deliveryFee: 0,
+      vatRate: 0.15, vatAmount: over.vat, totalAmount: over.tot, paidAmount: over.paid,
+      notes: JSON.stringify(over.notesObj || { payments: [{ method: 'CASH', amount: over.tot, received: over.tot }], items: [{ itemId: `e2e-${st2}`, qty: 1, price: over.price }], saleType: 'DINE_IN', cashier: 'regression-e2e' }),
+    });
+    // (أ) بيع نقدي بخصم عميل 10 → الوعاء 90، VAT 13.5، الإجمالي 103.5
+    const cashDisc = { price: 100, sub: 100, disc: 10, vat: 13.5, tot: 103.5, paid: 103.5 };
+    // (ب) بيع منصة NET 115 (عمولة 15 + 2.25)
+    const plat = { price: 100, sub: 100, vat: 15, tot: 115, paid: 0, invoiceType: 'DELIVERY', saleType: 'PLATFORM',
+      notesObj: { payments: [], items: [{ itemId: `e2ep-${st2}`, qty: 1, price: 100 }], isPlatformSale: true,
+        platform: { platformId: pf2.id, platformName: pf2.name, platformCommission: 15, platformCommissionVat: 2.25 }, saleType: 'PLATFORM', cashier: 'regression-e2e' } };
+
+    const mkRetE2E = (inv, sub, vat, tot, credit = false) => ({
+      originalInvoiceId: inv.id, invoiceNo: inv.invoiceNo, date: new Date().toISOString(), reason: 'regression-e2e',
+      lines: [{ itemId: inv.invoiceNo.includes('-2') ? `e2ep-${st2}` : `e2e-${st2}`, qty: 1, unitPrice: 100 }],
+      subtotal: sub, vatAmount: vat, totalAmount: tot, refundMethod: credit ? 'CREDIT' : 'CASH',
+    });
+
+    const steps = [];
+    const post = async (label, payload, retPayload) => {
+      const cr = await invoke(admin, 'postOperation', { operation: 'SALES_INVOICE', mode: 'create', data: payload });
+      const rec = cr.body?.record || cr.body;
+      if (cr.status !== 200 || !rec?.id) { steps.push(`${label}: فشل الإنشاء ${cr.status}`); return null; }
+      const ap = await invoke(admin, 'postOperation', { operation: 'SALES_INVOICE', mode: 'approve', id: rec.id });
+      if (ap.status !== 200) { steps.push(`${label}: فشل الاعتماد ${ap.status} ${(ap.body?.error || '').slice(0, 50)}`); return null; }
+      const rt = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: mkRetE2E(rec, retPayload[0], retPayload[1], retPayload[2], retPayload[3]) });
+      if (rt.status !== 200) { steps.push(`${label}: فشل المرتجع ${rt.status} ${(rt.body?.error || '').slice(0, 50)}`); return null; }
+      // حلقة الحالة: المستند يجب أن يكون RETURNED ومرتبطاً بقيدَيه
+      const fin = (await entFilter(admin, 'SalesInvoice', { invoiceNo: rec.invoiceNo }, '-created_date', 2)).body[0];
+      if (!fin || fin.status !== 'RETURNED') { steps.push(`${label}: الحالة ${fin?.status}`); return null; }
+      return true;
+    };
+
+    const a = await post('نقدي+خصم', mkE2E(1, cashDisc), [90, 13.5, 103.5, false]);
+    const b = await post('منصة NET', mkE2E(2, plat), [100, 15, 115, true]);
+
+    const after = await snapshot();
+    const drift = [];
+    // كل حساب يجب أن يعود لصافيه قبل العملية (أزواج متعادلة) — أي انحراف = أثر جانبي
+    const codes = new Set([...Object.keys(before.netByAcc), ...Object.keys(after.netByAcc)]);
+    for (const c of codes) {
+      const d = r2((after.netByAcc[c] || 0) - (before.netByAcc[c] || 0));
+      if (Math.abs(d) > 0.02) drift.push(`${c}:${d}`);
+    }
+    const dJE = after.jeCount - before.jeCount;
+    const dTot = r2(after.totalDebit - before.totalDebit);
+    const drawerDrift = Object.keys(after.drawers).filter((k) => Math.abs(r2(after.drawers[k] - (before.drawers[k] || 0))) > 0.02);
+
+    const chainOk = a === true && b === true && steps.length === 0;
+    const noSide = drift.length === 0;
+    const countsOk = dJE === 4 && Math.abs(dTot - 437) < 0.02;
+    const drawersOk = drawerDrift.length === 0;
+
+    if (chainOk && noSide && countsOk && drawersOk)
+      ok('R16', `السلسلة كاملة (مستند→ترحيل→قيد→حسابات→درج→تقارير): 4 قيود صحيحة، دلتا الميزان ${dTot}، صافي كل حساب والدرج والذمم = أثر صفري`);
+    else
+      bad('R16', 'انكسار حلقة أو أثر جانبي في السلسلة',
+        `steps:[${steps.join(' | ')}] drift:[${drift.join(',')}] ΔJE=${dJE} ΔTOT=${dTot} Δdrawers:[${drawerDrift.join(',')}]`);
   }
 }
 
