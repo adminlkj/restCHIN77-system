@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Plus, RefreshCw, Users, MoreVertical, Pencil, Trash2, Play,
-  Sparkles, Clock, ArrowLeft, ArrowRight, LayoutGrid, Store,
-  Layers, FileEdit, ShieldX,
+  Plus, RefreshCw, Pencil, Trash2, ArrowLeft, ArrowRight, LayoutGrid, Store,
+  Layers, ShieldX,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,15 +13,13 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import { useStore } from '@/lib/store';
 import { t } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import {
-  TABLE_STATUS, getBranchTables, getBranchTableStats,
+  TABLE_STATUS, getBranchTables,
   addTable, updateTable, deleteTable,
   freeTable, reserveTable, setTableAvailable, clearTableDraft,
   lockTableDB, loadBranchTablesFromDB, deleteTableDB,

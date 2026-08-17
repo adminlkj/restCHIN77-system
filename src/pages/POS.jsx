@@ -39,7 +39,7 @@ import DailyReportDialog from '@/components/shared/DailyReportDialog';
 import { createKitchenOrder, genKitchenOrderNo, reconcileTableOrders } from '@/lib/kitchenOrders';
 import { audit, AUDIT_ACTIONS } from '@/lib/auditLogger';
 import { canAccessBranch } from '@/lib/permissions';
-import { lockTableDB, unlockTableDB, saveDraftToTableDB, clearTableDraftDB } from '@/lib/tables';
+import { unlockTableDB, saveDraftToTableDB, clearTableDraftDB } from '@/lib/tables';
 import { getOpenBusinessDay, DEFAULT_BUSINESS_HOURS } from '@/lib/businessDay';
 import { toast } from 'sonner';
 

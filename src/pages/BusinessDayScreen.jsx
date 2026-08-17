@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Lock, Unlock, Receipt as ReceiptIcon, Printer, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Lock, Unlock, Receipt as ReceiptIcon, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { t, formatCurrency, formatDate } from '@/lib/utils-binaa';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import { toast } from 'sonner';
-import {
-  currentBusinessDay, toBusinessDayDate, getOpenBusinessDay, openBusinessDay, closeBusinessDay, closeStaleOpenDays, DEFAULT_BUSINESS_HOURS,
+import { toBusinessDayDate, getOpenBusinessDay, openBusinessDay, closeBusinessDay, closeStaleOpenDays, DEFAULT_BUSINESS_HOURS,
 } from '@/lib/businessDay';
 import { buildAccountMap } from '@/lib/financialEngine';
 

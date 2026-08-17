@@ -17,7 +17,7 @@ import {
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
-import { resolveUserBranches, canAccessBranch, isAdmin } from '@/lib/permissions';
+import { resolveUserBranches, canAccessBranch } from '@/lib/permissions';
 import {
   t, PROJECT_STATUS, nextCodeFromList,
 } from '@/lib/utils-binaa';

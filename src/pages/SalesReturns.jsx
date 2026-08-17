@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { base44 } from '@/api/base44Client';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
-import { t, formatCurrency, formatDate, STATUS_TONE } from '@/lib/utils-binaa';
+import { t, formatCurrency, formatDate } from '@/lib/utils-binaa';
 import { OperationEngine } from '@/lib/businessEngine';
 import ModuleLayout from '@/components/shared/ModuleLayout';
 import { toast } from 'sonner';

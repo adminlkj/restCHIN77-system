@@ -356,7 +356,8 @@ else {
       else bad('R5', 'إعادة الترحيل لم تُرفض أو كررت القيد', `st=${reappr.status} count=${jeCount}`);
 
       // R8 حيًا: تجاوز الكمية مرفوض ثم مرتجع كامل صحيح
-      const overRet = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: { invoiceId: inv.id, invoiceNo: inv.invoiceNo, date: new Date().toISOString(), reason: 'regression-over', items: [{ itemId: `reg-${stamp}`, qty: 2, unitPrice: 100 }], subtotal: 200, vatAmount: 30, totalAmount: 230, refundMethod: 'CASH' } });
+      const mkRet = (items, extra = {}) => ({ originalInvoiceId: inv.id, invoiceNo: inv.invoiceNo, date: new Date().toISOString(), reason: 'regression', lines: items, subtotal: 100 * items.reduce((x, i) => x + i.qty, 0), vatAmount: +(15 * items.reduce((x, i) => x + i.qty, 0)).toFixed(2), totalAmount: +(115 * items.reduce((x, i) => x + i.qty, 0)).toFixed(2), refundMethod: 'CASH', ...extra });
+      const overRet = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: mkRet([{ itemId: `reg-${stamp}`, qty: 2, unitPrice: 100 }], { reason: 'regression-over' }) });
       if (overRet.status >= 400) ok('R8', `مرتجع متجاوز (2>1) مرفوض (${overRet.status})`);
       else {
         bad('R8', 'مرتجع متجاوز قُبل!', JSON.stringify(overRet.body).slice(0, 80));
@@ -364,7 +365,7 @@ else {
         const srId = overRet.body?.record?.id || overRet.body?.id;
         if (srId) await api(admin, `/api/entities/SalesReturn/delete/${srId}`, { method: 'DELETE' });
       }
-      const fullRet = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: { invoiceId: inv.id, invoiceNo: inv.invoiceNo, date: new Date().toISOString(), reason: 'regression-full', items: [{ itemId: `reg-${stamp}`, qty: 1, unitPrice: 100 }], subtotal: 100, vatAmount: 15, totalAmount: 115, refundMethod: 'CASH' } });
+      const fullRet = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: mkRet([{ itemId: `reg-${stamp}`, qty: 1, unitPrice: 100 }], { reason: 'regression-full' }) });
       const srNo = fullRet.body?.returnNo || fullRet.body?.record?.returnNo;
       if (fullRet.status === 200 && srNo) {
         const jeR = (await entFilter(admin, 'JournalEntry', { entryNo: `JE-SRET-${srNo}` }, '-created_date', 5)).body;
@@ -373,7 +374,7 @@ else {
         if (jeR.length === 1 && Math.abs(rd - rc) < 0.01 && Math.abs(rd - 115) < 0.01) ok('R8', `مرتجع كامل حي: ${srNo} بقيد عكسي متوازن 115`);
         else bad('R8', 'قيد المرتجع غير سليم', `${srNo} len=${jeR.length} d=${rd}`);
         // مرتجع ثانٍ (لا كمية متاحة) يجب رفضه
-        const again = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: { invoiceId: inv.id, invoiceNo: inv.invoiceNo, date: new Date().toISOString(), reason: 'regression-again', items: [{ itemId: `reg-${stamp}`, qty: 1, unitPrice: 100 }], subtotal: 100, vatAmount: 15, totalAmount: 115, refundMethod: 'CASH' } });
+        const again = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: mkRet([{ itemId: `reg-${stamp}`, qty: 1, unitPrice: 100 }], { reason: 'regression-again' }) });
         if (again.status >= 400) ok('R8', `مرتجع على فاتورة مستنفدة مرفوض (${again.status})`);
         else {
           bad('R8', 'مرتجع يتجاوز المتاح قُبل!', '');
@@ -385,8 +386,10 @@ else {
   } else bad('R3', 'إنشاء فاتورة حية فشل', `${cashInv.status} ${(cashInv.body?.error || '').slice(0, 80)}`);
 
   // 5-ب: بيع منصة (آجل) + مرتجع كامل — صافي صفر
-  const pfRes = await entFilter(admin, 'DeliveryPlatform', { status: 'ACTIVE' }, 'name', 10);
-  const platform = (pfRes.status === 200 ? pfRes.body : [])[0];
+  // حقل الحالة قد لا يُخزَّن على سجلات المنصات — نأخذ أول منصة مسجلة (الاختبار
+  // منطقي وليس معتمدًا على نشاطها التجاري).
+  const pfRes = await entFilter(admin, 'DeliveryPlatform', {}, 'name', 10);
+  const platform = (pfRes.status === 200 ? pfRes.body : []).find((x) => x.id);
   if (!platform) skip('R3-plat', 'لا منصة نشطة');
   else {
     const platInv = await invoke(admin, 'postOperation', { operation: 'SALES_INVOICE', mode: 'create', data: mkInvoice({ seq: 2, invoiceType: 'DELIVERY', saleType: 'PLATFORM', paid: 0, notesObj: { payments: [], items: [{ itemId: `regp-${stamp}`, name: 'Regression Platform', qty: 1, price: 100 }], isPlatformSale: true, platform: { platformId: platform.id, platformName: platform.name, platformCommission: 15, platformCommissionVat: 2.25 }, saleType: 'PLATFORM', cashier: 'regression' }, extra: { platformId: platform.id, platformName: platform.name } }) });
@@ -403,7 +406,7 @@ else {
         if (Math.abs(d - c) < 0.01 && hasPlatformAR && has4200) ok('R3', `بيع منصة حي: ${je.entryNo} (مدين ${BASELINE_ROLES.PLATFORM_RECEIVABLE.code} + إيراد 4200)`);
         else bad('R3', 'قيد المنصة غير صحيح', JSON.stringify(je.lines.map((l) => `${l.accountCode}:${l.debit}/${l.credit}`)));
         // مرتجع كامل للمنصة
-        const pret = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: { invoiceId: pinv.id, invoiceNo: pinv.invoiceNo, date: new Date().toISOString(), reason: 'regression-platform-full', items: [{ itemId: `regp-${stamp}`, qty: 1, unitPrice: 100 }], subtotal: 100, vatAmount: 15, totalAmount: 115, refundMethod: 'CREDIT' } });
+        const pret = await invoke(admin, 'postOperation', { operation: 'SALES_RETURN', mode: 'create', data: { originalInvoiceId: pinv.id, invoiceNo: pinv.invoiceNo, date: new Date().toISOString(), reason: 'regression-platform-full', lines: [{ itemId: `regp-${stamp}`, qty: 1, unitPrice: 100 }], subtotal: 100, vatAmount: 15, totalAmount: 115, refundMethod: 'CREDIT' } });
         if (pret.status === 200) ok('R8', `مرتجع المنصة الكامل ناجح (${pret.body?.returnNo || pret.body?.record?.returnNo || 'ok'})`);
         else bad('R8', 'مرتجع المنصة فشل', `${pret.status} ${(pret.body?.error || '').slice(0, 70)}`);
       } else bad('R3', 'اعتماد بيع المنصة فشل', `${pappr.status} ${(pappr.body?.error || '').slice(0, 80)}`);
