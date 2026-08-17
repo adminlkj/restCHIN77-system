@@ -44,3 +44,6 @@ next-env.d.ts
 
 # OS / runtime
 Thumbs.db
+
+# diagnostic screenshots (never commit)
+/*.png
