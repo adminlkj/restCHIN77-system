@@ -155,6 +155,19 @@ await base44.asServiceRole.entities.SalesInvoice.update(m1.id, m1);
     { label: 'مرتجع مبيعات (نقدي)', expect: { lines: [['4100', 'dr', 100], ['2160', 'dr', 15], ['1111', 'cr', 115]], dr: '4100+2160', cr: '1111' } });
 }
 
+// 8-ب) بيع منصة NET جديد + مرتجعه الكامل — يثبّت بنية العكس الصحيحة:
+// رد الصافي المُحمّل على 1115 فقط + عكس مصروف العمولة (5430 دائن) وضريبتها
+// (1140 دائن). (قبل الإصلاح كان يرد كامل 115 على 1115 فتصير ذمة المنصة سالبة
+// بمقدار العمولة — اكتشافه بالانحدار الحي: ذمة −17.25.)
+{
+  await run('SALES_INVOICE', 'create', { data: inv({ invoiceNo: 'M5B', date: D, invoiceType: 'DELIVERY', subtotal: 100, vatRate: 0.15, vatAmount: 15, totalAmount: 115, paidAmount: 0, isPlatformSale: true, platformId: 'pfN', platformName: 'هنقر NET', platformCommission: 15, platformCommissionVat: 2.25, settlementMethod: 'NET', notes: { payments: [], items: [{ itemId: 'it1', itemName: 'دجاج', qty: 1, unitPrice: 100, total: 100 }] } }) }, { label: 'بيع منصة NET (للمرتجع)', expect: {} });
+  const m5b = [...st('SalesInvoice').values()].find((x) => x.invoiceNo === 'M5B');
+  await run('SALES_INVOICE', 'approve', { id: m5b.id },
+    { label: '— اعتماد M5B (NET)', expect: { lines: [['1115', 'dr', 97.75], ['5430', 'dr', 15], ['1140', 'dr', 2.25], ['4200', 'cr', 100], ['2160', 'cr', 15]], dr: '1115+5430+1140', cr: '4200+2160' } });
+  await run('SALES_RETURN', 'create', { data: { returnNo: 'SR-PLAT', date: D, originalInvoiceId: m5b.id, lines: [{ itemId: 'it1', itemName: 'دجاج', qty: 1, unitPrice: 100 }], subtotal: 100, vatAmount: 15, totalAmount: 115, isFullReturn: true } },
+    { label: 'مرتجع منصة NET كامل', expect: { lines: [['4200', 'dr', 100], ['2160', 'dr', 15], ['5430', 'cr', 15], ['1140', 'cr', 2.25], ['1115', 'cr', 97.75]], dr: '4200+2160', cr: '5430+1140+1115(الصافي)' } });
+}
+
 // 9) تحصيل عميل آجل
 await run('CLIENT_PAYMENT', 'create', { data: { receiptNo: 'CP1', date: D, clientId: 'cl2', clientName: 'فندق السلام', amount: 145, cashAccountCode: '1112', cashAccountName: 'البنك', status: 'POSTED' } },
   { label: 'تحصيل عميل آجل', expect: { lines: [['1112', 'dr', 145], ['1121', 'cr', 145]], dr: '1112', cr: '1121' } });

@@ -1749,7 +1749,7 @@ async function guarded(base44, payload, handler) {
 //   - بيع نقدي: دائن صندوق/بطاقة (رد النقد) + مدين إيراد + مدين VAT.
 //   - بيع آجل/عميل: دائن ذمم عملاء (تخفيض الذمة).
 //   - بيع منصة: دائن ذمم المنصة.
-function buildSalesReturnJE({ returnNo, date, originalInv, lines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale }) {
+function buildSalesReturnJE({ returnNo, date, originalInv, lines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale, settlementMethod = 'NET' }) {
   const costCenter = originalInv.projectName || '';
   // مرتجع المبيعات: نعكس حساب الإيراد الأصلي. نميّز التوصيل والحجوزات،
   // وما عداها يُعكس على إيراد الصالة (الافتراضي).
@@ -1785,7 +1785,31 @@ function buildSalesReturnJE({ returnNo, date, originalInv, lines, subtotal, vatA
   if (isPlatformSale) {
     // عكس ذمة المنصة (تخفيض المستحق).
     const pr = resolveAccount('PLATFORM_RECEIVABLE', accounts);
-    creditLines.push({ accountCode: pr.code, accountName: pr.name, debit: 0, credit: +totalAmount.toFixed(2), description: `تخفيض ذمة منصة ${platformName} — مرتجع ${returnNo}`, partyType: 'PLATFORM', partyId: platformId, partyName: platformName, costCenter });
+    // أسلوب NET: البيع حمّل الذمة بالصافي (total − العمولة − ضريبة العمولة)
+    // وسجّل العمولة مصروفًا. المرتجع يجب أن يعكس نفس البنية: رد الصافي المُحمّل
+    // فقط + عكس مصروف العمولة وضريبتها بنسبة المرتجع — وإلا صارت ذمة المنصة
+    // دائنة (سالبة) بمقدار العمولة (اكتشاف regression: ذمة −17.25).
+    const commTotal = num(originalInv.platformCommission) || num(notesObj?.platform?.platformCommission) || 0;
+    const commVatTotal = num(originalInv.platformCommissionVat) || num(notesObj?.platform?.platformCommissionVat) || 0;
+    if (settlementMethod === 'NET' && (commTotal > 0 || commVatTotal > 0)) {
+      const invTotal = num(originalInv.totalAmount) || totalAmount || 1;
+      const ratio = Math.min(1, totalAmount / invTotal);
+      const commRev = +(commTotal * ratio).toFixed(2);
+      const commVatRev = +(commVatTotal * ratio).toFixed(2);
+      if (commRev > 0) {
+        const commAcc = resolveAccount('COMMISSION_EXPENSE', accounts);
+        creditLines.push({ accountCode: commAcc.code, accountName: commAcc.name, debit: 0, credit: commRev, description: `عكس عمولة منصة ${platformName} — مرتجع ${returnNo}`, costCenter });
+      }
+      if (commVatRev > 0) {
+        const commVatAcc = resolveAccount('VAT_RECEIVABLE', accounts);
+        creditLines.push({ accountCode: commVatAcc.code, accountName: commVatAcc.name, debit: 0, credit: commVatRev, description: `عكس ضريبة عمولة منصة — مرتجع ${returnNo}`, costCenter });
+      }
+      const netRefund = +(totalAmount - commRev - commVatRev).toFixed(2);
+      creditLines.push({ accountCode: pr.code, accountName: pr.name, debit: 0, credit: netRefund, description: `تخفيض ذمة منصة ${platformName} (الصافي) — مرتجع ${returnNo}`, partyType: 'PLATFORM', partyId: platformId, partyName: platformName, costCenter });
+    } else {
+      // GROSS أو بلا عمولة: الذمة حُمّلت بكامل المبلغ فيُرد كاملاً.
+      creditLines.push({ accountCode: pr.code, accountName: pr.name, debit: 0, credit: +totalAmount.toFixed(2), description: `تخفيض ذمة منصة ${platformName} — مرتجع ${returnNo}`, partyType: 'PLATFORM', partyId: platformId, partyName: platformName, costCenter });
+    }
   } else if (isCash) {
     // رد نقدي: وزّع على طرق الدفع الأصلية بنسبة المرتجع.
     const invTotal = num(originalInv.totalAmount) || totalAmount;
@@ -1944,9 +1968,20 @@ async function createSalesReturn(base44, data) {
   });
 
   // 2) ارحل القيد (عكس البيع).
+  // أسلوب تسوية المنصة يحدد بنية العكس (NET يعكس الصافي + العمولة).
+  let returnSettlement = 'NET';
+  if (isPlatformSale) {
+    const rPlatformId = notesObj?.platform?.platformId || inv.platformId || '';
+    if (rPlatformId) {
+      try {
+        const rpf = await base44.asServiceRole.entities.DeliveryPlatform.get(rPlatformId);
+        if (rpf && rpf.settlementMethod) returnSettlement = rpf.settlementMethod;
+      } catch { /* افتراضي NET */ }
+    }
+  }
   let je;
   try {
-    je = buildSalesReturnJE({ returnNo, date: data.date, originalInv: inv, lines: effectiveLines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale });
+    je = buildSalesReturnJE({ returnNo, date: data.date, originalInv: inv, lines: effectiveLines, subtotal, vatAmount, totalAmount, accounts, isPlatformSale, settlementMethod: returnSettlement });
     await autoPostJE(base44, je);
   } catch (e) {
     await rollback(base44, 'SalesReturn', returnRec.id);
