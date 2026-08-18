@@ -622,7 +622,12 @@ async function handleApi(req, res) {
             // خطأ تحقق متوقع — فقط رسالة قصيرة بدون stack trace
             console.log(`  └─ ${functionName} ${fnStatus}: ${error.message}`);
           }
-          return sendJson(res, { success: false, error: error.message || 'فشل تنفيذ العملية' }, fnStatus < 500 ? fnStatus : 400);
+          // أخطاء التحقق (4xx) تصل برسالتها كما هي؛ أخطاء 5xx برسالة عامة —
+          // لا تسريب تفاصيل البنية (أسماء المضيفين/stack) للعميل.
+          if (fnStatus >= 500) {
+            return sendJson(res, { success: false, error: 'خطأ داخلي أثناء تنفيذ العملية — حاول مجددًا' }, 500);
+          }
+          return sendJson(res, { success: false, error: error.message || 'فشل تنفيذ العملية' }, fnStatus);
         }
       } catch (authError) {
         return sendJson(res, { error: 'Unauthorized' }, 401);
@@ -648,6 +653,17 @@ async function handleApi(req, res) {
         console.log(`  └─ 400 validation: ${error.message}`);
       }
       // 401/403/404/409 — لا تطبع شيئاً إضافياً، السطر العادي كافٍ
+    }
+    // 5xx: لا نسرّب تفاصيل البنية الداخلية (أسماء مضيفي القاعدة/stack) للعميل —
+    // التفاصيل تُطبع في سجل الخادم أعلاه فقط. (اكتشاف حي: صفحة الدخول أظهرت
+    // "getaddrinfo ENOTFOUND dpg-…" للمستخدم النهائي أثناء انقطاع القاعدة.)
+    if (status >= 500) {
+      const dbDown = /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|terminating connection|connection terminated/i.test(String(error.message) + String(error.code || ''));
+      return sendJson(res, {
+        error: dbDown
+          ? 'تعذّر الوصول إلى قاعدة البيانات حالياً — حاول مجددًا بعد قليل'
+          : 'خطأ داخلي في الخادم — حاول مجددًا أو راجع سجل النظام',
+      }, dbDown ? 503 : 500);
     }
     return sendJson(res, { error: error.message || 'Server error' }, status);
   }
